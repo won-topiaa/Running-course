@@ -1,7 +1,5 @@
 import { Bookmark, Compass, Footprints, Route, TrendingUp } from 'lucide-react';
-import RouteFeedCard from '../components/RouteFeedCard';
 import ScenePhoto from '../components/ScenePhoto';
-import { FEED } from '../data/feed';
 import { COURSES } from '../data/courses';
 import { sceneForCourse } from '../lib/scene';
 import { formatDistance, formatDuration } from '../lib/format';
@@ -10,14 +8,8 @@ import { ELEVATION_LABEL } from '../lib/types';
 import type { AppApi } from '../ui/appApi';
 
 export default function SavedScreen({ api }: { api: AppApi }) {
-  const feedById = new Map(FEED.map((f) => [f.id, f]));
   const courseById = new Map(COURSES.map((c) => [c.id, c]));
-
-  const savedFeed = api.savedIds.map((id) => feedById.get(id)).filter(Boolean);
-  const savedCourses = api.savedIds
-    .filter((id) => !feedById.has(id))
-    .map((id) => courseById.get(id))
-    .filter(Boolean);
+  const savedCourses = api.savedIds.map((id) => courseById.get(id)).filter(Boolean);
 
   const myRoutes = api.savedRoutes;
   const openRoute = (r: SavedRoute) =>
@@ -31,8 +23,7 @@ export default function SavedScreen({ api }: { api: AppApi }) {
       savedId: r.id,
     });
 
-  const empty =
-    savedFeed.length === 0 && savedCourses.length === 0 && myRoutes.length === 0;
+  const empty = savedCourses.length === 0 && myRoutes.length === 0;
 
   return (
     <div className="mx-auto w-full max-w-md px-4 pb-28 pt-5">
@@ -51,10 +42,10 @@ export default function SavedScreen({ api }: { api: AppApi }) {
           <p className="mt-4 text-[14px] font-semibold text-espresso">아직 저장한 코스가 없어요</p>
           <p className="mt-1 text-[12.5px] text-espresso-soft">하트를 눌러 코스를 저장해보세요.</p>
           <button
-            onClick={() => api.nav('home')}
+            onClick={() => api.nav('explore')}
             className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-coral px-4 py-2.5 text-[13px] font-semibold text-white shadow-warm active:scale-95"
           >
-            <Compass size={15} /> 코스 둘러보기
+            <Compass size={15} /> 추천 코스 보기
           </button>
         </div>
       )}
@@ -99,7 +90,7 @@ export default function SavedScreen({ api }: { api: AppApi }) {
 
       {savedCourses.length > 0 && (
         <section className="mb-5">
-          <h2 className="mb-3 text-[14px] font-bold text-espresso">추천에서 저장</h2>
+          <h2 className="mb-3 text-[14px] font-bold text-espresso">추천에서 저장한 코스</h2>
           <div className="grid grid-cols-2 gap-3">
             {savedCourses.map(
               (c) =>
@@ -123,14 +114,6 @@ export default function SavedScreen({ api }: { api: AppApi }) {
         </section>
       )}
 
-      {savedFeed.length > 0 && (
-        <section>
-          <h2 className="mb-3 text-[14px] font-bold text-espresso">커뮤니티에서 저장</h2>
-          <div className="space-y-4">
-            {savedFeed.map((f) => f && <RouteFeedCard key={f.id} route={f} api={api} />)}
-          </div>
-        </section>
-      )}
     </div>
   );
 }

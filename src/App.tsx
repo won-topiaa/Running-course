@@ -4,7 +4,6 @@ import CourseDetailSheet from './components/CourseDetailSheet';
 import InstallPrompt from './components/InstallPrompt';
 import RecordScreen from './components/RecordScreen';
 import RouteSheet from './components/RouteSheet';
-import HomeScreen from './screens/HomeScreen';
 import ExploreScreen from './screens/ExploreScreen';
 import BuildScreen from './screens/BuildScreen';
 import SavedScreen from './screens/SavedScreen';
@@ -35,7 +34,7 @@ function loadSaved(): string[] {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('home');
+  const [screen, setScreen] = useState<Screen>('build');
   const [settings, setSettingsState] = useState<Settings>(loadSettings);
   const [conditions, setConditions] = useState<RunConditions | null>(null);
   const [savedIds, setSavedIds] = useState<string[]>(loadSaved);
@@ -122,15 +121,22 @@ export default function App() {
 
   return (
     <div className="min-h-full bg-cream">
-      {screen === 'home' && <HomeScreen api={api} />}
       {screen === 'explore' && <ExploreScreen api={api} />}
       {screen === 'build' && <BuildScreen api={api} />}
       {screen === 'saved' && <SavedScreen api={api} />}
       {screen === 'my' && <MyScreen api={api} />}
 
-      <BottomNav active={screen} onChange={setScreen} savedCount={savedIds.length} />
-      {/* 설치 배너는 홈에서만 — 다른 화면(특히 만들기)의 바텀시트 버튼을 가리지 않게 */}
-      {screen === 'home' && !recordOpen && !detailCourse && !routeView && <InstallPrompt />}
+      <BottomNav
+        active={screen}
+        onChange={setScreen}
+        onRecord={() => api.startRecord()}
+        savedCount={savedIds.length}
+      />
+      {/* 설치 배너는 목록형 화면에서만 — 만들기 화면의 바텀시트 버튼을 가리지 않게 */}
+      {(screen === 'explore' || screen === 'my') &&
+        !recordOpen &&
+        !detailCourse &&
+        !routeView && <InstallPrompt />}
 
       {detailCourse && (
         <CourseDetailSheet course={detailCourse} api={api} onClose={() => setDetailId(null)} />

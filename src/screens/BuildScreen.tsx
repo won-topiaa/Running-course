@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
+  Compass,
   Crosshair,
   Loader2,
   Play,
@@ -171,6 +172,27 @@ export default function BuildScreen({ api }: { api: AppApi }) {
       {/* ── 상단 떠 있는 입력 카드 ─────────────────────────── */}
       <div className="absolute inset-x-0 top-0 z-[500] px-3 pt-3 sm:inset-x-auto sm:left-0 sm:w-[420px]">
         <div className="mx-auto w-full max-w-md sm:mx-0 overflow-hidden rounded-3xl border border-line/70 bg-paper/95 shadow-card backdrop-blur-md">
+          {/* 오늘의 러닝 컨디션 — 한 줄 요약 (뛸지 말지 바로 판단) */}
+          {api.conditions && (
+            <div
+              className={`flex items-center gap-2 px-4 py-2 text-[11.5px] ${
+                api.conditions.runScore >= 75
+                  ? 'bg-sage-50 text-sage-600'
+                  : api.conditions.runScore >= 55
+                    ? 'bg-amber-50 text-amber-700'
+                    : 'bg-coral-50 text-coral-600'
+              }`}
+            >
+              <span>{api.conditions.emoji}</span>
+              <span className="font-bold">{api.conditions.tempC}°</span>
+              <span className="opacity-70">·</span>
+              <span>미세먼지 {api.conditions.aqiLabel}</span>
+              <span className="ml-auto font-semibold">
+                러닝 적합도 {api.conditions.runScore}
+              </span>
+            </div>
+          )}
+
           {/* 헤더 */}
           <div className="flex items-center gap-2 px-4 pt-3.5">
             <span className="grid h-7 w-7 place-items-center rounded-lg bg-coral">
@@ -292,7 +314,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
       </div>
 
       {/* ── 우측 상단 경사 색상 범례 ───────────────────────── */}
-      <div className="pointer-events-none absolute right-3 top-3 z-[500] rounded-2xl border border-line/70 bg-paper/95 p-2.5 shadow-card backdrop-blur-md">
+      <div className="pointer-events-none absolute right-3 top-3 z-[500] hidden rounded-2xl border border-line/70 bg-paper/95 p-2.5 shadow-card backdrop-blur-md sm:block">
         <p className="mb-1.5 text-[10px] font-bold text-espresso-muted">경사</p>
         <div className="space-y-1">
           {[...GRADE_LEGEND].reverse().map((g) => (
@@ -544,6 +566,14 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                     지도를 눌러 지점을 2개 이상 찍어주세요.
                   </p>
                 )}
+
+                {/* 코스를 짜는 것 자체가 막막한 사람을 위한 보조 진입로 */}
+                <button
+                  onClick={() => api.nav('explore')}
+                  className="mt-2.5 flex w-full items-center justify-center gap-1.5 py-1 text-[12px] font-semibold text-espresso-soft underline decoration-line underline-offset-4"
+                >
+                  <Compass size={13} /> 어디서 뛸지 모르겠다면 · 추천 코스 보기
+                </button>
               </>
             )}
 

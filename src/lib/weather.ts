@@ -148,7 +148,13 @@ export async function getConditions(loc: LatLng): Promise<RunConditions> {
       `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}` +
       `&current=pm2_5,pm10`;
 
-    const [wxRes, aqRes] = await Promise.all([fetch(wxUrl), fetch(aqUrl)]);
+    // 응답이 오래 걸리면 기다리지 말고 샘플로 넘어간다 (첫 화면이 비어 보이지 않도록)
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 4000);
+    const [wxRes, aqRes] = await Promise.all([
+      fetch(wxUrl, { signal: ac.signal }),
+      fetch(aqUrl, { signal: ac.signal }),
+    ]).finally(() => clearTimeout(timer));
     if (!wxRes.ok) throw new Error('weather fetch failed');
     const wx = await wxRes.json();
     const aq = aqRes.ok ? await aqRes.json() : { current: {} };

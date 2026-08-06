@@ -1,5 +1,7 @@
-import type { Scene } from '../data/feed';
 import type { Course } from './types';
+
+/** 코스 카드 배경으로 쓰는 감성 씬 */
+export type Scene = 'sunset' | 'river' | 'forest' | 'city' | 'dawn' | 'autumn';
 
 /** 큐레이션 코스를 감성 씬(그라디언트 사진)으로 매핑 */
 export function sceneForCourse(course: Course): Scene {

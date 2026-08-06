@@ -1,5 +1,5 @@
 import { useId, type ReactNode } from 'react';
-import type { Scene } from '../data/feed';
+import type { Scene } from '../lib/scene';
 
 interface Props {
   scene: Scene;

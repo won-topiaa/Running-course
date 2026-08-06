@@ -40,10 +40,11 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
     <div className="mx-auto w-full max-w-md px-4 pb-28 pt-5">
       <header className="mb-4">
         <h1 className="text-[22px] font-extrabold tracking-tightish text-espresso">
-          취향으로 코스 찾기
+          추천 코스
         </h1>
-        <p className="mt-1 text-[13px] text-espresso-muted">
-          중요하게 보는 걸 정하면 딱 맞는 코스를 골라드려요.
+        <p className="mt-1 text-[13px] leading-relaxed text-espresso-muted">
+          어디서 뛸지 모르겠다면 — 서울에서 러너들이 실제로 많이 뛰는 코스 중에
+          취향에 맞는 곳을 골라드려요.
         </p>
       </header>
 
@@ -157,7 +158,7 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
 
       {/* 결과 */}
       <div className="mt-5 mb-2 flex items-center justify-between">
-        <h2 className="text-[15px] font-bold text-espresso">추천 순위</h2>
+        <h2 className="text-[15px] font-bold text-espresso">나에게 맞는 순서</h2>
         <span className="text-[12px] text-espresso-soft">{recs.length}곳</span>
       </div>
       <div className="space-y-4">
