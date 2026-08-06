@@ -14,6 +14,8 @@ export interface RouteMapProps extends MapKeys {
   start: LatLng | null;
   route: RouteResult | null;
   onMapClick: (p: LatLng) => void;
+  /** 선택되지 않은 후보 경로 — 흐린 점선으로 함께 표시해 비교를 돕는다 */
+  alternatives?: LatLng[][];
 }
 
 export interface PathMapProps extends MapKeys {

@@ -48,5 +48,5 @@ export default function KakaoPathMap({ kakao, path }: PathMapProps & { kakao: an
     };
   }, [kakao, path]);
 
-  return <div ref={boxRef} className="h-full w-full" />;
+  return <div ref={boxRef} className="kakao-soft h-full w-full" />;
 }

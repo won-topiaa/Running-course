@@ -67,5 +67,5 @@ export default function KakaoLiveMap({ kakao, coords, center }: LiveMapProps & {
     }
   }, [kakao, coords]);
 
-  return <div ref={boxRef} className="h-full w-full" />;
+  return <div ref={boxRef} className="kakao-soft h-full w-full" />;
 }

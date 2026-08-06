@@ -28,10 +28,21 @@
   }
 }
 
-/* ---- Leaflet 지도: 따뜻한 톤에 맞춘 최소 오버라이드 ---- */
+/* ---- 지도: 배경은 차분하게, 경로가 주인공이 되도록 ---- */
 .leaflet-container {
   font-family: inherit;
-  background: #eae3d8;
+  background: #eceae6;
+}
+
+/* 카카오맵 타일만 채도를 낮춰 연회색 톤으로.
+   경로(SVG)·핀(HTML 오버레이)은 영향을 받지 않아 색이 그대로 살아난다. */
+.kakao-soft img {
+  filter: saturate(0.68) brightness(1.04) contrast(0.96);
+}
+/* 카카오 로고·저작권 표기는 원본 그대로 */
+.kakao-soft .map_attribution img,
+.kakao-soft a img {
+  filter: none;
 }
 .leaflet-bar a {
   color: #2c2725 !important;

@@ -1,14 +1,8 @@
 import { useEffect, useRef } from 'react';
+import { labelPinHtml, numberPinHtml } from './mapMarkers';
 import type { RouteMapProps } from './mapTypes';
 import { coloredSegments } from '../lib/routeColor';
 import type { LatLng } from '../lib/types';
-
-function pinContent(label: string): string {
-  return `<div style="transform:translateY(-2px);display:flex;justify-content:center">
-    <div style="background:#FF7A59;color:#fff;width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:grid;place-items:center;box-shadow:0 2px 6px rgba(44,39,37,.3);border:2px solid #fff">
-      <span style="transform:rotate(45deg);font-size:12px;font-weight:800">${label}</span>
-    </div></div>`;
-}
 
 /** 카카오맵 기반 빌더 지도 (경사 색상 경로 · 핀 · 클릭) */
 export default function KakaoRouteMap({
@@ -19,6 +13,7 @@ export default function KakaoRouteMap({
   start,
   route,
   onMapClick,
+  alternatives = [],
 }: RouteMapProps & { kakao: any }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -64,6 +59,19 @@ export default function KakaoRouteMap({
       };
       const toPath = (pts: LatLng[]) => pts.map((p) => new kakao.maps.LatLng(p[0], p[1]));
 
+      // 선택 안 된 후보 — 흐린 점선
+      for (const alt of alternatives) {
+        add(
+          new kakao.maps.Polyline({
+            path: toPath(alt),
+            strokeWeight: 3,
+            strokeColor: '#9B9088',
+            strokeOpacity: 0.55,
+            strokeStyle: 'shortdash',
+          }),
+        );
+      }
+
       if (route) {
         add(
           new kakao.maps.Polyline({
@@ -90,7 +98,7 @@ export default function KakaoRouteMap({
           add(
             new kakao.maps.CustomOverlay({
               position: new kakao.maps.LatLng(w[0], w[1]),
-              content: pinContent(String(i + 1)),
+              content: numberPinHtml(i + 1),
               yAnchor: 1,
             }),
           ),
@@ -99,7 +107,7 @@ export default function KakaoRouteMap({
         add(
           new kakao.maps.CustomOverlay({
             position: new kakao.maps.LatLng(start[0], start[1]),
-            content: pinContent('출발'),
+            content: labelPinHtml('출발'),
             yAnchor: 1,
           }),
         );
@@ -120,5 +128,5 @@ export default function KakaoRouteMap({
     }
   }, [kakao, route, waypoints, start, mode]);
 
-  return <div ref={boxRef} className="h-full w-full" />;
+  return <div ref={boxRef} className="kakao-soft h-full w-full" />;
 }
