@@ -128,6 +128,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           start={mode === 'distance' ? start : null}
           route={selected?.route ?? null}
           onMapClick={onMapClick}
+          kakaoKey={api.settings.kakaoJsKey}
           mapboxToken={api.settings.mapboxToken}
         />
         {/* 안내 오버레이 */}

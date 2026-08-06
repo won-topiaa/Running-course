@@ -65,22 +65,39 @@
 
 | 서비스 | 역할 | 없을 때 | 발급 |
 |---|---|---|---|
-| **Mapbox** | 러닝 지도 배경(Outdoors) | OpenStreetMap 타일 | [account.mapbox.com](https://account.mapbox.com/access-tokens/) |
+| **카카오맵** | 기본 지도(한국) | OpenStreetMap 폴백 | [developers.kakao.com](https://developers.kakao.com/console/app) |
 | **OpenRouteService** | 코스 만들기의 실제 도로 경로·경사 | 오프라인 합성 경로 | [openrouteservice.org](https://openrouteservice.org/dev/#/signup) |
+| **Mapbox** | 카카오 대신 쓸 지도(선택) | 미사용 | [account.mapbox.com](https://account.mapbox.com/access-tokens/) |
 | **Strava** | 자동 업로드(선택) | GPX 수동 업로드 | [strava.com/settings/api](https://www.strava.com/settings/api) |
 
-- **왜 Mapbox?** Strava·Komoot·AllTrails·Nike Run Club 등 러닝앱이 가장 많이 쓰는 지도 API로,
-  현재 Leaflet 스택에 타일로 바로 연결됩니다. 국내 지도 디테일이 더 중요하면 지도 계층
-  (`BaseTiles`/`RouteMap`/`PathMap`)만 카카오·네이버 SDK 로 교체하면 됩니다.
+- **카카오맵**을 기본 지도로 씁니다(국내 대상). 지도 계층은 **스위처블** —
+  카카오 JS SDK 를 불러올 수 있으면 카카오맵, 아니면 자동으로 Leaflet/OSM(또는 Mapbox)으로
+  폴백합니다. 카카오는 자체 JS SDK 라 SDK 를 못 부르는 환경에서도 앱이 안 깨집니다.
+  ⚠️ 카카오맵이 뜨려면 **개발자 콘솔 → Web 플랫폼**에 실행/배포 도메인을 등록해야 합니다
+  (`http://localhost:5173`, 배포 주소 등).
+- 도보 경로·고도는 카카오와 무관하게 **OpenRouteService**로 계산하고, 그 좌표를 지도 위에
+  경사 색상 폴리라인으로 그립니다.
 - **Strava 자동 업로드**는 OAuth `client_secret` 을 다루는 서버리스 콜백(예: Cloudflare
   Workers/Vercel Function)이 필요합니다. 프론트엔드는 authorize 단계까지 배선돼 있으며,
   지금 바로 쓸 수 있는 경로는 **GPX 내보내기 → Strava 업로드**입니다.
+
+## 배포 (GitHub Pages)
+
+`.github/workflows/deploy.yml` 이 푸시 시 자동으로 빌드→Pages 배포합니다.
+
+1. 저장소 **Settings → Pages → Build and deployment → Source: GitHub Actions** 선택(최초 1회)
+2. 이 브랜치(또는 main)로 push → Actions 가 빌드/배포 → `https://<owner>.github.io/<repo>/` 생성
+3. 그 주소를 **카카오 개발자 콘솔 → Web 플랫폼 도메인**에 등록하면 카카오맵이 표시됩니다
+   (예: `https://won-topiaa.github.io`)
+
+> `vite.config.ts` 의 `base: './'` 로 하위 경로에서도 에셋이 정상 로드됩니다.
+> 별도 배포 비밀키는 필요 없습니다(지도 키는 도메인 제한 공개 키).
 
 ## 기술 스택
 
 - **React 18 + TypeScript + Vite**
 - **Tailwind CSS** (따뜻한 에디토리얼 디자인 시스템) + **lucide-react** 아이콘
-- **Leaflet / react-leaflet** — Mapbox 타일(토큰 시) 또는 OpenStreetMap(기본)
+- **카카오맵 JS SDK**(기본) ↔ **Leaflet / react-leaflet**(폴백, OSM·Mapbox 타일) 스위처블 지도
 - **OpenRouteService** (도보 경로 · 왕복 생성 · 지점별 고도) + 오프라인 폴백 provider
 - **Open-Meteo** (날씨 · 대기질, 키 불필요)
 - **Geolocation API** 실시간 기록 · **GPX 1.1** 내보내기 · Encoded Polyline 공유 링크
@@ -114,13 +131,16 @@ src/
 │  ├─ savedRoutes.ts          # 만든/기록한 코스 저장 + 공유 복원
 │  ├─ gpx.ts                  # GPX 1.1 생성/다운로드
 │  ├─ strava.ts               # Strava OAuth authorize URL
-│  └─ useRunRecorder.ts       # 실시간 GPS 기록 훅(+데모 폴백)
+│  ├─ useRunRecorder.ts       # 실시간 GPS 기록 훅(+데모 폴백)
+│  ├─ kakaoLoader.ts          # 카카오맵 SDK 동적 로더
+│  ├─ useKakao.ts             # 카카오 로드 상태 훅(폴백 신호)
+│  └─ routeColor.ts           # 경사 색상 폴리라인 그룹(지도 공용)
 ├─ data/
 │  ├─ courses.ts              # 서울 실제 코스 큐레이션 (14곳)
 │  ├─ feed.ts                 # 커뮤니티 공유 코스 샘플
 │  └─ profile.ts              # 마이 페이지 샘플(마일리지 등)
-├─ components/                # 지도(BaseTiles/RouteMap/PathMap/LiveMap)·차트·
-│                             # 카드·시트(CourseDetail/RouteSheet)·기록 화면·네비
+├─ components/                # 지도 스위처(RouteMap/PathMap/LiveMap) + 카카오/Leaflet
+│                             # 구현·차트·카드·시트(CourseDetail/RouteSheet)·기록·네비
 ├─ screens/                   # Home / Explore / Build / Saved / My
 └─ App.tsx                    # 화면 라우팅 · 전역 상태 · 공유 링크 수신
 ```

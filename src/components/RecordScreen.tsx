@@ -51,6 +51,7 @@ export default function RecordScreen({ api, onClose }: { api: AppApi; onClose: (
         <LiveMap
           coords={rec.coords}
           center={api.settings.homeLocation}
+          kakaoKey={api.settings.kakaoJsKey}
           mapboxToken={api.settings.mapboxToken}
         />
         <button

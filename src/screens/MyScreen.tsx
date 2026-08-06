@@ -165,12 +165,23 @@ export default function MyScreen({ api }: { api: AppApi }) {
         <div className="mt-3 space-y-3">
           <KeyRow
             icon={<MapIcon size={15} className="text-coral" />}
-            title="Mapbox 지도"
-            desc="러닝 지도 배경(Outdoors). 없으면 OpenStreetMap."
+            title="카카오맵 (기본 지도)"
+            desc="한국 지도. 개발자 콘솔에 배포 도메인을 등록해야 표시됩니다."
+            placeholder="카카오 JavaScript 키"
+            current={api.settings.kakaoJsKey}
+            connected="카카오맵 연결됨"
+            offline="OSM 폴백"
+            link="https://developers.kakao.com/console/app"
+            onSave={(v) => saveField('kakaoJsKey', v)}
+          />
+          <KeyRow
+            icon={<MapIcon size={15} className="text-espresso-soft" />}
+            title="Mapbox 지도 (대체)"
+            desc="카카오 대신 쓰고 싶을 때. 없으면 OpenStreetMap."
             placeholder="pk.eyJ... 토큰"
             current={api.settings.mapboxToken}
             connected="Mapbox 연결됨"
-            offline="OSM 사용 중"
+            offline="미사용"
             link="https://account.mapbox.com/access-tokens/"
             onSave={(v) => saveField('mapboxToken', v)}
           />

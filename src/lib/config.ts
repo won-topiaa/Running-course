@@ -8,9 +8,11 @@ import type { LatLng } from './types';
 const KEY = 'run-app-settings-v1';
 
 export interface Settings {
+  /** 카카오맵 JavaScript 키 (있으면 지도를 카카오맵으로 표시) */
+  kakaoJsKey: string | null;
   /** OpenRouteService API 키 (없으면 오프라인 데모 모드) */
   orsKey: string | null;
-  /** Mapbox access token (없으면 OSM 타일) */
+  /** Mapbox access token (카카오·OSM 대신 사용, 선택) */
   mapboxToken: string | null;
   /** Strava OAuth client id (없으면 GPX 내보내기만) */
   stravaClientId: string | null;
@@ -20,6 +22,12 @@ export interface Settings {
   homeLocation: LatLng;
 }
 
+// 카카오 JavaScript 키는 도메인 제한으로 보호되는 공개용 클라이언트 키.
+// 배포 도메인을 카카오 개발자 콘솔의 Web 플랫폼에 등록해야 지도가 뜬다.
+// 교체하려면 마이 페이지에 새 키를 넣거나 VITE_KAKAO_JS_KEY 로 주입.
+const KAKAO_DEFAULT = 'f8d52c354ff017870d132f16204d56ab';
+
+const ENV_KAKAO = import.meta.env.VITE_KAKAO_JS_KEY?.trim() || null;
 const ENV_ORS = import.meta.env.VITE_ORS_API_KEY?.trim() || null;
 const ENV_MAPBOX = import.meta.env.VITE_MAPBOX_TOKEN?.trim() || null;
 const ENV_STRAVA = import.meta.env.VITE_STRAVA_CLIENT_ID?.trim() || null;
@@ -29,6 +37,7 @@ export const DEFAULT_LOCATION: LatLng = [37.5665, 126.978];
 
 export function defaultSettings(): Settings {
   return {
+    kakaoJsKey: ENV_KAKAO ?? KAKAO_DEFAULT,
     orsKey: ENV_ORS,
     mapboxToken: ENV_MAPBOX,
     stravaClientId: ENV_STRAVA,
@@ -47,6 +56,7 @@ export function loadSettings(): Settings {
         ...base,
         ...saved,
         // env 값이 있으면 항상 우선 (배포 환경 주입값)
+        kakaoJsKey: ENV_KAKAO ?? saved.kakaoJsKey ?? KAKAO_DEFAULT,
         orsKey: ENV_ORS ?? saved.orsKey ?? null,
         mapboxToken: ENV_MAPBOX ?? saved.mapboxToken ?? null,
         stravaClientId: ENV_STRAVA ?? saved.stravaClientId ?? null,

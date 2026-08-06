@@ -167,6 +167,7 @@ export default function RouteSheet({
               start={null}
               route={route}
               onMapClick={noop}
+              kakaoKey={api.settings.kakaoJsKey}
               mapboxToken={api.settings.mapboxToken}
             />
           </div>
