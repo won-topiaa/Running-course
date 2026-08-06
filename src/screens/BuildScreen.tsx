@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import {
+  Bookmark,
   Crosshair,
   Info,
   Loader2,
   MapPin,
   Mountain,
+  Play,
   Sparkles,
   Timer,
   TrendingUp,
@@ -126,6 +128,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           start={mode === 'distance' ? start : null}
           route={selected?.route ?? null}
           onMapClick={onMapClick}
+          mapboxToken={api.settings.mapboxToken}
         />
         {/* 안내 오버레이 */}
         <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-paper/90 px-3 py-1.5 text-[11.5px] font-medium text-espresso shadow-soft backdrop-blur">
@@ -257,7 +260,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                 r={r}
                 selected={i === selIdx}
                 onSelect={() => setSelIdx(i)}
-                paceSec={api.settings.paceSecPerKm}
+                api={api}
               />
             ))}
           </div>
@@ -292,14 +295,24 @@ function ResultCard({
   r,
   selected,
   onSelect,
-  paceSec,
+  api,
 }: {
   r: BuiltRoute;
   selected: boolean;
   onSelect: () => void;
-  paceSec: number;
+  api: AppApi;
 }) {
   const { route, styleEval, matchScore, label } = r;
+  const paceSec = api.settings.paceSecPerKm;
+  const styleLabel = RUN_STYLES.find((s) => s.id === styleEval.style)?.label ?? '러닝';
+  const openSheet = () =>
+    api.viewRoute({
+      name: `${styleLabel} ${formatDistance(route.distanceKm)} 코스`,
+      route,
+      kind: 'built',
+      style: styleEval.style,
+      source: route.source,
+    });
   return (
     <article
       onClick={onSelect}
@@ -341,6 +354,20 @@ function ResultCard({
           <p className="mt-2 rounded-2xl bg-tint/70 p-3 text-[12.5px] leading-relaxed text-espresso-muted">
             ✅ {styleEval.reason}
           </p>
+          <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={openSheet}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-line bg-paper py-2.5 text-[12.5px] font-semibold text-espresso-muted active:scale-[0.98]"
+            >
+              <Bookmark size={14} /> 저장 · 공유
+            </button>
+            <button
+              onClick={() => api.startRecord()}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-coral py-2.5 text-[12.5px] font-semibold text-white shadow-warm active:scale-[0.98]"
+            >
+              <Play size={14} fill="#fff" /> 이 코스로 뛰기
+            </button>
+          </div>
         </div>
       )}
     </article>

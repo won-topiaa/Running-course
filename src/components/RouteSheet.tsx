@@ -1,0 +1,283 @@
+import { useEffect, useState } from 'react';
+import {
+  Activity,
+  Bookmark,
+  Check,
+  Download,
+  Mountain,
+  Share2,
+  Timer,
+  TrendingUp,
+  Trash2,
+  X,
+} from 'lucide-react';
+import GradeElevationChart from './GradeElevationChart';
+import RouteMap from './RouteMap';
+import { GRADE_COLORS, GRADE_LEGEND, RUN_STYLES } from '../lib/routeStyle';
+import { buildGpx, downloadGpx } from '../lib/gpx';
+import { buildShareToken, savedFromView, shareUrl } from '../lib/savedRoutes';
+import { estimateTimeLabel, formatDuration, formatPace } from '../lib/format';
+import type { AppApi, RouteView } from '../ui/appApi';
+
+const noop = () => {};
+
+export default function RouteSheet({
+  view,
+  api,
+  mode = 'view',
+  onClose,
+}: {
+  view: RouteView;
+  api: AppApi;
+  mode?: 'view' | 'summary';
+  onClose: () => void;
+}) {
+  const [savedId, setSavedId] = useState<string | undefined>(view.savedId);
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
+  }, [onClose]);
+
+  const flash = (m: string) => {
+    setToast(m);
+    setTimeout(() => setToast(null), 2200);
+  };
+
+  const { route } = view;
+  const styleLabel = view.style ? RUN_STYLES.find((s) => s.id === view.style)?.label : null;
+  const paceSec =
+    view.durationSec && route.distanceKm > 0
+      ? view.durationSec / route.distanceKm
+      : api.settings.paceSecPerKm;
+  const timeLabel = view.durationSec
+    ? formatDuration(view.durationSec)
+    : `약 ${estimateTimeLabel(route.distanceKm, api.settings.paceSecPerKm)}`;
+
+  const doSave = () => {
+    const rec = savedFromView({
+      name: view.name,
+      route,
+      kind: view.kind === 'shared' ? 'built' : view.kind,
+      style: view.style,
+      source: view.source,
+      durationSec: view.durationSec,
+    });
+    api.addSavedRoute(rec);
+    setSavedId(rec.id);
+    flash('내 코스에 저장했어요');
+  };
+
+  const doDelete = () => {
+    if (savedId) api.removeSavedRoute(savedId);
+    onClose();
+  };
+
+  const doShare = async () => {
+    const token = buildShareToken({
+      name: view.name,
+      style: view.style,
+      distanceKm: route.distanceKm,
+      ascentM: route.ascentM,
+      maxGradePct: route.maxGradePct,
+      source: view.source,
+      coords: route.coords,
+      elevations: route.elevations,
+    });
+    const url = shareUrl(token);
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: view.name, text: '내 러닝 코스를 확인해보세요', url });
+        return;
+      }
+    } catch {
+      /* 사용자가 취소 */
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      flash('공유 링크를 복사했어요');
+    } catch {
+      flash('링크 복사에 실패했어요');
+    }
+  };
+
+  const gpxOf = () =>
+    buildGpx({
+      name: view.name,
+      coords: route.coords,
+      elevations: route.elevations,
+      times: view.times,
+    });
+
+  const doGpx = () => {
+    downloadGpx(view.name, gpxOf());
+    flash('GPX 파일을 내보냈어요');
+  };
+
+  const doStrava = () => {
+    downloadGpx(view.name, gpxOf());
+    window.open('https://www.strava.com/upload/select', '_blank', 'noopener');
+    flash('GPX 저장 · Strava 업로드 페이지를 열었어요');
+  };
+
+  const headline = mode === 'summary' ? '🎉 러닝 완료!' : styleLabel ?? '내 코스';
+
+  return (
+    <div className="fixed inset-0 z-[2000] flex items-end justify-center sm:items-center">
+      <div className="absolute inset-0 bg-espresso/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 max-h-[94vh] w-full max-w-md overflow-y-auto rounded-t-4xl bg-cream shadow-card sm:rounded-4xl">
+        {/* 헤더 */}
+        <div className="relative bg-gradient-to-br from-coral to-coral-600 p-5 text-white">
+          <button
+            onClick={onClose}
+            className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white/20 backdrop-blur active:scale-90"
+            aria-label="닫기"
+          >
+            <X size={18} />
+          </button>
+          <p className="text-[12.5px] font-semibold text-white/85">{headline}</p>
+          <h2 className="mt-0.5 text-[20px] font-extrabold leading-tight">{view.name}</h2>
+          <div className="mt-3 flex items-end gap-4">
+            <div>
+              <p className="text-[34px] font-extrabold leading-none">
+                {route.distanceKm.toFixed(2)}
+                <span className="ml-1 text-[15px] font-bold">km</span>
+              </p>
+            </div>
+            <div className="mb-0.5">
+              <p className="text-[15px] font-bold leading-none">{timeLabel}</p>
+              <p className="mt-1 text-[12px] text-white/80">{formatPace(paceSec)}/km</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4">
+          {/* 지도 */}
+          <div className="h-56 overflow-hidden rounded-3xl border border-line">
+            <RouteMap
+              mode="pins"
+              center={route.coords[0]}
+              waypoints={[]}
+              start={null}
+              route={route}
+              onMapClick={noop}
+              mapboxToken={api.settings.mapboxToken}
+            />
+          </div>
+          {/* 경사 범례 */}
+          <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[10.5px] text-espresso-muted">
+            {GRADE_LEGEND.map((g) => (
+              <span key={g.band} className="inline-flex items-center gap-1">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: GRADE_COLORS[g.band] }} />
+                {g.label}
+              </span>
+            ))}
+          </div>
+
+          {/* 스탯 */}
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <Metric icon={<Timer size={15} />} value={timeLabel.replace('약 ', '')} label="시간" />
+            <Metric icon={<TrendingUp size={15} />} value={`${route.ascentM}m`} label="누적 상승" />
+            <Metric icon={<Mountain size={15} />} value={`${route.maxGradePct}%`} label="최대 경사" />
+          </div>
+
+          {/* 고도 */}
+          <div className="mt-3 rounded-3xl border border-line bg-paper p-4 shadow-soft">
+            <GradeElevationChart
+              elevations={route.elevations}
+              lengthsM={route.segments.map((s) => s.lengthM)}
+              distanceKm={route.distanceKm}
+              ascentM={route.ascentM}
+            />
+          </div>
+
+          {/* 액션 */}
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {savedId ? (
+              <ActionBtn onClick={doDelete} tone="line" icon={<Trash2 size={16} />}>
+                삭제
+              </ActionBtn>
+            ) : (
+              <ActionBtn onClick={doSave} tone="coral" icon={<Bookmark size={16} />}>
+                내 코스에 저장
+              </ActionBtn>
+            )}
+            <ActionBtn onClick={doShare} tone="sage" icon={<Share2 size={16} />}>
+              공유
+            </ActionBtn>
+            <ActionBtn onClick={doGpx} tone="line" icon={<Download size={16} />}>
+              GPX 내보내기
+            </ActionBtn>
+            <ActionBtn onClick={doStrava} tone="strava" icon={<Activity size={16} />}>
+              Strava에 올리기
+            </ActionBtn>
+          </div>
+          {savedId && (
+            <p className="mt-2 inline-flex items-center gap-1 text-[12px] text-sage-600">
+              <Check size={13} /> 내 코스에 저장됨
+            </p>
+          )}
+        </div>
+      </div>
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-[2100] -translate-x-1/2 rounded-full bg-espresso px-4 py-2.5 text-[13px] font-medium text-white shadow-card">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Metric({
+  icon,
+  value,
+  label,
+}: {
+  icon: React.ReactNode;
+  value: string;
+  label: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-line bg-paper p-3 text-center shadow-soft">
+      <div className="mx-auto mb-1 flex items-center justify-center text-coral">{icon}</div>
+      <p className="text-[15px] font-extrabold leading-none text-espresso">{value}</p>
+      <p className="mt-1 text-[10.5px] text-espresso-soft">{label}</p>
+    </div>
+  );
+}
+
+const TONES: Record<string, string> = {
+  coral: 'bg-coral text-white shadow-warm',
+  sage: 'bg-sage-100 text-sage-600',
+  line: 'border border-line bg-paper text-espresso-muted',
+  strava: 'bg-[#FC4C02] text-white',
+};
+
+function ActionBtn({
+  onClick,
+  tone,
+  icon,
+  children,
+}: {
+  onClick: () => void;
+  tone: keyof typeof TONES | string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center justify-center gap-1.5 rounded-full py-3 text-[13px] font-semibold transition active:scale-[0.98] ${TONES[tone] ?? TONES.line}`}
+    >
+      {icon}
+      {children}
+    </button>
+  );
+}

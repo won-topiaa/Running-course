@@ -1,30 +1,26 @@
 import { useState } from 'react';
 import {
+  Activity,
   Check,
   Flame,
   Footprints,
-  KeyRound,
   Map as MapIcon,
   Timer,
 } from 'lucide-react';
 import { PROFILE } from '../data/profile';
 import { estimateTimeLabel, formatPace } from '../lib/format';
+import type { Settings } from '../lib/config';
 import type { AppApi } from '../ui/appApi';
 
 export default function MyScreen({ api }: { api: AppApi }) {
   const p = PROFILE;
-  const [keyInput, setKeyInput] = useState(api.settings.orsKey ?? '');
-  const [savedKey, setSavedKey] = useState(false);
   const pace = api.settings.paceSecPerKm;
   const maxWeek = Math.max(...p.weekly.map((w) => w.km), 8);
   const goalPct = Math.min(100, Math.round((p.weekKm / p.weekGoalKm) * 100));
 
   const setPace = (v: number) => api.setSettings({ ...api.settings, paceSecPerKm: v });
-  const saveKey = () => {
-    api.setSettings({ ...api.settings, orsKey: keyInput.trim() || null });
-    setSavedKey(true);
-    setTimeout(() => setSavedKey(false), 1800);
-  };
+  const saveField = (field: keyof Settings, value: string) =>
+    api.setSettings({ ...api.settings, [field]: value.trim() || null });
 
   return (
     <div className="mx-auto w-full max-w-md px-4 pb-28 pt-5">
@@ -159,49 +155,118 @@ export default function MyScreen({ api }: { api: AppApi }) {
         </p>
       </div>
 
-      {/* ORS API 키 설정 */}
+      {/* 외부 서비스 연동 */}
       <div className="mt-4 rounded-3xl border border-line bg-paper p-4 shadow-soft">
-        <h2 className="inline-flex items-center gap-1.5 text-[14px] font-bold text-espresso">
-          <KeyRound size={16} className="text-coral" /> 실 지도 경로 연결
-        </h2>
-        <p className="mt-1.5 text-[12px] leading-relaxed text-espresso-muted">
-          OpenRouteService 무료 키를 넣으면 <b className="text-espresso">코스 만들기</b>에서 실제
-          도로 경로·구간별 경사를 사용합니다. 키가 없으면 오프라인 데모로 동작해요.
+        <h2 className="text-[14px] font-bold text-espresso">🔌 외부 서비스 연동</h2>
+        <p className="mt-1 text-[12px] leading-relaxed text-espresso-muted">
+          키를 넣으면 실지도·실경로가 켜져요. 없어도 앱은 오프라인 데모로 동작합니다.
         </p>
-        <div className="mt-3 flex gap-2">
-          <input
-            value={keyInput}
-            onChange={(e) => setKeyInput(e.target.value)}
-            placeholder="ORS API 키 붙여넣기"
-            className="min-w-0 flex-1 rounded-full border border-line bg-cream px-4 py-2.5 text-[13px] text-espresso outline-none focus:border-coral"
+
+        <div className="mt-3 space-y-3">
+          <KeyRow
+            icon={<MapIcon size={15} className="text-coral" />}
+            title="Mapbox 지도"
+            desc="러닝 지도 배경(Outdoors). 없으면 OpenStreetMap."
+            placeholder="pk.eyJ... 토큰"
+            current={api.settings.mapboxToken}
+            connected="Mapbox 연결됨"
+            offline="OSM 사용 중"
+            link="https://account.mapbox.com/access-tokens/"
+            onSave={(v) => saveField('mapboxToken', v)}
           />
-          <button
-            onClick={saveKey}
-            className="shrink-0 rounded-full bg-coral px-4 py-2.5 text-[13px] font-semibold text-white shadow-warm active:scale-95"
-          >
-            {savedKey ? <Check size={16} /> : '저장'}
-          </button>
+          <KeyRow
+            icon={<Activity size={15} className="text-coral" />}
+            title="OpenRouteService 경로"
+            desc="코스 만들기의 실제 도로 경로·경사."
+            placeholder="ORS API 키"
+            current={api.settings.orsKey}
+            connected="실경로 연결됨"
+            offline="오프라인 데모"
+            link="https://openrouteservice.org/dev/#/signup"
+            onSave={(v) => saveField('orsKey', v)}
+          />
+          <KeyRow
+            icon={<Activity size={15} style={{ color: '#FC4C02' }} />}
+            title="Strava 자동 업로드 (선택)"
+            desc="지금도 GPX 내보내기로 업로드 가능. 자동 업로드는 서버 콜백 필요."
+            placeholder="Strava Client ID"
+            current={api.settings.stravaClientId}
+            connected="Client ID 등록됨"
+            offline="GPX 수동 업로드"
+            link="https://www.strava.com/settings/api"
+            onSave={(v) => saveField('stravaClientId', v)}
+          />
         </div>
-        <div className="mt-2.5 flex items-center justify-between">
-          <span
-            className={`inline-flex items-center gap-1.5 text-[12px] font-semibold ${
-              api.settings.orsKey ? 'text-sage-600' : 'text-espresso-soft'
-            }`}
-          >
-            <span
-              className={`h-2 w-2 rounded-full ${api.settings.orsKey ? 'bg-sage' : 'bg-espresso-soft/50'}`}
-            />
-            {api.settings.orsKey ? '실데이터 연결됨' : '오프라인 데모 모드'}
-          </span>
-          <a
-            href="https://openrouteservice.org/dev/#/signup"
-            target="_blank"
-            rel="noreferrer"
-            className="text-[12px] font-medium text-coral-600 underline"
-          >
-            무료 키 발급 →
-          </a>
-        </div>
+      </div>
+    </div>
+  );
+}
+
+function KeyRow({
+  icon,
+  title,
+  desc,
+  placeholder,
+  current,
+  connected,
+  offline,
+  link,
+  onSave,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  placeholder: string;
+  current: string | null;
+  connected: string;
+  offline: string;
+  link: string;
+  onSave: (v: string) => void;
+}) {
+  const [val, setVal] = useState(current ?? '');
+  const [done, setDone] = useState(false);
+  const save = () => {
+    onSave(val);
+    setDone(true);
+    setTimeout(() => setDone(false), 1600);
+  };
+  return (
+    <div className="rounded-2xl bg-tint/50 p-3">
+      <div className="flex items-center gap-1.5 text-[13px] font-bold text-espresso">
+        {icon} {title}
+      </div>
+      <p className="mt-0.5 text-[11.5px] leading-relaxed text-espresso-soft">{desc}</p>
+      <div className="mt-2 flex gap-2">
+        <input
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          placeholder={placeholder}
+          className="min-w-0 flex-1 rounded-full border border-line bg-paper px-3.5 py-2 text-[12.5px] text-espresso outline-none focus:border-coral"
+        />
+        <button
+          onClick={save}
+          className="shrink-0 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-white active:scale-95"
+        >
+          {done ? <Check size={15} /> : '저장'}
+        </button>
+      </div>
+      <div className="mt-2 flex items-center justify-between">
+        <span
+          className={`inline-flex items-center gap-1.5 text-[11.5px] font-semibold ${
+            current ? 'text-sage-600' : 'text-espresso-soft'
+          }`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${current ? 'bg-sage' : 'bg-espresso-soft/50'}`} />
+          {current ? connected : offline}
+        </span>
+        <a
+          href={link}
+          target="_blank"
+          rel="noreferrer"
+          className="text-[11.5px] font-medium text-coral-600 underline"
+        >
+          키 발급 →
+        </a>
       </div>
     </div>
   );

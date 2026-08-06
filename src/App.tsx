@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import BottomNav, { type Screen } from './components/BottomNav';
 import CourseDetailSheet from './components/CourseDetailSheet';
+import RecordScreen from './components/RecordScreen';
+import RouteSheet from './components/RouteSheet';
 import HomeScreen from './screens/HomeScreen';
 import ExploreScreen from './screens/ExploreScreen';
 import BuildScreen from './screens/BuildScreen';
@@ -8,8 +10,14 @@ import SavedScreen from './screens/SavedScreen';
 import MyScreen from './screens/MyScreen';
 import { COURSES } from './data/courses';
 import { loadSettings, saveSettings, type Settings } from './lib/config';
+import {
+  loadRoutes,
+  parseSharedFromHash,
+  persistRoutes,
+  type SavedRoute,
+} from './lib/savedRoutes';
 import { getConditions, type RunConditions } from './lib/weather';
-import type { AppApi } from './ui/appApi';
+import type { AppApi, RouteView } from './ui/appApi';
 
 const SAVED_KEY = 'run-app-saved-v1';
 
@@ -28,20 +36,37 @@ export default function App() {
   const [settings, setSettingsState] = useState<Settings>(loadSettings);
   const [conditions, setConditions] = useState<RunConditions | null>(null);
   const [savedIds, setSavedIds] = useState<string[]>(loadSaved);
+  const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>(loadRoutes);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [recordOpen, setRecordOpen] = useState(false);
+  const [routeView, setRouteView] = useState<RouteView | null>(null);
 
-  // 오늘의 러닝 컨디션 로드 (실패 시 샘플 폴백)
+  // 오늘의 러닝 컨디션
   useEffect(() => {
     let alive = true;
-    getConditions(settings.homeLocation).then((c) => {
-      if (alive) setConditions(c);
-    });
+    getConditions(settings.homeLocation).then((c) => alive && setConditions(c));
     return () => {
       alive = false;
     };
   }, [settings.homeLocation]);
 
+  // 공유 링크(#course=...) 로 진입한 경우 코스 시트 열기
+  useEffect(() => {
+    const shared = parseSharedFromHash(location.hash);
+    if (shared) {
+      setRouteView({
+        name: shared.name,
+        route: shared.route,
+        kind: 'shared',
+        style: shared.style as RouteView['style'],
+        source: shared.source,
+      });
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  }, []);
+
   useEffect(() => saveSettings(settings), [settings]);
+  useEffect(() => persistRoutes(savedRoutes), [savedRoutes]);
   useEffect(() => {
     try {
       localStorage.setItem(SAVED_KEY, JSON.stringify(savedIds));
@@ -51,9 +76,15 @@ export default function App() {
   }, [savedIds]);
 
   const toggleSaved = useCallback((id: string) => {
-    setSavedIds((cur) =>
-      cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
-    );
+    setSavedIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  }, []);
+
+  const addSavedRoute = useCallback((r: SavedRoute) => {
+    setSavedRoutes((cur) => [r, ...cur]);
+  }, []);
+
+  const removeSavedRoute = useCallback((id: string) => {
+    setSavedRoutes((cur) => cur.filter((r) => r.id !== id));
   }, []);
 
   const api: AppApi = useMemo(
@@ -66,13 +97,16 @@ export default function App() {
       isSaved: (id) => savedIds.includes(id),
       toggleSaved,
       openCourse: setDetailId,
+      savedRoutes,
+      addSavedRoute,
+      removeSavedRoute,
+      startRecord: () => setRecordOpen(true),
+      viewRoute: setRouteView,
     }),
-    [settings, conditions, savedIds, toggleSaved],
+    [settings, conditions, savedIds, savedRoutes, toggleSaved, addSavedRoute, removeSavedRoute],
   );
 
-  const detailCourse = detailId
-    ? COURSES.find((c) => c.id === detailId) ?? null
-    : null;
+  const detailCourse = detailId ? COURSES.find((c) => c.id === detailId) ?? null : null;
 
   return (
     <div className="min-h-full bg-cream">
@@ -85,12 +119,12 @@ export default function App() {
       <BottomNav active={screen} onChange={setScreen} savedCount={savedIds.length} />
 
       {detailCourse && (
-        <CourseDetailSheet
-          course={detailCourse}
-          api={api}
-          onClose={() => setDetailId(null)}
-        />
+        <CourseDetailSheet course={detailCourse} api={api} onClose={() => setDetailId(null)} />
       )}
+      {routeView && (
+        <RouteSheet view={routeView} api={api} onClose={() => setRouteView(null)} />
+      )}
+      {recordOpen && <RecordScreen api={api} onClose={() => setRecordOpen(false)} />}
     </div>
   );
 }

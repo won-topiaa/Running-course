@@ -1,10 +1,11 @@
-import { Bookmark, Compass } from 'lucide-react';
+import { Bookmark, Compass, Footprints, Route, TrendingUp } from 'lucide-react';
 import RouteFeedCard from '../components/RouteFeedCard';
 import ScenePhoto from '../components/ScenePhoto';
 import { FEED } from '../data/feed';
 import { COURSES } from '../data/courses';
 import { sceneForCourse } from '../lib/scene';
-import { formatDistance } from '../lib/format';
+import { formatDistance, formatDuration } from '../lib/format';
+import { toRouteResult, type SavedRoute } from '../lib/savedRoutes';
 import { ELEVATION_LABEL } from '../lib/types';
 import type { AppApi } from '../ui/appApi';
 
@@ -18,7 +19,20 @@ export default function SavedScreen({ api }: { api: AppApi }) {
     .map((id) => courseById.get(id))
     .filter(Boolean);
 
-  const empty = savedFeed.length === 0 && savedCourses.length === 0;
+  const myRoutes = api.savedRoutes;
+  const openRoute = (r: SavedRoute) =>
+    api.viewRoute({
+      name: r.name,
+      route: toRouteResult(r),
+      kind: r.kind,
+      style: r.style,
+      source: r.source,
+      durationSec: r.durationSec,
+      savedId: r.id,
+    });
+
+  const empty =
+    savedFeed.length === 0 && savedCourses.length === 0 && myRoutes.length === 0;
 
   return (
     <div className="mx-auto w-full max-w-md px-4 pb-28 pt-5">
@@ -43,6 +57,44 @@ export default function SavedScreen({ api }: { api: AppApi }) {
             <Compass size={15} /> 코스 둘러보기
           </button>
         </div>
+      )}
+
+      {myRoutes.length > 0 && (
+        <section className="mb-5">
+          <h2 className="mb-3 flex items-center gap-1.5 text-[14px] font-bold text-espresso">
+            <Route size={16} className="text-coral" /> 내가 만든·기록한 코스
+          </h2>
+          <div className="space-y-2.5">
+            {myRoutes.map((r) => (
+              <button
+                key={r.id}
+                onClick={() => openRoute(r)}
+                className="flex w-full items-center gap-3 rounded-3xl border border-line bg-paper p-3.5 text-left shadow-soft active:scale-[0.99]"
+              >
+                <span
+                  className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${
+                    r.kind === 'recorded' ? 'bg-coral-50 text-coral' : 'bg-sage-50 text-sage-600'
+                  }`}
+                >
+                  {r.kind === 'recorded' ? <Footprints size={20} /> : <Route size={20} />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-bold text-espresso">{r.name}</span>
+                  <span className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11.5px] text-espresso-muted">
+                    <span>{formatDistance(r.distanceKm)}</span>
+                    <span className="inline-flex items-center gap-0.5">
+                      <TrendingUp size={11} /> {r.ascentM}m
+                    </span>
+                    {r.durationSec != null && <span>{formatDuration(r.durationSec)}</span>}
+                    <span className="rounded-full bg-tint px-1.5 py-0.5 text-[10px] font-medium">
+                      {r.kind === 'recorded' ? '기록' : '만든 코스'}
+                    </span>
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
       )}
 
       {savedCourses.length > 0 && (

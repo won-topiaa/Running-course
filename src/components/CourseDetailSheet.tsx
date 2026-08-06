@@ -98,7 +98,7 @@ export default function CourseDetailSheet({
 
           {/* 지도 */}
           <div className="mt-4 h-52 overflow-hidden rounded-3xl border border-line">
-            <PathMap path={course.path} />
+            <PathMap path={course.path} mapboxToken={api.settings.mapboxToken} />
           </div>
 
           {/* 고도 */}

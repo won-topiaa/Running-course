@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import L from 'leaflet';
-import { CircleMarker, MapContainer, Polyline, TileLayer, useMap } from 'react-leaflet';
+import { CircleMarker, MapContainer, Polyline, useMap } from 'react-leaflet';
+import BaseTiles from './BaseTiles';
 import type { LatLng } from '../lib/types';
 
 function Fit({ path }: { path: LatLng[] }) {
@@ -14,7 +15,13 @@ function Fit({ path }: { path: LatLng[] }) {
 }
 
 /** 단일 경로를 보여주는 간단한 지도 (상세 시트용) */
-export default function PathMap({ path }: { path: LatLng[] }) {
+export default function PathMap({
+  path,
+  mapboxToken,
+}: {
+  path: LatLng[];
+  mapboxToken?: string | null;
+}) {
   return (
     <MapContainer
       center={path[0] as [number, number]}
@@ -23,11 +30,7 @@ export default function PathMap({ path }: { path: LatLng[] }) {
       className="h-full w-full"
       scrollWheelZoom={false}
     >
-      <TileLayer
-        attribution="&copy; OpenStreetMap"
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        maxZoom={19}
-      />
+      <BaseTiles token={mapboxToken} />
       <Polyline positions={path as [number, number][]} pathOptions={{ color: '#fff', weight: 7, opacity: 0.9 }} />
       <Polyline positions={path as [number, number][]} pathOptions={{ color: '#FF7A59', weight: 4, opacity: 1 }} />
       <CircleMarker

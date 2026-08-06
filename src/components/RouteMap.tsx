@@ -5,10 +5,10 @@ import {
   MapContainer,
   Marker,
   Polyline,
-  TileLayer,
   useMap,
   useMapEvents,
 } from 'react-leaflet';
+import BaseTiles from './BaseTiles';
 import type { RouteResult } from '../lib/routing';
 import { gradeBand, GRADE_COLORS } from '../lib/routeStyle';
 import type { LatLng } from '../lib/types';
@@ -20,6 +20,7 @@ interface Props {
   start: LatLng | null;
   route: RouteResult | null;
   onMapClick: (p: LatLng) => void;
+  mapboxToken?: string | null;
 }
 
 /** 번호가 매겨진 핀 아이콘 */
@@ -97,6 +98,7 @@ export default function RouteMap({
   start,
   route,
   onMapClick,
+  mapboxToken,
 }: Props) {
   const colored = useColoredSegments(route);
 
@@ -108,11 +110,7 @@ export default function RouteMap({
       className="h-full w-full"
       scrollWheelZoom
     >
-      <TileLayer
-        attribution='&copy; OpenStreetMap'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        maxZoom={19}
-      />
+      <BaseTiles token={mapboxToken} />
       <ClickHandler onClick={onMapClick} />
 
       {/* 경사 색상 경로 */}

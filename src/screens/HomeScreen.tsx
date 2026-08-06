@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Search, Sparkles } from 'lucide-react';
+import { ChevronRight, Play, Search, Sparkles } from 'lucide-react';
 import ConditionsCard from '../components/ConditionsCard';
 import RouteFeedCard from '../components/RouteFeedCard';
 import { FEED, MOOD_TAGS } from '../data/feed';
@@ -41,6 +41,21 @@ export default function HomeScreen({ api }: { api: AppApi }) {
 
       {/* 오늘의 러닝 컨디션 */}
       <ConditionsCard c={api.conditions} />
+
+      {/* 지금 바로 뛰기 */}
+      <button
+        onClick={() => api.startRecord()}
+        className="mt-3 flex w-full items-center gap-3 rounded-3xl bg-gradient-to-br from-coral to-coral-600 p-4 text-left text-white shadow-warm transition active:scale-[0.99]"
+      >
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/20 backdrop-blur">
+          <Play size={20} fill="#fff" />
+        </span>
+        <span className="flex-1">
+          <span className="block text-[15px] font-bold">지금 바로 뛰기</span>
+          <span className="block text-[12px] text-white/85">GPS로 거리·페이스 실시간 기록</span>
+        </span>
+        <ChevronRight size={20} className="text-white/80" />
+      </button>
 
       {/* 검색 */}
       <div className="mt-4 flex items-center gap-2 rounded-full border border-line bg-paper px-4 py-3 shadow-soft">

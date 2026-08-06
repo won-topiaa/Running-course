@@ -28,11 +28,28 @@
 **경사 색상**(급내리막·내리막·평지·오르막·급오르막)으로 지도에 표시합니다.
 러닝 스타일은 **평지 / 완만 / 오르막내리막(굴곡) / 경사 훈련** 중 선택.
 
+### 🎽 실시간 러닝 기록
+- 브라우저 GPS(`watchPosition`)로 **거리·시간·평균/현재 페이스**를 실시간 기록
+- 라이브 트랙 지도(현재 위치를 따라가며 지나온 경로 표시), 일시정지/재개/종료
+- 종료 후 **요약**(거리·시간·페이스·경사 고도)에서 바로 저장·공유·내보내기
+- GPS를 쓸 수 없는 환경(데스크톱 등)에서는 **데모 재생**으로 체험 가능
+- 홈의 "지금 바로 뛰기" 또는 만든 코스의 "이 코스로 뛰기"로 진입
+
+### 💾 코스 저장 · 🔗 공유
+- 만든 코스·기록한 러닝을 **내 코스로 저장** → 저장 탭에서 다시 열기
+- **공유 링크**: 경로를 polyline 으로 압축해 URL 로 공유(백엔드 불필요). 링크로 들어오면
+  코스가 그대로 열립니다. Web Share API / 클립보드 복사 지원
+
+### 📤 GPX 내보내기 · Strava
+- 어떤 코스/기록이든 **GPX 파일로 내보내기** → Strava·가민 커넥트 등에 업로드
+- "Strava에 올리기": GPX 저장 + Strava 업로드 페이지 열기(지금 바로 동작)
+- (선택) Strava Client ID 를 넣으면 OAuth 자동 업로드 배선 — *토큰 교환은 서버 콜백 필요*
+
 ### 🔖 저장 & 👤 마이
-- 저장한 코스 모아보기
+- 저장한 코스 모아보기(즐겨찾기 / 만든·기록한 코스)
 - **러닝화 마일리지 트래커**(교체 시기 알림), 주간 거리·연속 러닝·코스 다양성
 - **페이스 계산기**(5K·10K·하프 예상 기록) — 설정한 페이스는 코스별 예상 시간에도 반영
-- 획득 배지, **OpenRouteService 키 연결**
+- 획득 배지, **외부 서비스 연동**(Mapbox · OpenRouteService · Strava 키)
 
 ## 러너 리서치 반영
 
@@ -40,27 +57,33 @@
 페이스·예상 시간, 구간 경사·고도, **날씨·미세먼지·복장 추천**, 급수·화장실·야간 조명 안전,
 노면, 코스 다양성, **러닝화 마일리지**, 러닝 계산기, 크루·공유·함께 달리기 등.
 
-## 실제 지도/경로 연결 (OpenRouteService)
+## 외부 서비스 연동 (모두 선택 · 없어도 완전 동작)
 
-'코스 만들기'의 실제 경로·고도는 **OpenRouteService**(무료)로 계산합니다.
+모든 키는 선택 사항입니다. 없으면 앱은 오프라인 데모(합성 고도 + OpenStreetMap)로 완전히
+동작하고, 키를 넣으면 실데이터로 전환됩니다. 연결 방법은 두 가지 — `.env`(`.env.example`
+참고) 또는 앱 실행 후 **마이 페이지 → 외부 서비스 연동**에 붙여넣기.
 
-- 무료 키 발급: <https://openrouteservice.org/dev/#/signup>
-- 연결 방법 (둘 중 하나)
-  - `.env` 에 `VITE_ORS_API_KEY=발급받은키` (`.env.example` 참고)
-  - 또는 앱 실행 후 **마이 페이지 → 실 지도 경로 연결**에 키 붙여넣기
-- **키가 없어도** 앱은 오프라인 데모(합성 고도)로 완전히 동작합니다. 경사 색상·스타일
-  점수·거리 매칭 등 모든 UI를 그대로 확인할 수 있고, 키를 넣으면 실데이터로 전환됩니다.
+| 서비스 | 역할 | 없을 때 | 발급 |
+|---|---|---|---|
+| **Mapbox** | 러닝 지도 배경(Outdoors) | OpenStreetMap 타일 | [account.mapbox.com](https://account.mapbox.com/access-tokens/) |
+| **OpenRouteService** | 코스 만들기의 실제 도로 경로·경사 | 오프라인 합성 경로 | [openrouteservice.org](https://openrouteservice.org/dev/#/signup) |
+| **Strava** | 자동 업로드(선택) | GPX 수동 업로드 | [strava.com/settings/api](https://www.strava.com/settings/api) |
 
-> 지도 배경 타일은 키가 필요 없는 **OpenStreetMap**(Leaflet)을 사용합니다.
-> 이후 카카오/네이버 지도로 교체하려면 지도 계층(`RouteMap`/`PathMap`)만 바꾸면 됩니다.
+- **왜 Mapbox?** Strava·Komoot·AllTrails·Nike Run Club 등 러닝앱이 가장 많이 쓰는 지도 API로,
+  현재 Leaflet 스택에 타일로 바로 연결됩니다. 국내 지도 디테일이 더 중요하면 지도 계층
+  (`BaseTiles`/`RouteMap`/`PathMap`)만 카카오·네이버 SDK 로 교체하면 됩니다.
+- **Strava 자동 업로드**는 OAuth `client_secret` 을 다루는 서버리스 콜백(예: Cloudflare
+  Workers/Vercel Function)이 필요합니다. 프론트엔드는 authorize 단계까지 배선돼 있으며,
+  지금 바로 쓸 수 있는 경로는 **GPX 내보내기 → Strava 업로드**입니다.
 
 ## 기술 스택
 
 - **React 18 + TypeScript + Vite**
 - **Tailwind CSS** (따뜻한 에디토리얼 디자인 시스템) + **lucide-react** 아이콘
-- **Leaflet / react-leaflet** (OpenStreetMap 타일, API 키 불필요)
+- **Leaflet / react-leaflet** — Mapbox 타일(토큰 시) 또는 OpenStreetMap(기본)
 - **OpenRouteService** (도보 경로 · 왕복 생성 · 지점별 고도) + 오프라인 폴백 provider
 - **Open-Meteo** (날씨 · 대기질, 키 불필요)
+- **Geolocation API** 실시간 기록 · **GPX 1.1** 내보내기 · Encoded Polyline 공유 링크
 - 차트는 외부 의존성 없는 순수 SVG
 
 ## 실행 방법
@@ -86,14 +109,20 @@ src/
 │  ├─ weather.ts              # 날씨·미세먼지·러닝 적합도
 │  ├─ format.ts               # 페이스·시간·거리 포맷
 │  ├─ config.ts               # 설정(키·페이스·위치) 지속
-│  └─ scene.ts                # 코스 → 감성 씬 매핑
+│  ├─ scene.ts                # 코스 → 감성 씬 매핑
+│  ├─ polyline.ts             # Encoded Polyline + 공유 링크 코덱
+│  ├─ savedRoutes.ts          # 만든/기록한 코스 저장 + 공유 복원
+│  ├─ gpx.ts                  # GPX 1.1 생성/다운로드
+│  ├─ strava.ts               # Strava OAuth authorize URL
+│  └─ useRunRecorder.ts       # 실시간 GPS 기록 훅(+데모 폴백)
 ├─ data/
 │  ├─ courses.ts              # 서울 실제 코스 큐레이션 (14곳)
 │  ├─ feed.ts                 # 커뮤니티 공유 코스 샘플
 │  └─ profile.ts              # 마이 페이지 샘플(마일리지 등)
-├─ components/                # 지도·차트·카드·시트·네비 등 UI 컴포넌트
+├─ components/                # 지도(BaseTiles/RouteMap/PathMap/LiveMap)·차트·
+│                             # 카드·시트(CourseDetail/RouteSheet)·기록 화면·네비
 ├─ screens/                   # Home / Explore / Build / Saved / My
-└─ App.tsx                    # 화면 라우팅 · 전역 상태
+└─ App.tsx                    # 화면 라우팅 · 전역 상태 · 공유 링크 수신
 ```
 
 ## 참고
