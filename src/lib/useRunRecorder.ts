@@ -77,7 +77,9 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const demoPathRef = useRef<LatLng[]>([]);
   const demoIdxRef = useRef(0);
-  const wakeRef = useRef(createWakeLock());
+  // 렌더마다 createWakeLock() 이 재실행되지 않도록 지연 초기화
+  const wakeRef = useRef<ReturnType<typeof createWakeLock> | null>(null);
+  if (wakeRef.current === null) wakeRef.current = createWakeLock();
 
   const sync = useCallback((patch: Partial<RecorderState>) => {
     setState((s) => ({ ...s, ...patch }));
@@ -148,7 +150,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         avgPaceSec: null,
       });
       startTick();
-      void wakeRef.current.enable(); // 뛰는 동안 화면 유지
+      void wakeRef.current?.enable(); // 뛰는 동안 화면 유지
     },
     [sync, startTick],
   );
@@ -191,7 +193,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     if (statusRef.current !== 'recording') return;
     activeMsRef.current += Date.now() - segStartRef.current;
     statusRef.current = 'paused';
-    void wakeRef.current.disable();
+    void wakeRef.current?.disable();
     sync({ status: 'paused' });
   }, [sync]);
 
@@ -199,7 +201,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     if (statusRef.current !== 'paused') return;
     segStartRef.current = Date.now();
     statusRef.current = 'recording';
-    void wakeRef.current.enable();
+    void wakeRef.current?.enable();
     sync({ status: 'recording' });
   }, [sync]);
 
@@ -216,7 +218,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       clearInterval(tickRef.current);
       tickRef.current = null;
     }
-    void wakeRef.current.disable();
+    void wakeRef.current?.disable();
   }, []);
 
   const stop = useCallback(() => {

@@ -124,7 +124,8 @@ export default function App() {
       {screen === 'my' && <MyScreen api={api} />}
 
       <BottomNav active={screen} onChange={setScreen} savedCount={savedIds.length} />
-      {!recordOpen && !detailCourse && !routeView && <InstallPrompt />}
+      {/* 설치 배너는 홈에서만 — 다른 화면(특히 만들기)의 바텀시트 버튼을 가리지 않게 */}
+      {screen === 'home' && !recordOpen && !detailCourse && !routeView && <InstallPrompt />}
 
       {detailCourse && (
         <CourseDetailSheet course={detailCourse} api={api} onClose={() => setDetailId(null)} />

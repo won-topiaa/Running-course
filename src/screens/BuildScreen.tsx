@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   Crosshair,
@@ -41,6 +41,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(true);
   const [returnToStart, setReturnToStart] = useState(true);
+  const attemptRef = useRef(0);
 
   const selected = results?.[selIdx] ?? null;
 
@@ -82,16 +83,13 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     setNotice(null);
     setSheetOpen(true);
 
-    // 순환 코스면 시작점을 마지막에 붙여 되돌아오게 한다
-    const pins =
-      mode === 'pins' && returnToStart && waypoints.length >= 2
-        ? [...waypoints, waypoints[0]]
-        : waypoints;
+    // '다시 찾기'마다 시드 대역을 바꿔 새로운 루프 후보를 얻는다
+    const attempt = attemptRef.current++;
 
     const build = (p: RoutingProvider): Promise<BuiltRoute[]> =>
       mode === 'pins'
-        ? buildFromPins(pins, style, p)
-        : buildFromDistance(start, targetKm, style, p);
+        ? buildFromPins(waypoints, style, p, { loop: returnToStart })
+        : buildFromDistance(start, targetKm, style, p, { seedBase: attempt });
 
     // ORS → OSRM(키 불필요) → 데모(직선) 순으로 내려가며 시도
     let provider: RoutingProvider | null = makeProvider(api.settings.orsKey);
@@ -414,9 +412,15 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                 <div className="sticky bottom-0 -mx-4 mt-3 flex items-center gap-2 border-t border-line/60 bg-paper px-4 pb-1 pt-2.5">
                   <button
                     onClick={generate}
-                    className="flex shrink-0 items-center gap-1.5 rounded-full border border-line px-3.5 py-3 text-[12.5px] font-semibold text-espresso-muted active:scale-95"
+                    disabled={loading}
+                    className="flex shrink-0 items-center gap-1.5 rounded-full border border-line px-3.5 py-3 text-[12.5px] font-semibold text-espresso-muted transition active:scale-95 disabled:opacity-60"
                   >
-                    <Sparkles size={14} /> 다시 찾기
+                    {loading ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Sparkles size={14} />
+                    )}
+                    {loading ? '찾는 중…' : '다시 찾기'}
                   </button>
                   <button
                     onClick={() =>

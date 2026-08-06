@@ -124,19 +124,42 @@ export default function RouteSheet({
     flash('GPX 파일을 내보냈어요');
   };
 
+  /**
+   * Strava 는 시각(<time>) 정보가 없는 GPX 를 거부한다.
+   * 기록한 러닝은 실제 시각을 쓰고, 만든 코스는 설정 페이스로 시각을 합성해
+   * '예상 페이스 러닝'으로 올라가게 한다. (GPX 내보내기는 시각 없이 순수 경로 유지)
+   */
+  const gpxForStrava = () => {
+    if (view.times) return gpxOf();
+    const paceMs = api.settings.paceSecPerKm * 1000;
+    const startT = Date.now() - route.distanceKm * paceMs;
+    const times: number[] = [startT];
+    let t = startT;
+    for (const seg of route.segments) {
+      t += (seg.lengthM / 1000) * paceMs;
+      times.push(t);
+    }
+    return buildGpx({
+      name: view.name,
+      coords: route.coords,
+      elevations: route.elevations,
+      times,
+    });
+  };
+
   const doStrava = async () => {
     const workerUrl = api.settings.stravaWorkerUrl;
     const token = loadToken();
     // Worker 미연결이면 지금 바로 되는 경로: GPX 저장 + 업로드 페이지
     if (!workerUrl || !token) {
-      downloadGpx(view.name, gpxOf());
+      downloadGpx(view.name, gpxForStrava());
       window.open(STRAVA_UPLOAD_PAGE, '_blank', 'noopener');
       flash('GPX 저장 · Strava 업로드 페이지를 열었어요');
       return;
     }
     setUploading(true);
     try {
-      await uploadGpx({ workerUrl, token, name: view.name, gpx: gpxOf() });
+      await uploadGpx({ workerUrl, token, name: view.name, gpx: gpxForStrava() });
       flash('Strava에 업로드했어요 🎉');
     } catch (e) {
       flash(e instanceof Error ? e.message : '업로드에 실패했어요');
