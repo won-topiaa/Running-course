@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Pause, Play, Square, X, Zap } from 'lucide-react';
 import LiveMap from './LiveMap';
 import RouteSheet from './RouteSheet';
+import { savedFromView } from '../lib/savedRoutes';
 import { useRunRecorder } from '../lib/useRunRecorder';
 import { wakeLockSupported } from '../lib/wakeLock';
 import { buildResult } from '../lib/routing';
@@ -30,6 +31,9 @@ export default function RecordScreen({
 }) {
   const rec = useRunRecorder(planned?.route.coords[0] ?? api.settings.homeLocation);
   const [name] = useState(() => (planned ? `${planned.name} 따라 뛰기` : runName()));
+
+  // 종료 시 자동 저장된 기록 id — 마이 통계의 데이터 원천이 된다
+  const autoSaved = useRef<string | null>(null);
 
   // 계획 경로를 어디까지 지났는지 (뒤로 가지 않는 인덱스)
   const progIdx = useRef(0);
@@ -65,6 +69,7 @@ export default function RecordScreen({
       source: 'gps',
       durationSec: rec.elapsedSec,
       times: rec.times,
+      savedId: autoSaved.current ?? undefined,
     };
     return (
       <RouteSheet
@@ -195,7 +200,24 @@ export default function RecordScreen({
                 </button>
               )}
               <button
-                onClick={rec.stop}
+                onClick={() => {
+                  // 데모가 아니면 자동으로 내 코스에 저장 — 마이 통계가 여기서 나온다
+                  if (!rec.demo && rec.coords.length > 1 && !autoSaved.current) {
+                    const route = buildResult(rec.coords, rec.elevations, 'offline', [
+                      rec.coords[0],
+                    ]);
+                    const saved = savedFromView({
+                      name,
+                      route,
+                      kind: 'recorded',
+                      source: 'gps',
+                      durationSec: rec.elapsedSec,
+                    });
+                    api.addSavedRoute(saved);
+                    autoSaved.current = saved.id;
+                  }
+                  rec.stop();
+                }}
                 className="flex h-16 flex-1 items-center justify-center gap-2 rounded-full bg-espresso text-[15px] font-bold text-white active:scale-[0.98]"
               >
                 <Square size={18} fill="#fff" /> 종료 · 저장

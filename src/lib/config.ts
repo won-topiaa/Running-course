@@ -18,6 +18,10 @@ export interface Settings {
   stravaWorkerUrl: string | null;
   /** 기본 러닝 페이스 (초/km) */
   paceSecPerKm: number;
+  /** 이번 주 러닝 목표 거리 (km) */
+  weekGoalKm: number;
+  /** 기기 동기화 Worker 주소 (없으면 파일 내보내기/가져오기만) */
+  syncWorkerUrl: string | null;
   /** 홈/시작 위치 */
   homeLocation: LatLng;
 }
@@ -38,6 +42,7 @@ const ENV_KAKAO = import.meta.env.VITE_KAKAO_JS_KEY?.trim() || null;
 const ENV_ORS = import.meta.env.VITE_ORS_API_KEY?.trim() || null;
 const ENV_MAPBOX = import.meta.env.VITE_MAPBOX_TOKEN?.trim() || null;
 const ENV_STRAVA = import.meta.env.VITE_STRAVA_WORKER_URL?.trim() || null;
+const ENV_SYNC = import.meta.env.VITE_SYNC_WORKER_URL?.trim() || null;
 
 /** 서울시청 */
 export const DEFAULT_LOCATION: LatLng = [37.5665, 126.978];
@@ -49,6 +54,8 @@ export function defaultSettings(): Settings {
     mapboxToken: ENV_MAPBOX,
     stravaWorkerUrl: ENV_STRAVA,
     paceSecPerKm: 360, // 6'00"/km
+    weekGoalKm: 15,
+    syncWorkerUrl: ENV_SYNC,
     homeLocation: DEFAULT_LOCATION,
   };
 }
@@ -67,6 +74,7 @@ export function loadSettings(): Settings {
         orsKey: ENV_ORS ?? saved.orsKey ?? ORS_DEFAULT,
         mapboxToken: ENV_MAPBOX ?? saved.mapboxToken ?? null,
         stravaWorkerUrl: ENV_STRAVA ?? saved.stravaWorkerUrl ?? null,
+        syncWorkerUrl: ENV_SYNC ?? saved.syncWorkerUrl ?? null,
       };
     }
   } catch {

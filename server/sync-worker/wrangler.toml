@@ -1,0 +1,12 @@
+name = "runcourse-sync"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://won-topiaa.github.io,http://localhost:5173,http://localhost:4173"
+
+# KV 네임스페이스 — 배포 전에 아래 명령으로 만들고 id 를 채우세요:
+#   npx wrangler kv namespace create SYNC
+[[kv_namespaces]]
+binding = "SYNC"
+id = "여기에-생성된-id"

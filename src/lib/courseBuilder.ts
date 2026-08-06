@@ -7,7 +7,7 @@
 // 후보들은 서로 독립이므로 병렬로 생성한다.
 // ---------------------------------------------------------------------------
 
-import { nearestNeighborOrder } from './geo';
+import { destinationPoint, nearestNeighborOrder } from './geo';
 import {
   RoutingError,
   type RouteResult,
@@ -120,8 +120,52 @@ export async function buildFromPins(
 }
 
 export interface DistanceBuildOptions {
-  /** '다시 찾기' 때마다 올려서 새로운 루프 후보를 얻는 시드 오프셋 */
+  /** '다시 찾기' 때마다 올려서 새로운 후보를 얻는 시드 오프셋 */
   seedBase?: number;
+  /** true 면 시작점으로 돌아오지 않는 편도 코스 */
+  oneWay?: boolean;
+}
+
+const DIRECTION_NAMES = ['북', '북동', '동', '남동', '남', '남서', '서', '북서'];
+
+function directionLabel(bearingDeg: number): string {
+  const idx = Math.round((((bearingDeg % 360) + 360) % 360) / 45) % 8;
+  return `${DIRECTION_NAMES[idx]}쪽 방면`;
+}
+
+/**
+ * 시작점에서 한 방향으로 뻗는 편도 코스.
+ * 직선거리 목표 × 축소계수로 끝점을 잡아 실제 도로로 잇고,
+ * 실측 거리로 끝점 거리를 보정해 목표에 수렴시킨다(왕복과 같은 감쇠 보정).
+ */
+async function oneWayFromStart(
+  provider: RoutingProvider,
+  start: LatLng,
+  targetKm: number,
+  bearingDeg: number,
+): Promise<RouteResult> {
+  let scale = 0.8; // 도로는 직선보다 길게 감기므로 처음부터 줄여 잡는다
+  let best: RouteResult | null = null;
+  let bestErr = Infinity;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const d = targetKm * 1000 * scale;
+    // 중간점을 살짝 비껴 놓아 큰길만 따라가는 단조로운 직선을 피한다
+    const mid = destinationPoint(start, bearingDeg + 18, d * 0.48);
+    const end = destinationPoint(start, bearingDeg, d);
+    const r = await provider.route([start, mid, end]);
+    const err = Math.abs(r.distanceKm - targetKm);
+    if (err < bestErr) {
+      bestErr = err;
+      best = r;
+    }
+    if (err / targetKm < 0.1 || r.distanceKm <= 0) break;
+    const raw = targetKm / r.distanceKm;
+    scale *= Math.max(0.6, Math.min(1.4, 1 + (raw - 1) * 0.75));
+  }
+
+  if (!best) throw new RoutingError('no_route', '편도 코스를 만들지 못했어요.');
+  return best;
 }
 
 /**
@@ -135,6 +179,21 @@ export async function buildFromDistance(
   provider: RoutingProvider,
   opts: DistanceBuildOptions = {},
 ): Promise<BuiltRoute[]> {
+  if (opts.oneWay) {
+    // 편도: 서로 다른 네 방향으로 후보를 만들고, '다시 찾기'마다 방향을 회전
+    const base = ((opts.seedBase ?? 0) * 53) % 360;
+    const bearings = [0, 90, 180, 270].map((b) => (base + b) % 360);
+    const built = await settleBuilt(
+      bearings.map((b) => oneWayFromStart(provider, start, targetKm, b)),
+      style,
+      targetKm,
+      bearings.map(directionLabel),
+    );
+    return dedupe(built)
+      .sort((a, b) => b.matchScore - a.matchScore)
+      .slice(0, 3);
+  }
+
   // 굴곡/경사 스타일은 경유 지점을 늘려 더 다양한 기복을 유도
   const points = style === 'rolling' || style === 'hilly' ? 6 : 4;
   const base = (opts.seedBase ?? 0) * 101; // 시도마다 겹치지 않는 시드 대역

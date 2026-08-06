@@ -91,7 +91,10 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     const build = (p: RoutingProvider): Promise<BuiltRoute[]> =>
       mode === 'pins'
         ? buildFromPins(waypoints, style, p, { loop: returnToStart })
-        : buildFromDistance(start, targetKm, style, p, { seedBase: attempt });
+        : buildFromDistance(start, targetKm, style, p, {
+            seedBase: attempt,
+            oneWay: !returnToStart,
+          });
 
     // ORS → OSRM(키 불필요) → 데모(직선) 순으로 내려가며 시도
     let provider: RoutingProvider | null = makeProvider(api.settings.orsKey);
@@ -255,7 +258,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                 <InputRow
                   dot="#FF7A59"
                   label="목표"
-                  value={`${targetKm}km 왕복 코스`}
+                  value={`${targetKm}km ${returnToStart ? '왕복' : '편도'} 코스`}
                 />
               </>
             ) : (
@@ -283,32 +286,28 @@ export default function BuildScreen({ api }: { api: AppApi }) {
               />
             )}
 
-            {/* 핀 모드: 시작점으로 돌아올지 선택 */}
-            {mode === 'pins' && (
-              <>
-                <div className="my-1 h-px bg-line" />
-                <div className="flex rounded-full bg-tint p-1">
-                  <SegBtn
-                    active={returnToStart}
-                    onClick={() => {
-                      setReturnToStart(true);
-                      reset();
-                    }}
-                  >
-                    🔄 시작점 복귀
-                  </SegBtn>
-                  <SegBtn
-                    active={!returnToStart}
-                    onClick={() => {
-                      setReturnToStart(false);
-                      reset();
-                    }}
-                  >
-                    ➡️ 편도
-                  </SegBtn>
-                </div>
-              </>
-            )}
+            {/* 왕복(시작점 복귀) / 편도 — 두 모드 공통 */}
+            <div className="my-1 h-px bg-line" />
+            <div className="flex rounded-full bg-tint p-1">
+              <SegBtn
+                active={returnToStart}
+                onClick={() => {
+                  setReturnToStart(true);
+                  reset();
+                }}
+              >
+                🔄 왕복
+              </SegBtn>
+              <SegBtn
+                active={!returnToStart}
+                onClick={() => {
+                  setReturnToStart(false);
+                  reset();
+                }}
+              >
+                ➡️ 편도
+              </SegBtn>
+            </div>
           </div>
         </div>
       </div>
