@@ -65,14 +65,14 @@ export function evaluateStyle(route: RouteResult, style: RunStyle): StyleEval {
       const lowAscent = clamp01(1 - m.ascentPerKm / 22);
       const flatness = clamp01(m.flatSharePct / 90);
       score = 0.6 * lowAscent + 0.4 * flatness;
-      reason = `누적 상승 ${m.ascentPerKm.toFixed(0)}m/km, 평지 비율 ${m.flatSharePct.toFixed(0)}% — 일정한 페이스에 좋아요.`;
+      reason = `1km당 오르막 ${m.ascentPerKm.toFixed(0)}m, 평지 비율 ${m.flatSharePct.toFixed(0)}% — 일정한 페이스에 좋아요.`;
       break;
     }
     case 'gentle': {
       // 완만: km당 상승 12~20m 부근이 최적
       const target = 16;
       score = clamp01(1 - Math.abs(m.ascentPerKm - target) / 22);
-      reason = `누적 상승 ${m.ascentPerKm.toFixed(0)}m/km로 부담 없이 살짝 기복 있는 코스예요.`;
+      reason = `1km당 오르막 ${m.ascentPerKm.toFixed(0)}m로 부담 없이 살짝 기복 있는 코스예요.`;
       break;
     }
     case 'rolling': {
@@ -86,7 +86,7 @@ export function evaluateStyle(route: RouteResult, style: RunStyle): StyleEval {
       const climb = clamp01(m.ascentPerKm / 45);
       const steep = clamp01(m.maxGradePct / 12);
       score = 0.6 * climb + 0.4 * steep;
-      reason = `누적 상승 ${m.ascentPerKm.toFixed(0)}m/km, 최대 경사 ${m.maxGradePct.toFixed(1)}% — 언덕 훈련에 제격.`;
+      reason = `1km당 오르막 ${m.ascentPerKm.toFixed(0)}m, 최대 경사 ${m.maxGradePct.toFixed(1)}% — 언덕 훈련에 제격.`;
       break;
     }
   }

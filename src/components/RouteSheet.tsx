@@ -6,6 +6,7 @@ import {
   Download,
   Loader2,
   Mountain,
+  Play,
   Share2,
   Timer,
   TrendingUp,
@@ -226,7 +227,7 @@ export default function RouteSheet({
           {/* 스탯 */}
           <div className="mt-3 grid grid-cols-3 gap-2">
             <Metric icon={<Timer size={15} />} value={timeLabel.replace('약 ', '')} label="시간" />
-            <Metric icon={<TrendingUp size={15} />} value={`${route.ascentM}m`} label="누적 상승" />
+            <Metric icon={<TrendingUp size={15} />} value={`${route.ascentM}m`} label="총 오르막" />
             <Metric icon={<Mountain size={15} />} value={`${route.maxGradePct}%`} label="최대 경사" />
           </div>
 
@@ -239,6 +240,19 @@ export default function RouteSheet({
               ascentM={route.ascentM}
             />
           </div>
+
+          {/* 이 경로 따라 뛰기 — 기록 요약에서는 이미 뛴 것이라 숨긴다 */}
+          {mode !== 'summary' && (
+            <button
+              onClick={() => {
+                onClose();
+                api.startRecord({ name: view.name, route });
+              }}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-espresso py-3.5 text-[14px] font-bold text-white active:scale-[0.98]"
+            >
+              <Play size={16} fill="#fff" /> 이 경로 따라 뛰기
+            </button>
+          )}
 
           {/* 카카오맵 링크 — 코스 출발점까지 길찾기 */}
           <KakaoLinkRow name={view.name} point={route.coords[0]} className="mt-4" />

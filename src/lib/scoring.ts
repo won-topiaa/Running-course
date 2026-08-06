@@ -184,14 +184,14 @@ function explain(
       course.elevation.category === 'hilly'
     ) {
       reasons.push(
-        `언덕 훈련에 제격 (누적 상승 ${course.elevation.gainM}m, 최대 경사 ${course.elevation.maxGradePct}%).`,
+        `언덕 훈련에 제격 (총 오르막 ${course.elevation.gainM}m, 최대 경사 ${course.elevation.maxGradePct}%).`,
       );
     } else if (
       prefs.gradientPref === 'flat' &&
       course.elevation.category === 'hilly'
     ) {
       cautions.push(
-        `평지를 원하셨지만 언덕이 많아요 (누적 상승 ${course.elevation.gainM}m).`,
+        `평지를 원하셨지만 언덕이 많아요 (총 오르막 ${course.elevation.gainM}m).`,
       );
     } else if (
       prefs.gradientPref === 'hilly' &&

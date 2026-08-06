@@ -35,6 +35,7 @@ export interface AppApi {
   addSavedRoute: (r: SavedRoute) => void;
   removeSavedRoute: (id: string) => void;
   // 실시간 기록 / 경로 보기
-  startRecord: () => void;
+  /** planned 를 주면 그 경로를 따라 뛰는 모드로 시작한다 */
+  startRecord: (planned?: { name: string; route: RouteResult } | null) => void;
   viewRoute: (v: RouteView) => void;
 }

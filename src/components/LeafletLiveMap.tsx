@@ -13,7 +13,13 @@ function Follow({ pos }: { pos: LatLng | null }) {
 }
 
 /** 기록 중 라이브 트랙 지도 — 현재 위치를 따라가며 지나온 경로를 그린다 */
-export default function LeafletLiveMap({ coords, center, mapboxToken }: LiveMapProps) {
+export default function LeafletLiveMap({
+  coords,
+  center,
+  mapboxToken,
+  plannedPath,
+  traveled,
+}: LiveMapProps) {
   const cur = coords.length ? coords[coords.length - 1] : null;
   return (
     <MapContainer
@@ -24,7 +30,31 @@ export default function LeafletLiveMap({ coords, center, mapboxToken }: LiveMapP
       scrollWheelZoom
     >
       <BaseTiles token={mapboxToken} />
-      {coords.length > 1 && (
+
+      {/* 아직 안 뛴 계획 구간 — 눈금(점선) */}
+      {plannedPath && plannedPath.length > 1 && (
+        <Polyline
+          positions={plannedPath as [number, number][]}
+          pathOptions={{ color: '#6B615B', weight: 6, opacity: 0.45, dashArray: '2 14', lineCap: 'round' }}
+        />
+      )}
+      {/* 지나온 계획 구간 — 경사 색상으로 채워진다 */}
+      {traveled?.map((g, i) => (
+        <Polyline
+          key={`tv${i}`}
+          positions={g.positions as [number, number][]}
+          pathOptions={{ color: '#fff', weight: 9, opacity: 0.9 }}
+        />
+      ))}
+      {traveled?.map((g, i) => (
+        <Polyline
+          key={`tvc${i}`}
+          positions={g.positions as [number, number][]}
+          pathOptions={{ color: g.color, weight: 6, opacity: 1 }}
+        />
+      ))}
+
+      {!plannedPath && coords.length > 1 && (
         <>
           <Polyline positions={coords as [number, number][]} pathOptions={{ color: '#fff', weight: 8, opacity: 0.9 }} />
           <Polyline positions={coords as [number, number][]} pathOptions={{ color: '#FF7A59', weight: 5, opacity: 1 }} />

@@ -3,6 +3,7 @@ import {
   ChevronDown,
   Crosshair,
   Loader2,
+  Play,
   Route as RouteIcon,
   Sparkles,
   Undo2,
@@ -154,14 +155,22 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           route={selected?.route ?? null}
           alternatives={alternatives}
           onMapClick={onMapClick}
+          onPinClick={
+            mode === 'pins'
+              ? (i) => {
+                  setWaypoints((w) => w.filter((_, k) => k !== i));
+                  reset();
+                }
+              : undefined
+          }
           kakaoKey={api.settings.kakaoJsKey}
           mapboxToken={api.settings.mapboxToken}
         />
       </div>
 
       {/* ── 상단 떠 있는 입력 카드 ─────────────────────────── */}
-      <div className="absolute inset-x-0 top-0 z-[500] px-3 pt-3">
-        <div className="mx-auto max-w-md overflow-hidden rounded-3xl border border-line/70 bg-paper/95 shadow-card backdrop-blur-md">
+      <div className="absolute inset-x-0 top-0 z-[500] px-3 pt-3 sm:inset-x-auto sm:left-0 sm:w-[420px]">
+        <div className="mx-auto w-full max-w-md sm:mx-0 overflow-hidden rounded-3xl border border-line/70 bg-paper/95 shadow-card backdrop-blur-md">
           {/* 헤더 */}
           <div className="flex items-center gap-2 px-4 pt-3.5">
             <span className="grid h-7 w-7 place-items-center rounded-lg bg-coral">
@@ -234,7 +243,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                 value={
                   waypoints.length === 0
                     ? '지도를 눌러 지점을 찍어주세요'
-                    : `${waypoints.length}개 지점 (최대 6개)`
+                    : `${waypoints.length}개 지점 · 핀을 누르면 삭제`
                 }
                 action={
                   waypoints.length > 0 ? (
@@ -282,6 +291,22 @@ export default function BuildScreen({ api }: { api: AppApi }) {
         </div>
       </div>
 
+      {/* ── 우측 상단 경사 색상 범례 ───────────────────────── */}
+      <div className="pointer-events-none absolute right-3 top-3 z-[500] rounded-2xl border border-line/70 bg-paper/95 p-2.5 shadow-card backdrop-blur-md">
+        <p className="mb-1.5 text-[10px] font-bold text-espresso-muted">경사</p>
+        <div className="space-y-1">
+          {[...GRADE_LEGEND].reverse().map((g) => (
+            <div key={g.band} className="flex items-center gap-1.5">
+              <span
+                className="h-2 w-4 rounded-full"
+                style={{ background: GRADE_COLORS[g.band] }}
+              />
+              <span className="text-[10px] text-espresso-muted">{g.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* ── 우측 원형 플로팅 버튼 ─────────────────────────── */}
       <div className="absolute right-3 top-[46%] z-[500] flex flex-col gap-2">
         <RoundBtn label="내 위치" onClick={useMyLocation}>
@@ -303,25 +328,45 @@ export default function BuildScreen({ api }: { api: AppApi }) {
       {/* ── 지도 위 거리 슬라이더 (거리 모드) ──────────────── */}
       {mode === 'distance' && (
         <div
-          className="absolute inset-x-0 z-[500] px-3"
+          className="absolute inset-x-0 z-[500] px-3 sm:inset-x-auto sm:left-0 sm:w-[420px]"
           style={{ bottom: sheetOpen ? 'calc(46vh + 156px)' : '166px' }}
         >
-          <div className="mx-auto flex max-w-md items-center gap-3 rounded-full border border-line/70 bg-paper/95 py-2.5 pl-3 pr-4 shadow-card backdrop-blur-md">
+          <div className="mx-auto flex w-full max-w-md items-center gap-3 rounded-full sm:mx-0 border border-line/70 bg-paper/95 py-2.5 pl-3 pr-4 shadow-card backdrop-blur-md">
             <span className="shrink-0 rounded-full bg-tint px-3 py-1.5 text-[12px] font-bold text-espresso">
               거리
             </span>
-            <input
-              type="range"
-              min={1}
-              max={15}
-              step={0.5}
-              value={targetKm}
-              onChange={(e) => {
-                setTargetKm(Number(e.target.value));
-                reset();
-              }}
-              className="coral min-w-0 flex-1"
-            />
+            <div className="min-w-0 flex-1">
+              <input
+                type="range"
+                min={1}
+                max={15}
+                step={0.5}
+                value={targetKm}
+                onChange={(e) => {
+                  setTargetKm(Number(e.target.value));
+                  reset();
+                }}
+                className="coral w-full"
+                list="km-ticks"
+              />
+              {/* 눈금 — 1·5·10·15km 위치 표시 */}
+              <div className="relative mt-1 h-3.5">
+                {[1, 5, 10, 15].map((v) => (
+                  <span
+                    key={v}
+                    className="absolute -translate-x-1/2 text-[9.5px] font-semibold text-espresso-soft"
+                    style={{ left: `${((v - 1) / 14) * 100}%` }}
+                  >
+                    {v}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <datalist id="km-ticks">
+              {[1, 5, 10, 15].map((v) => (
+                <option key={v} value={v} />
+              ))}
+            </datalist>
             <span className="w-[62px] shrink-0 text-right text-[16px] font-extrabold text-espresso">
               {targetKm}
               <span className="text-[11px] font-bold text-espresso-muted">km</span>
@@ -331,8 +376,8 @@ export default function BuildScreen({ api }: { api: AppApi }) {
       )}
 
       {/* ── 바텀시트 ──────────────────────────────────────── */}
-      <div className="absolute inset-x-0 bottom-[100px] z-[600] px-3">
-        <div className="mx-auto max-w-md overflow-hidden rounded-4xl border border-line/70 bg-paper shadow-card">
+      <div className="absolute inset-x-0 bottom-[100px] z-[600] px-3 sm:inset-x-auto sm:left-0 sm:w-[420px]">
+        <div className="mx-auto w-full max-w-md sm:mx-0 overflow-hidden rounded-4xl border border-line/70 bg-paper shadow-card">
           {/* 핸들 */}
           <button
             onClick={() => setSheetOpen((v) => !v)}
@@ -426,18 +471,25 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                     onClick={() =>
                       selected &&
                       api.viewRoute({
-                        name: `${styleLabel(selected.styleEval.style)} ${formatDistance(
-                          selected.route.distanceKm,
-                        )} 코스`,
+                        name: courseName(selected),
                         route: selected.route,
                         kind: 'built',
                         style: selected.styleEval.style,
                         source: selected.route.source,
                       })
                     }
-                    className="flex-1 rounded-full bg-espresso py-3 text-[13.5px] font-bold text-white active:scale-[0.98]"
+                    className="shrink-0 rounded-full border border-line px-3.5 py-3 text-[12.5px] font-semibold text-espresso-muted active:scale-95"
                   >
-                    저장 · 공유하기
+                    저장 · 공유
+                  </button>
+                  <button
+                    onClick={() =>
+                      selected &&
+                      api.startRecord({ name: courseName(selected), route: selected.route })
+                    }
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-espresso py-3 text-[13.5px] font-bold text-white active:scale-[0.98]"
+                  >
+                    <Play size={15} fill="#fff" /> 이 경로로 뛰기
                   </button>
                 </div>
               </>
@@ -516,8 +568,11 @@ export default function BuildScreen({ api }: { api: AppApi }) {
 
 const styleLabel = (s: RunStyle) => RUN_STYLES.find((x) => x.id === s)?.label ?? '러닝';
 
+const courseName = (b: BuiltRoute) =>
+  `${styleLabel(b.styleEval.style)} ${formatDistance(b.route.distanceKm)} 코스`;
+
 /**
- * "누적 상승 78m → 12m 로 줄였어요" 형태의 문장형 헤드라인.
+ * "총 오르막 78m → 12m 로 줄였어요" 형태의 문장형 헤드라인.
  * 후보들 중 선택된 코스가 원하는 스타일에서 얼마나 나아졌는지를 대비로 보여준다.
  */
 function buildHeadline(
@@ -536,7 +591,7 @@ function buildHeadline(
     const better = wantsLess ? mine < rival : mine > rival;
     if (better && Math.abs(rival - mine) >= 5) {
       return {
-        lead: '누적 상승',
+        lead: '총 오르막',
         from: `${rival}m`,
         value: `${mine}m`,
         tail: wantsLess ? '로 줄였어요' : '로 늘렸어요',
@@ -547,7 +602,7 @@ function buildHeadline(
     lead: `${styleLabel(style)} ·`,
     from: null,
     value: formatDistance(sel.route.distanceKm),
-    tail: `· 누적 상승 ${mine}m`,
+    tail: `· 총 오르막 ${mine}m`,
   };
 }
 

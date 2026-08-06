@@ -88,6 +88,11 @@ function smooth(values: number[]): number[] {
   });
 }
 
+/** 경사를 신뢰할 수 있는 최소 구간 길이(m). 이보다 짧으면 고도 오차가 그대로 증폭된다. */
+const GRADE_WINDOW_M = 25;
+/** 사람이 뛸 수 있는 현실적인 경사 상한(%) — 이를 넘으면 데이터 오류로 본다 */
+const MAX_REAL_GRADE = 35;
+
 export function buildResult(
   coords: LatLng[],
   rawElev: number[],
@@ -98,7 +103,6 @@ export function buildResult(
   let distance = 0;
   let ascent = 0;
   let descent = 0;
-  let maxGrade = 0;
   const segments: RouteSegment[] = [];
 
   for (let i = 1; i < coords.length; i++) {
@@ -107,10 +111,27 @@ export function buildResult(
     const dz = elevations[i] - elevations[i - 1];
     if (dz > 0) ascent += dz;
     else descent += -dz;
-    const grade = segLen > 0.5 ? (dz / segLen) * 100 : 0;
-    if (Math.abs(grade) > maxGrade) maxGrade = Math.abs(grade);
-    segments.push({ gradePct: grade, lengthM: segLen });
+    segments.push({ gradePct: 0, lengthM: segLen }); // 경사는 아래에서 창(window)으로 채운다
   }
+
+  // 경사는 구간 하나로 재면 짧은 구간에서 수백 %가 나온다(고도 오차 ÷ 몇 m).
+  // GRADE_WINDOW_M 이상 모인 묶음의 고도차로 계산해 묶음 전체에 같은 경사를 부여한다.
+  let bucketStart = 0;
+  let bucketLen = 0;
+  for (let i = 0; i < segments.length; i++) {
+    bucketLen += segments[i].lengthM;
+    const isLast = i === segments.length - 1;
+    if (bucketLen >= GRADE_WINDOW_M || isLast) {
+      const dz = elevations[i + 1] - elevations[bucketStart];
+      let grade = bucketLen > 1 ? (dz / bucketLen) * 100 : 0;
+      grade = Math.max(-MAX_REAL_GRADE, Math.min(MAX_REAL_GRADE, grade));
+      for (let k = bucketStart; k <= i; k++) segments[k].gradePct = grade;
+      bucketStart = i + 1;
+      bucketLen = 0;
+    }
+  }
+
+  const maxGrade = segments.reduce((m, s) => Math.max(m, Math.abs(s.gradePct)), 0);
 
   return {
     coords,
@@ -158,25 +179,39 @@ export class OrsProvider implements RoutingProvider {
     return parseOrsGeoJson(gj, 'ors', waypoints);
   }
 
+  /**
+   * 목표 거리에 맞춘 왕복 루프.
+   *
+   * ORS 의 round_trip 옵션은 length 를 잘 지키지 않는다(실측: 5km 요청에 6.8~8.3km).
+   * 그래서 다른 provider 와 동일하게 '고리 경유지를 실제 도로로 잇고 실측 거리로
+   * 반지름을 보정'하는 방식을 쓴다.
+   */
   async roundTrip(
     start: LatLng,
     targetKm: number,
     opts: RouteOptions = {},
   ): Promise<RouteResult> {
-    const body = {
-      coordinates: [[start[1], start[0]]],
-      elevation: true,
-      instructions: false,
-      options: {
-        round_trip: {
-          length: Math.round(targetKm * 1000),
-          points: opts.points ?? 5,
-          seed: opts.seed ?? 0,
-        },
+    const best = await ringRoundTrip(
+      async (ring) => {
+        const gj = await this.rawPost({
+          coordinates: ring.map(([lat, lng]) => [lng, lat]),
+          elevation: true,
+          instructions: false,
+        });
+        const line = gj?.features?.[0]?.geometry?.coordinates;
+        if (!Array.isArray(line) || line.length < 2) {
+          throw new RoutingError('no_route', '경로를 만들 수 없습니다.');
+        }
+        return {
+          coords: line.map((c: number[]) => [c[1], c[0]] as LatLng),
+          elevations: line.map((c: number[]) => c[2] ?? 0),
+        };
       },
-    };
-    const gj = await this.rawPost(body);
-    return parseOrsGeoJson(gj, 'ors', [start]);
+      start,
+      targetKm,
+      opts,
+    );
+    return buildResult(best.coords, best.elevations ?? [], 'ors', [start]);
   }
 
   /** 실제 fetch 후 GeoJSON 반환 (에러는 RoutingError 로 정규화) */
@@ -206,6 +241,54 @@ export class OrsProvider implements RoutingProvider {
     }
     return res.json();
   }
+}
+
+// --- 왕복 루프 공통 전략 ------------------------------------------------------
+
+interface Geometry {
+  coords: LatLng[];
+  elevations?: number[];
+}
+
+/**
+ * 목표 거리에 맞춘 왕복 루프를 '실제 도로'로 만든다.
+ *
+ * 시작점 주변에 고리 모양 경유지를 만들어 provider 의 도보 라우팅으로 잇고,
+ * 나온 경로의 실측 거리로 고리 반지름을 보정해 목표에 수렴시킨다(최대 3회).
+ * 라우팅 엔진의 자체 왕복 기능보다 거리 정확도가 훨씬 좋다.
+ */
+async function ringRoundTrip(
+  geomFn: (ring: LatLng[]) => Promise<Geometry>,
+  start: LatLng,
+  targetKm: number,
+  opts: RouteOptions = {},
+): Promise<Geometry> {
+  const points = opts.points ?? 5;
+  const seed = opts.seed ?? 0;
+  let scale = 1;
+  let best: Geometry | null = null;
+  let bestErr = Infinity;
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const ring = generateLoop(start, targetKm * scale, points, seed);
+    const geom = await geomFn(ring);
+    const km = pathLengthMeters(geom.coords) / 1000;
+    const err = Math.abs(km - targetKm);
+    if (err < bestErr) {
+      bestErr = err;
+      best = geom;
+    }
+    // 목표의 10% 안이면 충분히 맞은 것으로 본다
+    if (err / targetKm < 0.1 || km <= 0) break;
+    // 도로망은 연속적이지 않아 반지름을 그대로 비례 조정하면 진동한다.
+    // 보정량을 감쇠(0.75)시키고 한 번에 ±40% 넘게 흔들리지 않도록 제한한다.
+    const raw = targetKm / km;
+    const damped = 1 + (raw - 1) * 0.75;
+    scale *= Math.max(0.6, Math.min(1.4, damped));
+  }
+
+  if (!best) throw new RoutingError('no_route', '왕복 코스를 만들지 못했어요.');
+  return best;
 }
 
 // --- OSRM(도보) provider — 키 불필요 ----------------------------------------
@@ -263,38 +346,19 @@ export class OsrmProvider implements RoutingProvider {
     return this.withElevation(coords, waypoints);
   }
 
-  /**
-   * 목표 거리에 맞춘 왕복 루프.
-   * OSRM 에는 왕복 생성 기능이 없으므로 시작점 주변에 고리 모양 경유지를 만들어 실제 도로로
-   * 잇고, 실측 거리로 반지름을 보정해 목표에 수렴시킨다(최대 2회 보정).
-   */
+  /** 목표 거리에 맞춘 왕복 루프 (공통 ringRoundTrip 전략) */
   async roundTrip(
     start: LatLng,
     targetKm: number,
     opts: RouteOptions = {},
   ): Promise<RouteResult> {
-    const points = opts.points ?? 5;
-    const seed = opts.seed ?? 0;
-    let scale = 1;
-    let best: LatLng[] | null = null;
-    let bestErr = Infinity;
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const ring = generateLoop(start, targetKm * scale, points, seed);
-      const coords = await this.fetchGeometry(ring);
-      const km = pathLengthMeters(coords) / 1000;
-      const err = Math.abs(km - targetKm);
-      if (err < bestErr) {
-        bestErr = err;
-        best = coords;
-      }
-      // 목표의 8% 안이면 충분히 맞은 것으로 본다
-      if (err / targetKm < 0.08 || km <= 0) break;
-      scale *= targetKm / km;
-    }
-
-    if (!best) throw new RoutingError('no_route', '왕복 코스를 만들지 못했어요.');
-    return this.withElevation(best, [start]);
+    const best = await ringRoundTrip(
+      async (ring) => ({ coords: await this.fetchGeometry(ring) }),
+      start,
+      targetKm,
+      opts,
+    );
+    return this.withElevation(best.coords, [start]);
   }
 }
 

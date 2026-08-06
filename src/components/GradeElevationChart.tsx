@@ -85,7 +85,7 @@ export default function GradeElevationChart({
         <span>
           고도 {Math.round(min)}~{Math.round(max)}m
         </span>
-        {ascentM != null && <span>누적 상승 {ascentM}m</span>}
+        {ascentM != null && <span>총 오르막 {ascentM}m</span>}
       </div>
     </div>
   );

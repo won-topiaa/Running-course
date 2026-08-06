@@ -9,19 +9,30 @@ import {
 } from 'react-leaflet';
 import BaseTiles from './BaseTiles';
 import { labelPinHtml, numberPinHtml } from './mapMarkers';
+import { arrowHtml, directionMarkers, endpointHtml } from '../lib/routeDirection';
 import type { RouteMapProps } from './mapTypes';
 import { coloredSegments } from '../lib/routeColor';
 import type { RouteResult } from '../lib/routing';
 import type { LatLng } from '../lib/types';
 
 /** 번호 핀 */
-function numberIcon(n: number) {
+function numberIcon(n: number, deletable: boolean) {
   return L.divIcon({
     className: '',
-    html: numberPinHtml(n),
+    html: numberPinHtml(n, deletable),
     iconSize: [26, 30],
     iconAnchor: [13, 30],
   });
+}
+
+/** 진행 방향 화살표 */
+function arrowIcon(angleDeg: number) {
+  return L.divIcon({ className: '', html: arrowHtml(angleDeg), iconSize: [20, 20], iconAnchor: [10, 10] });
+}
+
+/** 출발/도착 배지 */
+function endpointIcon(kind: 'start' | 'finish') {
+  return L.divIcon({ className: '', html: endpointHtml(kind), iconSize: [52, 40], iconAnchor: [26, 40] });
 }
 
 /** 라벨 핀 (출발 등) */
@@ -73,6 +84,8 @@ export default function LeafletRouteMap({
   onMapClick,
   mapboxToken,
   alternatives = [],
+  onPinClick,
+  plannedPath,
 }: RouteMapProps) {
   const colored = coloredSegments(route);
 
@@ -86,6 +99,14 @@ export default function LeafletRouteMap({
     >
       <BaseTiles token={mapboxToken} />
       <ClickHandler onClick={onMapClick} />
+
+      {/* 아직 안 뛴 계획 경로 — 눈금(점선) */}
+      {plannedPath && plannedPath.length > 1 && (
+        <Polyline
+          positions={plannedPath as [number, number][]}
+          pathOptions={{ color: '#6B615B', weight: 5, opacity: 0.5, dashArray: '2 12', lineCap: 'round' }}
+        />
+      )}
 
       {/* 선택 안 된 후보 — 흐린 점선 */}
       {alternatives.map((alt, i) => (
@@ -117,9 +138,39 @@ export default function LeafletRouteMap({
         </>
       )}
 
+      {/* 진행 방향 — 어느 쪽으로 먼저 가는지 */}
+      {route &&
+        directionMarkers(route.coords).map((m, i) => (
+          <Marker
+            key={`dir${i}`}
+            position={m.pos as [number, number]}
+            icon={arrowIcon(m.angleDeg)}
+            interactive={false}
+          />
+        ))}
+      {route && route.coords.length > 1 && (
+        <>
+          <Marker
+            position={route.coords[0] as [number, number]}
+            icon={endpointIcon('start')}
+            interactive={false}
+          />
+          <Marker
+            position={route.coords[route.coords.length - 1] as [number, number]}
+            icon={endpointIcon('finish')}
+            interactive={false}
+          />
+        </>
+      )}
+
       {mode === 'pins' &&
         waypoints.map((w, i) => (
-          <Marker key={i} position={w as [number, number]} icon={numberIcon(i + 1)} />
+          <Marker
+            key={i}
+            position={w as [number, number]}
+            icon={numberIcon(i + 1, !!onPinClick)}
+            eventHandlers={onPinClick ? { click: () => onPinClick(i) } : undefined}
+          />
         ))}
       {mode === 'distance' && start && (
         <Marker position={start as [number, number]} icon={labelIcon('출발')} />

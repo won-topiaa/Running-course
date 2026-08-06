@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { labelPinHtml, numberPinHtml } from './mapMarkers';
+import { arrowHtml, directionMarkers, endpointHtml } from '../lib/routeDirection';
 import type { RouteMapProps } from './mapTypes';
 import { coloredSegments } from '../lib/routeColor';
 import type { LatLng } from '../lib/types';
@@ -14,12 +15,16 @@ export default function KakaoRouteMap({
   route,
   onMapClick,
   alternatives = [],
+  onPinClick,
+  plannedPath,
 }: RouteMapProps & { kakao: any }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const overlaysRef = useRef<any[]>([]);
   const clickRef = useRef(onMapClick);
   clickRef.current = onMapClick;
+  const pinClickRef = useRef(onPinClick);
+  pinClickRef.current = onPinClick;
 
   // 지도 생성
   useEffect(() => {
@@ -59,6 +64,19 @@ export default function KakaoRouteMap({
       };
       const toPath = (pts: LatLng[]) => pts.map((p) => new kakao.maps.LatLng(p[0], p[1]));
 
+      // 아직 안 뛴 계획 경로 — 눈금(점선)
+      if (plannedPath && plannedPath.length > 1) {
+        add(
+          new kakao.maps.Polyline({
+            path: toPath(plannedPath),
+            strokeWeight: 5,
+            strokeColor: '#6B615B',
+            strokeOpacity: 0.5,
+            strokeStyle: 'dot',
+          }),
+        );
+      }
+
       // 선택 안 된 후보 — 흐린 점선
       for (const alt of alternatives) {
         add(
@@ -93,16 +111,54 @@ export default function KakaoRouteMap({
         }
       }
 
+      // 진행 방향 화살표 + 출발/도착 — 어느 쪽으로 먼저 가는지 알려준다
+      if (route && route.coords.length > 1) {
+        for (const m of directionMarkers(route.coords)) {
+          add(
+            new kakao.maps.CustomOverlay({
+              position: new kakao.maps.LatLng(m.pos[0], m.pos[1]),
+              content: arrowHtml(m.angleDeg),
+              clickable: false,
+            }),
+          );
+        }
+        const last = route.coords[route.coords.length - 1];
+        add(
+          new kakao.maps.CustomOverlay({
+            position: new kakao.maps.LatLng(route.coords[0][0], route.coords[0][1]),
+            content: endpointHtml('start'),
+            yAnchor: 1,
+            clickable: false,
+          }),
+        );
+        add(
+          new kakao.maps.CustomOverlay({
+            position: new kakao.maps.LatLng(last[0], last[1]),
+            content: endpointHtml('finish'),
+            yAnchor: 1,
+            clickable: false,
+          }),
+        );
+      }
+
       if (mode === 'pins') {
-        waypoints.forEach((w, i) =>
+        waypoints.forEach((w, i) => {
+          const el = document.createElement('div');
+          el.innerHTML = numberPinHtml(i + 1, !!pinClickRef.current);
+          if (pinClickRef.current) {
+            el.addEventListener('click', (ev) => {
+              ev.stopPropagation();
+              pinClickRef.current?.(i);
+            });
+          }
           add(
             new kakao.maps.CustomOverlay({
               position: new kakao.maps.LatLng(w[0], w[1]),
-              content: numberPinHtml(i + 1),
+              content: el,
               yAnchor: 1,
             }),
-          ),
-        );
+          );
+        });
       } else if (start) {
         add(
           new kakao.maps.CustomOverlay({
@@ -126,7 +182,7 @@ export default function KakaoRouteMap({
     } catch {
       /* 무시 */
     }
-  }, [kakao, route, waypoints, start, mode]);
+  }, [kakao, route, waypoints, start, mode, alternatives, plannedPath]);
 
   return <div ref={boxRef} className="kakao-soft h-full w-full" />;
 }

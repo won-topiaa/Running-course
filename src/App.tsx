@@ -18,6 +18,7 @@ import {
   type SavedRoute,
 } from './lib/savedRoutes';
 import { captureTokenFromHash } from './lib/strava';
+import type { RouteResult } from './lib/routing';
 import { getConditions, type RunConditions } from './lib/weather';
 import type { AppApi, RouteView } from './ui/appApi';
 
@@ -41,6 +42,7 @@ export default function App() {
   const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>(loadRoutes);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
+  const [plannedRun, setPlannedRun] = useState<{ name: string; route: RouteResult } | null>(null);
   const [routeView, setRouteView] = useState<RouteView | null>(null);
 
   // 오늘의 러닝 컨디션
@@ -107,7 +109,10 @@ export default function App() {
       savedRoutes,
       addSavedRoute,
       removeSavedRoute,
-      startRecord: () => setRecordOpen(true),
+      startRecord: (planned) => {
+        setPlannedRun(planned ?? null);
+        setRecordOpen(true);
+      },
       viewRoute: setRouteView,
     }),
     [settings, conditions, savedIds, savedRoutes, toggleSaved, addSavedRoute, removeSavedRoute],
@@ -133,7 +138,16 @@ export default function App() {
       {routeView && (
         <RouteSheet view={routeView} api={api} onClose={() => setRouteView(null)} />
       )}
-      {recordOpen && <RecordScreen api={api} onClose={() => setRecordOpen(false)} />}
+      {recordOpen && (
+        <RecordScreen
+          api={api}
+          planned={plannedRun}
+          onClose={() => {
+            setRecordOpen(false);
+            setPlannedRun(null);
+          }}
+        />
+      )}
     </div>
   );
 }

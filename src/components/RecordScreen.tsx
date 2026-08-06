@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Pause, Play, Square, X, Zap } from 'lucide-react';
 import LiveMap from './LiveMap';
 import RouteSheet from './RouteSheet';
 import { useRunRecorder } from '../lib/useRunRecorder';
 import { wakeLockSupported } from '../lib/wakeLock';
 import { buildResult } from '../lib/routing';
-import { formatDuration, formatPace } from '../lib/format';
+import { formatDistance, formatDuration, formatPace } from '../lib/format';
+import { coloredSegments } from '../lib/routeColor';
+import { advanceProgress, progressRatio, remainingMeters } from '../lib/routeProgress';
+import type { RouteResult } from '../lib/routing';
 import type { AppApi, RouteView } from '../ui/appApi';
 
 function runName(): string {
@@ -15,9 +18,42 @@ function runName(): string {
   return `${d.getMonth() + 1}월 ${d.getDate()}일 ${part} 러닝`;
 }
 
-export default function RecordScreen({ api, onClose }: { api: AppApi; onClose: () => void }) {
-  const rec = useRunRecorder(api.settings.homeLocation);
-  const [name] = useState(runName);
+export default function RecordScreen({
+  api,
+  planned,
+  onClose,
+}: {
+  api: AppApi;
+  /** 따라 뛸 계획 경로 (없으면 자유 러닝) */
+  planned?: { name: string; route: RouteResult } | null;
+  onClose: () => void;
+}) {
+  const rec = useRunRecorder(planned?.route.coords[0] ?? api.settings.homeLocation);
+  const [name] = useState(() => (planned ? `${planned.name} 따라 뛰기` : runName()));
+
+  // 계획 경로를 어디까지 지났는지 (뒤로 가지 않는 인덱스)
+  const progIdx = useRef(0);
+  const cur = rec.coords.length ? rec.coords[rec.coords.length - 1] : null;
+  if (planned && cur) {
+    progIdx.current = advanceProgress(planned.route.coords, cur, progIdx.current);
+  }
+  const idx = progIdx.current;
+
+  // 지나온 구간은 경사 색상, 남은 구간은 눈금(점선)
+  const { traveled, remainPath, remainM, ratio } = useMemo(() => {
+    if (!planned) return { traveled: undefined, remainPath: undefined, remainM: 0, ratio: 0 };
+    const done: RouteResult = {
+      ...planned.route,
+      coords: planned.route.coords.slice(0, idx + 1),
+      segments: planned.route.segments.slice(0, Math.max(idx, 0)),
+    };
+    return {
+      traveled: idx > 0 ? coloredSegments(done) : [],
+      remainPath: planned.route.coords.slice(Math.max(idx, 0)),
+      remainM: remainingMeters(planned.route.coords, idx),
+      ratio: progressRatio(planned.route.coords, idx),
+    };
+  }, [planned, idx]);
 
   // 기록 종료 → 요약 시트
   if (rec.status === 'finished' && rec.coords.length > 1) {
@@ -51,7 +87,9 @@ export default function RecordScreen({ api, onClose }: { api: AppApi; onClose: (
       <div className="relative flex-1">
         <LiveMap
           coords={rec.coords}
-          center={api.settings.homeLocation}
+          center={planned?.route.coords[0] ?? api.settings.homeLocation}
+          plannedPath={remainPath}
+          traveled={traveled}
           kakaoKey={api.settings.kakaoJsKey}
           mapboxToken={api.settings.mapboxToken}
         />
@@ -76,9 +114,13 @@ export default function RecordScreen({ api, onClose }: { api: AppApi; onClose: (
       <div className="rounded-t-4xl bg-paper px-5 pb-8 pt-5 shadow-[0_-8px_24px_rgba(44,39,37,0.08)]">
         {rec.status === 'idle' ? (
           <div className="text-center">
-            <h2 className="text-[19px] font-extrabold text-espresso">지금 바로 뛰기</h2>
+            <h2 className="text-[19px] font-extrabold text-espresso">
+              {planned ? '이 경로로 뛰기' : '지금 바로 뛰기'}
+            </h2>
             <p className="mt-1 text-[13px] text-espresso-muted">
-              위치를 추적해 거리·시간·페이스를 실시간으로 기록해요.
+              {planned
+                ? `점선을 따라 ${formatDistance(planned.route.distanceKm)}. 지나간 구간은 경사 색으로 채워져요.`
+                : '위치를 추적해 거리·시간·페이스를 실시간으로 기록해요.'}
             </p>
             {(rec.error === 'no-geo' || rec.error === 'denied') && (
               <p className="mt-2 rounded-2xl bg-coral-50 px-3 py-2 text-[12px] text-coral-600">
@@ -110,6 +152,23 @@ export default function RecordScreen({ api, onClose }: { api: AppApi; onClose: (
               </span>
               <span className="mb-2 text-[16px] font-bold text-espresso-muted">km</span>
             </div>
+            {planned && (
+              <div className="mt-3">
+                <div className="mb-1 flex items-center justify-between text-[11.5px]">
+                  <span className="font-semibold text-espresso-muted">코스 진행</span>
+                  <span className="font-bold text-espresso">
+                    {Math.round(ratio * 100)}% · 남은 {formatDistance(remainM / 1000)}
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-tint">
+                  <div
+                    className="h-full rounded-full bg-coral transition-[width]"
+                    style={{ width: `${Math.round(ratio * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="mt-4 grid grid-cols-3 gap-2 text-center">
               <Live label="시간" value={formatDuration(rec.elapsedSec)} />
               <Live label="평균 페이스" value={rec.avgPaceSec ? `${formatPace(rec.avgPaceSec)}` : '--'} />

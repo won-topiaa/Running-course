@@ -3,11 +3,18 @@ import type { LiveMapProps } from './mapTypes';
 import type { LatLng } from '../lib/types';
 
 /** 카카오맵 기반 라이브 트랙 (기록 화면) */
-export default function KakaoLiveMap({ kakao, coords, center }: LiveMapProps & { kakao: any }) {
+export default function KakaoLiveMap({
+  kakao,
+  coords,
+  center,
+  plannedPath,
+  traveled,
+}: LiveMapProps & { kakao: any }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const lineRef = useRef<any>(null);
   const dotRef = useRef<any>(null);
+  const planRef = useRef<any[]>([]);
 
   useEffect(() => {
     const box = boxRef.current;
@@ -36,7 +43,36 @@ export default function KakaoLiveMap({ kakao, coords, center }: LiveMapProps & {
     if (!map || !kakao?.maps) return;
     try {
       const cur = coords.length ? coords[coords.length - 1] : null;
-      if (coords.length > 1) {
+
+      // 계획 경로: 남은 구간(점선) + 지나온 구간(경사 색상) 매번 다시 그린다
+      if (plannedPath || traveled) {
+        planRef.current.forEach((o) => o.setMap(null));
+        planRef.current = [];
+        const toPath = (pts: LatLng[]) => pts.map((p) => new kakao.maps.LatLng(p[0], p[1]));
+        if (plannedPath && plannedPath.length > 1) {
+          const pl = new kakao.maps.Polyline({
+            path: toPath(plannedPath),
+            strokeWeight: 6,
+            strokeColor: '#6B615B',
+            strokeOpacity: 0.45,
+            strokeStyle: 'dot',
+          });
+          pl.setMap(map);
+          planRef.current.push(pl);
+        }
+        for (const g of traveled ?? []) {
+          const pl = new kakao.maps.Polyline({
+            path: toPath(g.positions),
+            strokeWeight: 6,
+            strokeColor: g.color,
+            strokeOpacity: 1,
+          });
+          pl.setMap(map);
+          planRef.current.push(pl);
+        }
+      }
+
+      if (!plannedPath && coords.length > 1) {
         const path = coords.map((p: LatLng) => new kakao.maps.LatLng(p[0], p[1]));
         if (!lineRef.current) {
           lineRef.current = new kakao.maps.Polyline({
@@ -65,7 +101,7 @@ export default function KakaoLiveMap({ kakao, coords, center }: LiveMapProps & {
     } catch {
       /* 무시 */
     }
-  }, [kakao, coords]);
+  }, [kakao, coords, plannedPath, traveled]);
 
   return <div ref={boxRef} className="kakao-soft h-full w-full" />;
 }

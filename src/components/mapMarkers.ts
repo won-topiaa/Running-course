@@ -1,11 +1,14 @@
 // 지도 마커 HTML (Leaflet divIcon · 카카오 CustomOverlay 공용)
 
-/** 번호 핀 — 물방울 모양 */
-export function numberPinHtml(n: number): string {
-  return `<div style="display:flex;justify-content:center;transform:translateY(-2px)">
+/** 번호 핀 — 물방울 모양. deletable 이면 삭제 가능함을 알리는 × 배지를 붙인다. */
+export function numberPinHtml(n: number, deletable = false): string {
+  const badge = deletable
+    ? `<div style="position:absolute;top:-5px;right:-5px;width:15px;height:15px;border-radius:50%;background:#2C2725;color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center;border:1.5px solid #fff">×</div>`
+    : '';
+  return `<div style="position:relative;display:flex;justify-content:center;transform:translateY(-2px);cursor:pointer">
     <div style="background:#FF7A59;color:#fff;width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:grid;place-items:center;box-shadow:0 2px 6px rgba(44,39,37,.3);border:2px solid #fff">
       <span style="transform:rotate(45deg);font-size:12px;font-weight:800">${n}</span>
-    </div></div>`;
+    </div>${badge}</div>`;
 }
 
 /** 라벨 핀 — 글자가 들어가는 알약 모양 (예: 출발) */
