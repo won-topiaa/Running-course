@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import GradeElevationChart from './GradeElevationChart';
+import KakaoLinkRow from './KakaoLinkRow';
 import RouteMap from './RouteMap';
 import { GRADE_COLORS, GRADE_LEGEND, RUN_STYLES } from '../lib/routeStyle';
 import { buildGpx, downloadGpx } from '../lib/gpx';
@@ -215,6 +216,9 @@ export default function RouteSheet({
               ascentM={route.ascentM}
             />
           </div>
+
+          {/* 카카오맵 링크 — 코스 출발점까지 길찾기 */}
+          <KakaoLinkRow name={view.name} point={route.coords[0]} className="mt-4" />
 
           {/* 액션 */}
           <div className="mt-4 grid grid-cols-2 gap-2">

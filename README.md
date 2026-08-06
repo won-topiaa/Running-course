@@ -85,7 +85,8 @@
 
 | 서비스 | 역할 | 없을 때 | 발급 |
 |---|---|---|---|
-| **카카오맵** | 기본 지도(한국) | OpenStreetMap 폴백 | [developers.kakao.com](https://developers.kakao.com/console/app) |
+| **카카오맵 JS 키** | 기본 지도(한국) | OpenStreetMap 폴백 | [developers.kakao.com](https://developers.kakao.com/console/app) |
+| 카카오맵 **링크** | 길찾기·로드뷰 열기 | — (**키 불필요, 항상 동작**) | 없음 |
 | **OpenRouteService** | 코스 만들기의 실제 도로 경로·경사 | 오프라인 합성 경로 | [openrouteservice.org](https://openrouteservice.org/dev/#/signup) |
 | **Mapbox** | 카카오 대신 쓸 지도(선택) | 미사용 | [account.mapbox.com](https://account.mapbox.com/access-tokens/) |
 | **Strava Worker** | 자동 업로드(선택) | GPX 수동 업로드 | [`server/strava-worker`](server/strava-worker/README.md) |
@@ -97,6 +98,10 @@
   (`http://localhost:5173`, 배포 주소 등).
 - 도보 경로·고도는 카카오와 무관하게 **OpenRouteService**로 계산하고, 그 좌표를 지도 위에
   경사 색상 폴리라인으로 그립니다.
+- **카카오맵 링크**(`map.kakao.com/link/...`)는 **API 키가 필요 없습니다.** 도메인 등록이나
+  키 상태와 무관하게 항상 동작하므로, 코스 상세·경로 시트에서
+  **출발점까지 길찾기 · 지도 보기 · 로드뷰**를 카카오맵 앱/웹으로 바로 넘겨줍니다
+  (실제 내비게이션은 카카오맵에 맡기는 편이 정확합니다).
 - **Strava 자동 업로드**는 `client_secret` 을 브라우저에 둘 수 없어 중계 서버가 필요합니다.
   바로 배포할 수 있는 Cloudflare Worker 를 [`server/strava-worker`](server/strava-worker/README.md)
   에 포함해 두었습니다(무료·단일 파일, 5분 배포). 배포 전에도 **GPX 내보내기 → Strava 수동

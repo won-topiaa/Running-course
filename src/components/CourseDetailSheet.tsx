@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import GradeElevationChart from './GradeElevationChart';
+import KakaoLinkRow from './KakaoLinkRow';
 import PathMap from './PathMap';
 import ScenePhoto from './ScenePhoto';
 import { sceneForCourse } from '../lib/scene';
@@ -159,6 +160,9 @@ export default function CourseDetailSheet({
             <span className="font-bold text-espresso">경관 </span>
             {course.scenery.tags.join(' · ')}
           </div>
+
+          {/* 카카오맵 링크 */}
+          <KakaoLinkRow name={course.name} point={course.path[0]} className="mt-4" />
 
           {/* 팁 */}
           <div className="mt-3 flex gap-2 rounded-3xl bg-coral-50 p-4">
