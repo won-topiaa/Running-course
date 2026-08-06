@@ -3,6 +3,7 @@ import { Pause, Play, Square, X, Zap } from 'lucide-react';
 import LiveMap from './LiveMap';
 import RouteSheet from './RouteSheet';
 import { useRunRecorder } from '../lib/useRunRecorder';
+import { wakeLockSupported } from '../lib/wakeLock';
 import { buildResult } from '../lib/routing';
 import { formatDuration, formatPace } from '../lib/format';
 import type { AppApi, RouteView } from '../ui/appApi';
@@ -42,7 +43,7 @@ export default function RecordScreen({ api, onClose }: { api: AppApi; onClose: (
     );
   }
 
-  const running = rec.status === 'recording' || rec.status === 'paused';
+  const keepAwake = wakeLockSupported();
 
   return (
     <div className="fixed inset-0 z-[2000] flex flex-col bg-cream">
@@ -141,9 +142,13 @@ export default function RecordScreen({ api, onClose }: { api: AppApi; onClose: (
                 <Square size={18} fill="#fff" /> 종료 · 저장
               </button>
             </div>
-            {running && rec.status === 'paused' && (
-              <p className="mt-3 text-center text-[12px] font-medium text-coral-600">일시정지됨</p>
-            )}
+            <p className="mt-3 text-center text-[11.5px] font-medium">
+              {rec.status === 'paused' ? (
+                <span className="text-coral-600">일시정지됨</span>
+              ) : keepAwake ? (
+                <span className="text-espresso-soft">🔆 뛰는 동안 화면이 꺼지지 않아요</span>
+              ) : null}
+            </p>
           </>
         )}
       </div>

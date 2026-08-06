@@ -31,9 +31,15 @@
 ### 🎽 실시간 러닝 기록
 - 브라우저 GPS(`watchPosition`)로 **거리·시간·평균/현재 페이스**를 실시간 기록
 - 라이브 트랙 지도(현재 위치를 따라가며 지나온 경로 표시), 일시정지/재개/종료
+- **뛰는 동안 화면 꺼짐 방지**(Screen Wake Lock, 탭 복귀 시 자동 재획득)
 - 종료 후 **요약**(거리·시간·페이스·경사 고도)에서 바로 저장·공유·내보내기
 - GPS를 쓸 수 없는 환경(데스크톱 등)에서는 **데모 재생**으로 체험 가능
 - 홈의 "지금 바로 뛰기" 또는 만든 코스의 "이 코스로 뛰기"로 진입
+
+### 📱 홈 화면에 설치 (PWA)
+- 배포 주소를 폰에서 열고 **홈 화면에 추가**하면 앱처럼 실행됩니다(주소창 없는 standalone)
+- Android/Chrome 은 설치 버튼, iOS Safari 는 공유 → "홈 화면에 추가" 안내 배너 제공
+- 서비스 워커가 앱 셸을 캐시해 **오프라인에서도 실행**(지도 타일·실시간 API는 네트워크 필요)
 
 ### 💾 코스 저장 · 🔗 공유
 - 만든 코스·기록한 러닝을 **내 코스로 저장** → 저장 탭에서 다시 열기
@@ -42,8 +48,9 @@
 
 ### 📤 GPX 내보내기 · Strava
 - 어떤 코스/기록이든 **GPX 파일로 내보내기** → Strava·가민 커넥트 등에 업로드
-- "Strava에 올리기": GPX 저장 + Strava 업로드 페이지 열기(지금 바로 동작)
-- (선택) Strava Client ID 를 넣으면 OAuth 자동 업로드 배선 — *토큰 교환은 서버 콜백 필요*
+- "Strava에 올리기": 기본은 GPX 저장 + Strava 업로드 페이지 열기(**연결 없이 바로 동작**)
+- (선택) `server/strava-worker` 를 배포하고 주소를 넣으면 **버튼 한 번에 자동 업로드**
+  — OAuth 토큰 교환·업로드 중계를 Cloudflare Worker 가 처리 (아래 배포 문서 참고)
 
 ### 🔖 저장 & 👤 마이
 - 저장한 코스 모아보기(즐겨찾기 / 만든·기록한 코스)
@@ -68,7 +75,7 @@
 | **카카오맵** | 기본 지도(한국) | OpenStreetMap 폴백 | [developers.kakao.com](https://developers.kakao.com/console/app) |
 | **OpenRouteService** | 코스 만들기의 실제 도로 경로·경사 | 오프라인 합성 경로 | [openrouteservice.org](https://openrouteservice.org/dev/#/signup) |
 | **Mapbox** | 카카오 대신 쓸 지도(선택) | 미사용 | [account.mapbox.com](https://account.mapbox.com/access-tokens/) |
-| **Strava** | 자동 업로드(선택) | GPX 수동 업로드 | [strava.com/settings/api](https://www.strava.com/settings/api) |
+| **Strava Worker** | 자동 업로드(선택) | GPX 수동 업로드 | [`server/strava-worker`](server/strava-worker/README.md) |
 
 - **카카오맵**을 기본 지도로 씁니다(국내 대상). 지도 계층은 **스위처블** —
   카카오 JS SDK 를 불러올 수 있으면 카카오맵, 아니면 자동으로 Leaflet/OSM(또는 Mapbox)으로
@@ -77,9 +84,10 @@
   (`http://localhost:5173`, 배포 주소 등).
 - 도보 경로·고도는 카카오와 무관하게 **OpenRouteService**로 계산하고, 그 좌표를 지도 위에
   경사 색상 폴리라인으로 그립니다.
-- **Strava 자동 업로드**는 OAuth `client_secret` 을 다루는 서버리스 콜백(예: Cloudflare
-  Workers/Vercel Function)이 필요합니다. 프론트엔드는 authorize 단계까지 배선돼 있으며,
-  지금 바로 쓸 수 있는 경로는 **GPX 내보내기 → Strava 업로드**입니다.
+- **Strava 자동 업로드**는 `client_secret` 을 브라우저에 둘 수 없어 중계 서버가 필요합니다.
+  바로 배포할 수 있는 Cloudflare Worker 를 [`server/strava-worker`](server/strava-worker/README.md)
+  에 포함해 두었습니다(무료·단일 파일, 5분 배포). 배포 전에도 **GPX 내보내기 → Strava 수동
+  업로드**는 그대로 동작합니다.
 
 ## 배포 (GitHub Pages)
 
@@ -134,7 +142,11 @@ src/
 │  ├─ useRunRecorder.ts       # 실시간 GPS 기록 훅(+데모 폴백)
 │  ├─ kakaoLoader.ts          # 카카오맵 SDK 동적 로더
 │  ├─ useKakao.ts             # 카카오 로드 상태 훅(폴백 신호)
-│  └─ routeColor.ts           # 경사 색상 폴리라인 그룹(지도 공용)
+│  ├─ routeColor.ts           # 경사 색상 폴리라인 그룹(지도 공용)
+│  ├─ wakeLock.ts             # 러닝 중 화면 꺼짐 방지
+│  └─ registerSW.ts           # 서비스 워커 등록(프로덕션)
+├─ server/strava-worker/      # Strava 자동 업로드 Cloudflare Worker (선택 배포)
+├─ public/                    # manifest·서비스워커·앱 아이콘(PWA)
 ├─ data/
 │  ├─ courses.ts              # 서울 실제 코스 큐레이션 (14곳)
 │  ├─ feed.ts                 # 커뮤니티 공유 코스 샘플

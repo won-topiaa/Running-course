@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import BottomNav, { type Screen } from './components/BottomNav';
 import CourseDetailSheet from './components/CourseDetailSheet';
+import InstallPrompt from './components/InstallPrompt';
 import RecordScreen from './components/RecordScreen';
 import RouteSheet from './components/RouteSheet';
 import HomeScreen from './screens/HomeScreen';
@@ -16,6 +17,7 @@ import {
   persistRoutes,
   type SavedRoute,
 } from './lib/savedRoutes';
+import { captureTokenFromHash } from './lib/strava';
 import { getConditions, type RunConditions } from './lib/weather';
 import type { AppApi, RouteView } from './ui/appApi';
 
@@ -49,6 +51,11 @@ export default function App() {
       alive = false;
     };
   }, [settings.homeLocation]);
+
+  // Strava OAuth 복귀 — 해시에 담겨온 토큰 저장
+  useEffect(() => {
+    if (captureTokenFromHash()) setScreen('my');
+  }, []);
 
   // 공유 링크(#course=...) 로 진입한 경우 코스 시트 열기
   useEffect(() => {
@@ -117,6 +124,7 @@ export default function App() {
       {screen === 'my' && <MyScreen api={api} />}
 
       <BottomNav active={screen} onChange={setScreen} savedCount={savedIds.length} />
+      {!recordOpen && !detailCourse && !routeView && <InstallPrompt />}
 
       {detailCourse && (
         <CourseDetailSheet course={detailCourse} api={api} onClose={() => setDetailId(null)} />

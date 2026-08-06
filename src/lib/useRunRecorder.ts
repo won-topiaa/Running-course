@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { densifyPath, destinationPoint, haversineMeters } from './geo';
 import { syntheticElevation } from './routing';
+import { createWakeLock } from './wakeLock';
 import type { LatLng } from './types';
 
 export type RecStatus = 'idle' | 'recording' | 'paused' | 'finished';
@@ -76,6 +77,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const demoPathRef = useRef<LatLng[]>([]);
   const demoIdxRef = useRef(0);
+  const wakeRef = useRef(createWakeLock());
 
   const sync = useCallback((patch: Partial<RecorderState>) => {
     setState((s) => ({ ...s, ...patch }));
@@ -146,6 +148,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         avgPaceSec: null,
       });
       startTick();
+      void wakeRef.current.enable(); // 뛰는 동안 화면 유지
     },
     [sync, startTick],
   );
@@ -188,6 +191,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     if (statusRef.current !== 'recording') return;
     activeMsRef.current += Date.now() - segStartRef.current;
     statusRef.current = 'paused';
+    void wakeRef.current.disable();
     sync({ status: 'paused' });
   }, [sync]);
 
@@ -195,6 +199,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     if (statusRef.current !== 'paused') return;
     segStartRef.current = Date.now();
     statusRef.current = 'recording';
+    void wakeRef.current.enable();
     sync({ status: 'recording' });
   }, [sync]);
 
@@ -211,6 +216,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       clearInterval(tickRef.current);
       tickRef.current = null;
     }
+    void wakeRef.current.disable();
   }, []);
 
   const stop = useCallback(() => {

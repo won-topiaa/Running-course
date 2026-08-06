@@ -1,0 +1,11 @@
+name = "runcourse-strava"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# 앱이 배포된 오리진만 허용 (오픈 리다이렉트 · 무단 사용 방지)
+[vars]
+ALLOWED_ORIGINS = "https://won-topiaa.github.io,http://localhost:5173,http://localhost:4173"
+
+# 시크릿은 파일에 넣지 말고 아래 명령으로 등록:
+#   npx wrangler secret put STRAVA_CLIENT_ID
+#   npx wrangler secret put STRAVA_CLIENT_SECRET

@@ -4,6 +4,7 @@ import {
   Bookmark,
   Check,
   Download,
+  Loader2,
   Mountain,
   Share2,
   Timer,
@@ -15,6 +16,7 @@ import GradeElevationChart from './GradeElevationChart';
 import RouteMap from './RouteMap';
 import { GRADE_COLORS, GRADE_LEGEND, RUN_STYLES } from '../lib/routeStyle';
 import { buildGpx, downloadGpx } from '../lib/gpx';
+import { loadToken, STRAVA_UPLOAD_PAGE, uploadGpx } from '../lib/strava';
 import { buildShareToken, savedFromView, shareUrl } from '../lib/savedRoutes';
 import { estimateTimeLabel, formatDuration, formatPace } from '../lib/format';
 import type { AppApi, RouteView } from '../ui/appApi';
@@ -34,6 +36,7 @@ export default function RouteSheet({
 }) {
   const [savedId, setSavedId] = useState<string | undefined>(view.savedId);
   const [toast, setToast] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -120,10 +123,25 @@ export default function RouteSheet({
     flash('GPX 파일을 내보냈어요');
   };
 
-  const doStrava = () => {
-    downloadGpx(view.name, gpxOf());
-    window.open('https://www.strava.com/upload/select', '_blank', 'noopener');
-    flash('GPX 저장 · Strava 업로드 페이지를 열었어요');
+  const doStrava = async () => {
+    const workerUrl = api.settings.stravaWorkerUrl;
+    const token = loadToken();
+    // Worker 미연결이면 지금 바로 되는 경로: GPX 저장 + 업로드 페이지
+    if (!workerUrl || !token) {
+      downloadGpx(view.name, gpxOf());
+      window.open(STRAVA_UPLOAD_PAGE, '_blank', 'noopener');
+      flash('GPX 저장 · Strava 업로드 페이지를 열었어요');
+      return;
+    }
+    setUploading(true);
+    try {
+      await uploadGpx({ workerUrl, token, name: view.name, gpx: gpxOf() });
+      flash('Strava에 업로드했어요 🎉');
+    } catch (e) {
+      flash(e instanceof Error ? e.message : '업로드에 실패했어요');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const headline = mode === 'summary' ? '🎉 러닝 완료!' : styleLabel ?? '내 코스';
@@ -215,8 +233,14 @@ export default function RouteSheet({
             <ActionBtn onClick={doGpx} tone="line" icon={<Download size={16} />}>
               GPX 내보내기
             </ActionBtn>
-            <ActionBtn onClick={doStrava} tone="strava" icon={<Activity size={16} />}>
-              Strava에 올리기
+            <ActionBtn
+              onClick={doStrava}
+              tone="strava"
+              icon={
+                uploading ? <Loader2 size={16} className="animate-spin" /> : <Activity size={16} />
+              }
+            >
+              {uploading ? '업로드 중…' : 'Strava에 올리기'}
             </ActionBtn>
           </div>
           {savedId && (

@@ -14,8 +14,8 @@ export interface Settings {
   orsKey: string | null;
   /** Mapbox access token (카카오·OSM 대신 사용, 선택) */
   mapboxToken: string | null;
-  /** Strava OAuth client id (없으면 GPX 내보내기만) */
-  stravaClientId: string | null;
+  /** Strava 연동 Worker 주소 (없으면 GPX 내보내기 + 수동 업로드) */
+  stravaWorkerUrl: string | null;
   /** 기본 러닝 페이스 (초/km) */
   paceSecPerKm: number;
   /** 홈/시작 위치 */
@@ -30,7 +30,7 @@ const KAKAO_DEFAULT = 'f8d52c354ff017870d132f16204d56ab';
 const ENV_KAKAO = import.meta.env.VITE_KAKAO_JS_KEY?.trim() || null;
 const ENV_ORS = import.meta.env.VITE_ORS_API_KEY?.trim() || null;
 const ENV_MAPBOX = import.meta.env.VITE_MAPBOX_TOKEN?.trim() || null;
-const ENV_STRAVA = import.meta.env.VITE_STRAVA_CLIENT_ID?.trim() || null;
+const ENV_STRAVA = import.meta.env.VITE_STRAVA_WORKER_URL?.trim() || null;
 
 /** 서울시청 */
 export const DEFAULT_LOCATION: LatLng = [37.5665, 126.978];
@@ -40,7 +40,7 @@ export function defaultSettings(): Settings {
     kakaoJsKey: ENV_KAKAO ?? KAKAO_DEFAULT,
     orsKey: ENV_ORS,
     mapboxToken: ENV_MAPBOX,
-    stravaClientId: ENV_STRAVA,
+    stravaWorkerUrl: ENV_STRAVA,
     paceSecPerKm: 360, // 6'00"/km
     homeLocation: DEFAULT_LOCATION,
   };
@@ -59,7 +59,7 @@ export function loadSettings(): Settings {
         kakaoJsKey: ENV_KAKAO ?? saved.kakaoJsKey ?? KAKAO_DEFAULT,
         orsKey: ENV_ORS ?? saved.orsKey ?? null,
         mapboxToken: ENV_MAPBOX ?? saved.mapboxToken ?? null,
-        stravaClientId: ENV_STRAVA ?? saved.stravaClientId ?? null,
+        stravaWorkerUrl: ENV_STRAVA ?? saved.stravaWorkerUrl ?? null,
       };
     }
   } catch {

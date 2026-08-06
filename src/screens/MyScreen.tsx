@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { PROFILE } from '../data/profile';
 import { estimateTimeLabel, formatPace } from '../lib/format';
+import { connect as connectStrava, loadToken, saveToken } from '../lib/strava';
 import type { Settings } from '../lib/config';
 import type { AppApi } from '../ui/appApi';
 
@@ -196,18 +197,92 @@ export default function MyScreen({ api }: { api: AppApi }) {
             link="https://openrouteservice.org/dev/#/signup"
             onSave={(v) => saveField('orsKey', v)}
           />
-          <KeyRow
-            icon={<Activity size={15} style={{ color: '#FC4C02' }} />}
-            title="Strava 자동 업로드 (선택)"
-            desc="지금도 GPX 내보내기로 업로드 가능. 자동 업로드는 서버 콜백 필요."
-            placeholder="Strava Client ID"
-            current={api.settings.stravaClientId}
-            connected="Client ID 등록됨"
-            offline="GPX 수동 업로드"
-            link="https://www.strava.com/settings/api"
-            onSave={(v) => saveField('stravaClientId', v)}
-          />
+          <StravaRow api={api} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Strava 자동 업로드 — Worker 주소 저장 + OAuth 연결/해제 */
+function StravaRow({ api }: { api: AppApi }) {
+  const [url, setUrl] = useState(api.settings.stravaWorkerUrl ?? '');
+  const [token, setToken] = useState(loadToken());
+  const saved = api.settings.stravaWorkerUrl;
+
+  const save = () => api.setSettings({ ...api.settings, stravaWorkerUrl: url.trim() || null });
+  const disconnect = () => {
+    saveToken(null);
+    setToken(null);
+  };
+
+  return (
+    <div className="rounded-2xl bg-tint/50 p-3">
+      <div className="flex items-center gap-1.5 text-[13px] font-bold text-espresso">
+        <Activity size={15} style={{ color: '#FC4C02' }} /> Strava 자동 업로드 (선택)
+      </div>
+      <p className="mt-0.5 text-[11.5px] leading-relaxed text-espresso-soft">
+        연결 안 해도 <b className="text-espresso-muted">GPX 내보내기</b>로 업로드할 수 있어요.
+        자동 업로드를 쓰려면 <code className="text-[10.5px]">server/strava-worker</code>를 배포하고
+        주소를 넣으세요.
+      </p>
+
+      {token ? (
+        <div className="mt-2 flex items-center justify-between rounded-xl bg-paper px-3 py-2.5">
+          <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-sage-600">
+            <Check size={14} /> 연결됨{token.athlete ? ` · ${token.athlete}님` : ''}
+          </span>
+          <button
+            onClick={disconnect}
+            className="rounded-full border border-line px-3 py-1.5 text-[11.5px] font-semibold text-espresso-muted active:scale-95"
+          >
+            연결 해제
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="mt-2 flex gap-2">
+            <input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://...workers.dev"
+              className="min-w-0 flex-1 rounded-full border border-line bg-paper px-3.5 py-2 text-[12.5px] text-espresso outline-none focus:border-coral"
+            />
+            <button
+              onClick={save}
+              className="shrink-0 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-white active:scale-95"
+            >
+              저장
+            </button>
+          </div>
+          {saved && (
+            <button
+              onClick={() => connectStrava(saved)}
+              className="mt-2 w-full rounded-full bg-[#FC4C02] py-2.5 text-[12.5px] font-bold text-white active:scale-[0.98]"
+            >
+              Strava 계정 연결하기
+            </button>
+          )}
+        </>
+      )}
+
+      <div className="mt-2 flex items-center justify-between">
+        <span
+          className={`inline-flex items-center gap-1.5 text-[11.5px] font-semibold ${
+            token ? 'text-sage-600' : 'text-espresso-soft'
+          }`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${token ? 'bg-sage' : 'bg-espresso-soft/50'}`} />
+          {token ? '자동 업로드 켜짐' : 'GPX 수동 업로드'}
+        </span>
+        <a
+          href="https://www.strava.com/settings/api"
+          target="_blank"
+          rel="noreferrer"
+          className="text-[11.5px] font-medium text-coral-600 underline"
+        >
+          Strava API 설정 →
+        </a>
       </div>
     </div>
   );
