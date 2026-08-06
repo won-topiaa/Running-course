@@ -1,13 +1,17 @@
 // ---------------------------------------------------------------------------
 // 라우팅 provider 추상화
 //
-// 실제 도보 경로 + 지점별 고도(→ 구간 경사)를 만드는 계층.
-// - OrsProvider : OpenRouteService 실 API (도보 경로 / 왕복 생성 / 고도)
-// - OfflineProvider : 키·네트워크 없이도 UI가 도는 폴백 (직선 연결 + 합성 고도)
-// 좌표는 앱 규약대로 [lat, lng]. ORS 요청 시에만 [lng, lat] 로 뒤집는다.
+// 실제 '사람이 걷고 뛸 수 있는' 도보 경로 + 지점별 고도(→ 구간 경사)를 만드는 계층.
+// - OrsProvider     : OpenRouteService (키 필요) — 도보 경로 + 왕복 생성 + 고도 한 번에
+// - OsrmProvider    : FOSSGIS 공개 OSRM foot (키 불필요) — 실제 보도·산책로에 스냅.
+//                     고도는 Open-Meteo Elevation 으로 따로 조회한다.
+// - OfflineProvider : 네트워크가 없을 때만 쓰는 최후 폴백 (직선 연결 + 합성 고도).
+//                     실제 도로가 아니므로 UI 에서 '데모'로 분명히 표시한다.
+// 좌표는 앱 규약대로 [lat, lng]. 외부 API 요청 시에만 [lng, lat] 로 뒤집는다.
 // ---------------------------------------------------------------------------
 
 import type { LatLng } from './types';
+import { elevationsForPath } from './elevation';
 import {
   densifyPath,
   destinationPoint,
@@ -16,6 +20,11 @@ import {
 } from './geo';
 
 const ORS_BASE = 'https://api.openrouteservice.org/v2/directions/foot-walking/geojson';
+// FOSSGIS 가 운영하는 공개 OSRM (도보 프로파일). 키가 필요 없다.
+const OSRM_FOOT = 'https://routing.openstreetmap.de/routed-foot/route/v1/foot';
+
+/** 경로를 무엇으로 만들었는지 — UI 뱃지/문구에 그대로 쓰인다 */
+export type RouteSource = 'ors' | 'osrm' | 'offline';
 
 export interface RouteSegment {
   gradePct: number; // 구간 경사(%) (+오르막 / -내리막)
@@ -30,7 +39,7 @@ export interface RouteResult {
   descentM: number; //     누적 하강
   maxGradePct: number; //  최대 경사(절댓값)
   segments: RouteSegment[];
-  source: 'ors' | 'offline';
+  source: RouteSource;
   waypoints: LatLng[]; //  입력 경유지/시작점
 }
 
@@ -58,8 +67,10 @@ export interface RouteOptions {
 }
 
 export interface RoutingProvider {
-  readonly id: 'ors' | 'offline';
+  readonly id: RouteSource;
   readonly label: string;
+  /** 실제 도로/보도를 따라가는 경로인지 (false 면 데모 직선) */
+  readonly realRoads: boolean;
   /** 경유지를 순서대로 잇는 도보 경로 */
   route(waypoints: LatLng[]): Promise<RouteResult>;
   /** 시작점에서 목표 거리에 맞춘 왕복(루프) 경로 */
@@ -134,6 +145,7 @@ function parseOrsGeoJson(
 export class OrsProvider implements RoutingProvider {
   readonly id = 'ors' as const;
   readonly label = 'OpenRouteService';
+  readonly realRoads = true;
   constructor(private apiKey: string) {}
 
   async route(waypoints: LatLng[]): Promise<RouteResult> {
@@ -196,6 +208,96 @@ export class OrsProvider implements RoutingProvider {
   }
 }
 
+// --- OSRM(도보) provider — 키 불필요 ----------------------------------------
+
+/**
+ * FOSSGIS 공개 OSRM 도보 프로파일.
+ * 실제 보도·공원길·산책로를 따라가는 경로를 돌려주므로 '사람이 뛸 수 있는 길'이 된다.
+ * 고도는 제공하지 않아 Open-Meteo Elevation 으로 따로 조회하고, 실패 시 합성 고도로 대체한다.
+ */
+export class OsrmProvider implements RoutingProvider {
+  readonly id = 'osrm' as const;
+  readonly label = 'OSM 도보 경로';
+  readonly realRoads = true;
+
+  /** 경유지를 순서대로 잇는 실제 도보 경로 좌표 */
+  private async fetchGeometry(waypoints: LatLng[]): Promise<LatLng[]> {
+    const coordStr = waypoints.map(([lat, lng]) => `${lng},${lat}`).join(';');
+    const url = `${OSRM_FOOT}/${coordStr}?overview=full&geometries=geojson&continue_straight=false`;
+    let res: Response;
+    try {
+      res = await fetch(url);
+    } catch {
+      throw new RoutingError('network', '경로 서버에 연결할 수 없습니다.');
+    }
+    if (res.status === 429) {
+      throw new RoutingError('rate_limit', '요청이 많아요. 잠시 후 다시 시도해 주세요.');
+    }
+    if (!res.ok) {
+      throw new RoutingError('unknown', `도보 경로 요청 실패 (${res.status})`);
+    }
+    const json = await res.json();
+    if (json?.code !== 'Ok' || !json?.routes?.[0]?.geometry?.coordinates?.length) {
+      throw new RoutingError('no_route', '이 지점들을 잇는 보행 경로를 찾지 못했어요.');
+    }
+    const line: number[][] = json.routes[0].geometry.coordinates;
+    return line.map((c) => [c[1], c[0]] as LatLng);
+  }
+
+  /** 좌표열에 실제 고도를 입힌 RouteResult (고도 조회 실패 시 합성 고도) */
+  private async withElevation(coords: LatLng[], waypoints: LatLng[]): Promise<RouteResult> {
+    let elev: number[];
+    try {
+      elev = await elevationsForPath(coords);
+    } catch {
+      elev = coords.map(([lat, lng]) => syntheticElevation(lat, lng));
+    }
+    return buildResult(coords, elev, 'osrm', waypoints);
+  }
+
+  async route(waypoints: LatLng[]): Promise<RouteResult> {
+    if (waypoints.length < 2) {
+      throw new RoutingError('no_route', '경유지가 2개 이상 필요합니다.');
+    }
+    const coords = await this.fetchGeometry(waypoints);
+    return this.withElevation(coords, waypoints);
+  }
+
+  /**
+   * 목표 거리에 맞춘 왕복 루프.
+   * OSRM 에는 왕복 생성 기능이 없으므로 시작점 주변에 고리 모양 경유지를 만들어 실제 도로로
+   * 잇고, 실측 거리로 반지름을 보정해 목표에 수렴시킨다(최대 2회 보정).
+   */
+  async roundTrip(
+    start: LatLng,
+    targetKm: number,
+    opts: RouteOptions = {},
+  ): Promise<RouteResult> {
+    const points = opts.points ?? 5;
+    const seed = opts.seed ?? 0;
+    let scale = 1;
+    let best: LatLng[] | null = null;
+    let bestErr = Infinity;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const ring = generateLoop(start, targetKm * scale, points, seed);
+      const coords = await this.fetchGeometry(ring);
+      const km = pathLengthMeters(coords) / 1000;
+      const err = Math.abs(km - targetKm);
+      if (err < bestErr) {
+        bestErr = err;
+        best = coords;
+      }
+      // 목표의 8% 안이면 충분히 맞은 것으로 본다
+      if (err / targetKm < 0.08 || km <= 0) break;
+      scale *= targetKm / km;
+    }
+
+    if (!best) throw new RoutingError('no_route', '왕복 코스를 만들지 못했어요.');
+    return this.withElevation(best, [start]);
+  }
+}
+
 // --- 오프라인 폴백 provider --------------------------------------------------
 
 /**
@@ -249,7 +351,8 @@ function generateLoop(
 
 export class OfflineProvider implements RoutingProvider {
   readonly id = 'offline' as const;
-  readonly label = '오프라인 데모';
+  readonly label = '데모(직선)';
+  readonly realRoads = false;
 
   async route(waypoints: LatLng[]): Promise<RouteResult> {
     if (waypoints.length < 2) {
@@ -272,7 +375,18 @@ export class OfflineProvider implements RoutingProvider {
   }
 }
 
-/** 키가 있으면 ORS, 없으면 오프라인 provider */
+/**
+ * 사용할 provider 우선순위.
+ * ORS 키가 있으면 ORS(경로+고도 한 번에), 없으면 키가 필요 없는 OSRM 도보 경로를 쓴다.
+ * 어느 쪽이든 **실제 사람이 다닐 수 있는 길**을 따라간다. 데모(직선)는 둘 다 실패할 때만.
+ */
 export function makeProvider(orsKey: string | null): RoutingProvider {
-  return orsKey ? new OrsProvider(orsKey) : new OfflineProvider();
+  return orsKey ? new OrsProvider(orsKey) : new OsrmProvider();
+}
+
+/** 실패 시 다음으로 시도할 provider (없으면 null) */
+export function fallbackProvider(current: RoutingProvider): RoutingProvider | null {
+  if (current.id === 'ors') return new OsrmProvider();
+  if (current.id === 'osrm') return new OfflineProvider();
+  return null;
 }

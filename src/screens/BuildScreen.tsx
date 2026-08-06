@@ -10,7 +10,12 @@ import {
 import RouteMap from '../components/RouteMap';
 import GradeElevationChart from '../components/GradeElevationChart';
 import { buildFromDistance, buildFromPins, type BuiltRoute } from '../lib/courseBuilder';
-import { makeProvider, OfflineProvider, RoutingError } from '../lib/routing';
+import {
+  fallbackProvider,
+  makeProvider,
+  RoutingError,
+  type RoutingProvider,
+} from '../lib/routing';
 import { GRADE_LEGEND, GRADE_COLORS, RUN_STYLES, type RunStyle } from '../lib/routeStyle';
 import { estimateTimeLabel, formatDistance } from '../lib/format';
 import type { LatLng } from '../lib/types';
@@ -35,6 +40,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(true);
+  const [returnToStart, setReturnToStart] = useState(true);
 
   const selected = results?.[selIdx] ?? null;
 
@@ -75,30 +81,49 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     setError(null);
     setNotice(null);
     setSheetOpen(true);
-    let provider = makeProvider(api.settings.orsKey);
-    const build = (): Promise<BuiltRoute[]> =>
+
+    // 순환 코스면 시작점을 마지막에 붙여 되돌아오게 한다
+    const pins =
+      mode === 'pins' && returnToStart && waypoints.length >= 2
+        ? [...waypoints, waypoints[0]]
+        : waypoints;
+
+    const build = (p: RoutingProvider): Promise<BuiltRoute[]> =>
       mode === 'pins'
-        ? buildFromPins(waypoints, style, provider)
-        : buildFromDistance(start, targetKm, style, provider);
+        ? buildFromPins(pins, style, p)
+        : buildFromDistance(start, targetKm, style, p);
+
+    // ORS → OSRM(키 불필요) → 데모(직선) 순으로 내려가며 시도
+    let provider: RoutingProvider | null = makeProvider(api.settings.orsKey);
+    let lastErr: unknown = null;
     try {
-      let out: BuiltRoute[];
-      try {
-        out = await build();
-      } catch (e) {
-        if (provider.id === 'ors') {
-          provider = new OfflineProvider();
-          setNotice(
-            e instanceof RoutingError && e.code === 'invalid_key'
-              ? 'API 키 오류로 데모 경로를 보여드려요.'
-              : '실 경로 서버에 연결할 수 없어 데모 경로를 보여드려요.',
-          );
-          out = await build();
-        } else throw e;
+      while (provider) {
+        try {
+          const out = await build(provider);
+          setResults(out);
+          setSelIdx(0);
+          if (!provider.realRoads) {
+            setNotice(
+              '실제 경로 서버에 연결할 수 없어 직선 데모로 그렸어요. 이 경로는 실제 도로가 아닙니다.',
+            );
+          } else if (provider.id === 'osrm' && api.settings.orsKey) {
+            setNotice('ORS 대신 OSM 도보 경로로 만들었어요.');
+          }
+          return;
+        } catch (e) {
+          lastErr = e;
+          provider = fallbackProvider(provider);
+        }
       }
-      setResults(out);
-      setSelIdx(0);
+      throw lastErr ?? new Error('경로를 만들 수 없어요.');
     } catch (e) {
-      setError(e instanceof Error ? e.message : '경로를 만들 수 없어요.');
+      const msg =
+        e instanceof RoutingError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : '경로를 만들 수 없어요.';
+      setError(msg);
       setResults(null);
     } finally {
       setLoading(false);
@@ -107,6 +132,17 @@ export default function BuildScreen({ api }: { api: AppApi }) {
 
   const canGenerate = mode === 'pins' ? waypoints.length >= 2 : true;
   const headline = results ? buildHeadline(results, selIdx, style) : null;
+
+  // 결과가 있으면 '실제로 무엇으로 그렸는지', 없으면 '무엇으로 그릴 예정인지'
+  const sourceBadge = (() => {
+    const src = selected?.route.source;
+    if (src === 'ors') return { text: '🛰 실경로 · ORS', demo: false };
+    if (src === 'osrm') return { text: '🚶 실보행로 · OSM', demo: false };
+    if (src === 'offline') return { text: '⚠️ 직선 데모', demo: true };
+    return api.settings.orsKey
+      ? { text: '🛰 실경로 · ORS', demo: false }
+      : { text: '🚶 실보행로 · OSM', demo: false };
+  })();
 
   return (
     <div className="fixed inset-0 z-0 overflow-hidden bg-cream">
@@ -138,12 +174,12 @@ export default function BuildScreen({ api }: { api: AppApi }) {
             </h1>
             <span
               className={`ml-auto rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                api.settings.orsKey
-                  ? 'bg-sage-100 text-sage-600'
-                  : 'bg-tint text-espresso-muted'
+                sourceBadge.demo
+                  ? 'bg-coral-100 text-coral-600'
+                  : 'bg-sage-100 text-sage-600'
               }`}
             >
-              {api.settings.orsKey ? '🛰 실경로' : '🧪 데모 경로'}
+              {sourceBadge.text}
             </span>
           </div>
 
@@ -217,6 +253,33 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                 }
               />
             )}
+
+            {/* 핀 모드: 시작점으로 돌아올지 선택 */}
+            {mode === 'pins' && (
+              <>
+                <div className="my-1 h-px bg-line" />
+                <div className="flex rounded-full bg-tint p-1">
+                  <SegBtn
+                    active={returnToStart}
+                    onClick={() => {
+                      setReturnToStart(true);
+                      reset();
+                    }}
+                  >
+                    🔄 시작점 복귀
+                  </SegBtn>
+                  <SegBtn
+                    active={!returnToStart}
+                    onClick={() => {
+                      setReturnToStart(false);
+                      reset();
+                    }}
+                  >
+                    ➡️ 편도
+                  </SegBtn>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -243,7 +306,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
       {mode === 'distance' && (
         <div
           className="absolute inset-x-0 z-[500] px-3"
-          style={{ bottom: sheetOpen ? 'calc(46vh + 140px)' : '150px' }}
+          style={{ bottom: sheetOpen ? 'calc(46vh + 156px)' : '166px' }}
         >
           <div className="mx-auto flex max-w-md items-center gap-3 rounded-full border border-line/70 bg-paper/95 py-2.5 pl-3 pr-4 shadow-card backdrop-blur-md">
             <span className="shrink-0 rounded-full bg-tint px-3 py-1.5 text-[12px] font-bold text-espresso">
@@ -270,7 +333,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
       )}
 
       {/* ── 바텀시트 ──────────────────────────────────────── */}
-      <div className="absolute inset-x-0 bottom-[84px] z-[600] px-3">
+      <div className="absolute inset-x-0 bottom-[100px] z-[600] px-3">
         <div className="mx-auto max-w-md overflow-hidden rounded-4xl border border-line/70 bg-paper shadow-card">
           {/* 핸들 */}
           <button
