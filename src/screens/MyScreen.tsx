@@ -1,8 +1,9 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   Check,
   Cloud,
+  Lock,
   Download,
   Flame,
   Footprints,
@@ -24,6 +25,16 @@ import {
   pushSync,
   saveSyncCode,
 } from '../lib/backup';
+import {
+  cloudBackupMeta,
+  loadCloudSession,
+  pullCloud,
+  pushCloud,
+  signIn,
+  signOut,
+  signUp,
+  type CloudConfig,
+} from '../lib/cloud';
 import { connect as connectStrava, loadToken, saveToken } from '../lib/strava';
 import type { Settings } from '../lib/config';
 import type { AppApi } from '../ui/appApi';
@@ -305,7 +316,10 @@ export default function MyScreen({ api }: { api: AppApi }) {
         </p>
       </div>
 
-      {/* 데이터 이동 — 기기가 바뀌어도 기록이 따라가게 */}
+      {/* 계정 — 이메일 로그인으로 기록을 계정에 보관 */}
+      <CloudSection api={api} />
+
+      {/* 데이터 이동 — 로그인 없이 쓰는 대안 (파일/코드) */}
       <SyncSection api={api} />
 
       {/* 외부 서비스 연동 */}
@@ -352,6 +366,195 @@ export default function MyScreen({ api }: { api: AppApi }) {
           <StravaRow api={api} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/** 계정 · 클라우드 동기화 — 이메일 로그인. 기록이 계정에 저장돼 기기가 바뀌어도 유지된다. */
+function CloudSection({ api }: { api: AppApi }) {
+  const cfg: CloudConfig | null =
+    api.settings.supabaseUrl && api.settings.supabaseAnonKey
+      ? { url: api.settings.supabaseUrl, anonKey: api.settings.supabaseAnonKey }
+      : null;
+
+  const [session, setSession] = useState(loadCloudSession());
+  const [email, setEmail] = useState('');
+  const [pw, setPw] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [remoteAt, setRemoteAt] = useState<string | null | undefined>(undefined);
+
+  const flash = (m: string) => {
+    setMsg(m);
+    setTimeout(() => setMsg(null), 4000);
+  };
+
+  // 로그인 상태면 서버 백업 시각 조회
+  const refreshMeta = async (c: CloudConfig) => {
+    try {
+      const meta = await cloudBackupMeta(c);
+      setRemoteAt(meta.updatedAt);
+    } catch {
+      setRemoteAt(undefined);
+    }
+  };
+  useEffect(() => {
+    if (cfg && session) void refreshMeta(cfg);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const doAuth = async (mode: 'in' | 'up') => {
+    if (!cfg) return;
+    setBusy(true);
+    try {
+      if (mode === 'in') {
+        const s = await signIn(cfg, email.trim(), pw);
+        setSession(s);
+        await pushCloud(cfg); // 로그인 즉시 현재 기기 데이터를 한 번 올려둔다
+        await refreshMeta(cfg);
+        flash('로그인했어요. 이제 기록이 계정에 자동 백업돼요.');
+      } else {
+        const r = await signUp(cfg, email.trim(), pw);
+        if (r.needsConfirm) {
+          flash('확인 메일을 보냈어요. 메일의 링크를 누른 뒤 로그인해 주세요.');
+        } else {
+          setSession(r.session);
+          if (r.session) await pushCloud(cfg);
+          flash('가입 완료! 이제 기록이 계정에 자동 백업돼요.');
+        }
+      }
+      setPw('');
+    } catch (e) {
+      flash(e instanceof Error ? e.message : '요청에 실패했어요.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doRestore = async () => {
+    if (!cfg) return;
+    setBusy(true);
+    try {
+      const n = await pullCloud(cfg);
+      flash(`${n}개 항목을 복원했어요. 새로고침합니다…`);
+      setTimeout(() => location.reload(), 1200);
+    } catch (e) {
+      flash(e instanceof Error ? e.message : '복원에 실패했어요.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 rounded-3xl border border-line bg-paper p-4 shadow-soft">
+      <h2 className="inline-flex items-center gap-1.5 text-[14px] font-bold text-espresso">
+        <Lock size={16} className="text-coral" /> 계정
+      </h2>
+
+      {!cfg ? (
+        <p className="mt-1 text-[12px] leading-relaxed text-espresso-muted">
+          이메일 로그인은 Supabase 프로젝트 연결 후 켜져요
+          (<code className="text-[10.5px]">server/supabase/README.md</code> 참고 · 5분).
+          그 전에는 아래 <b className="text-espresso">데이터 이동</b>으로 옮길 수 있어요.
+        </p>
+      ) : session ? (
+        <>
+          <div className="mt-2 flex items-center justify-between rounded-2xl bg-sage-50 px-3.5 py-3">
+            <span className="min-w-0">
+              <span className="block truncate text-[13px] font-bold text-sage-600">
+                {session.email}
+              </span>
+              <span className="text-[11px] text-espresso-muted">
+                기록이 계정에 자동 백업되고 있어요
+                {remoteAt && ` · 마지막 ${new Date(remoteAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' })}`}
+              </span>
+            </span>
+            <button
+              onClick={() => {
+                signOut();
+                setSession(null);
+                flash('로그아웃했어요. 데이터는 이 기기와 계정에 그대로 있어요.');
+              }}
+              className="shrink-0 rounded-full border border-line bg-paper px-3 py-1.5 text-[11.5px] font-semibold text-espresso-muted active:scale-95"
+            >
+              로그아웃
+            </button>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              onClick={async () => {
+                if (!cfg) return;
+                setBusy(true);
+                try {
+                  await pushCloud(cfg);
+                  await refreshMeta(cfg);
+                  flash('지금 상태를 백업했어요.');
+                } catch (e) {
+                  flash(e instanceof Error ? e.message : '백업에 실패했어요.');
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              disabled={busy}
+              className="rounded-full bg-coral py-2.5 text-[12.5px] font-semibold text-white active:scale-95 disabled:opacity-60"
+            >
+              지금 백업
+            </button>
+            <button
+              onClick={doRestore}
+              disabled={busy || remoteAt === null}
+              className="rounded-full bg-espresso py-2.5 text-[12.5px] font-semibold text-white active:scale-95 disabled:opacity-60"
+            >
+              계정에서 복원
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="mt-1 text-[12px] leading-relaxed text-espresso-muted">
+            로그인하면 기록·설정이 계정에 자동 백업돼요. 기기를 바꿔도, 브라우저를 지워도
+            로그인만 하면 그대로예요.
+          </p>
+          <div className="mt-2.5 space-y-2">
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              autoComplete="email"
+              placeholder="이메일"
+              className="w-full rounded-full border border-line bg-cream px-4 py-2.5 text-[13px] text-espresso outline-none focus:border-coral"
+            />
+            <input
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              type="password"
+              autoComplete="current-password"
+              placeholder="비밀번호 (6자 이상)"
+              className="w-full rounded-full border border-line bg-cream px-4 py-2.5 text-[13px] text-espresso outline-none focus:border-coral"
+            />
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              onClick={() => doAuth('in')}
+              disabled={busy || !email.trim() || pw.length < 6}
+              className="rounded-full bg-coral py-2.5 text-[12.5px] font-bold text-white active:scale-95 disabled:opacity-60"
+            >
+              로그인
+            </button>
+            <button
+              onClick={() => doAuth('up')}
+              disabled={busy || !email.trim() || pw.length < 6}
+              className="rounded-full border border-coral py-2.5 text-[12.5px] font-bold text-coral-600 active:scale-95 disabled:opacity-60"
+            >
+              회원가입
+            </button>
+          </div>
+        </>
+      )}
+
+      {msg && (
+        <p className="mt-2.5 rounded-2xl bg-sage-50 px-3 py-2 text-[12px] text-sage-600">{msg}</p>
+      )}
     </div>
   );
 }

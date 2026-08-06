@@ -22,6 +22,10 @@ export interface Settings {
   weekGoalKm: number;
   /** 기기 동기화 Worker 주소 (없으면 파일 내보내기/가져오기만) */
   syncWorkerUrl: string | null;
+  /** Supabase 프로젝트 URL — 이메일 로그인 동기화 (선택) */
+  supabaseUrl: string | null;
+  /** Supabase anon key (공개용 클라이언트 키, RLS 가 데이터 보호) */
+  supabaseAnonKey: string | null;
   /** 홈/시작 위치 */
   homeLocation: LatLng;
 }
@@ -43,6 +47,8 @@ const ENV_ORS = import.meta.env.VITE_ORS_API_KEY?.trim() || null;
 const ENV_MAPBOX = import.meta.env.VITE_MAPBOX_TOKEN?.trim() || null;
 const ENV_STRAVA = import.meta.env.VITE_STRAVA_WORKER_URL?.trim() || null;
 const ENV_SYNC = import.meta.env.VITE_SYNC_WORKER_URL?.trim() || null;
+const ENV_SB_URL = import.meta.env.VITE_SUPABASE_URL?.trim() || null;
+const ENV_SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || null;
 
 /** 서울시청 */
 export const DEFAULT_LOCATION: LatLng = [37.5665, 126.978];
@@ -56,6 +62,8 @@ export function defaultSettings(): Settings {
     paceSecPerKm: 360, // 6'00"/km
     weekGoalKm: 15,
     syncWorkerUrl: ENV_SYNC,
+    supabaseUrl: ENV_SB_URL,
+    supabaseAnonKey: ENV_SB_KEY,
     homeLocation: DEFAULT_LOCATION,
   };
 }
@@ -75,6 +83,8 @@ export function loadSettings(): Settings {
         mapboxToken: ENV_MAPBOX ?? saved.mapboxToken ?? null,
         stravaWorkerUrl: ENV_STRAVA ?? saved.stravaWorkerUrl ?? null,
         syncWorkerUrl: ENV_SYNC ?? saved.syncWorkerUrl ?? null,
+        supabaseUrl: ENV_SB_URL ?? saved.supabaseUrl ?? null,
+        supabaseAnonKey: ENV_SB_KEY ?? saved.supabaseAnonKey ?? null,
       };
     }
   } catch {
