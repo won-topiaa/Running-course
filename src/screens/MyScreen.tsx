@@ -18,9 +18,11 @@ import { computeRunStats, earnedBadges, levelLabel } from '../lib/runStats';
 import {
   exportBackupFile,
   importBackupFile,
+  loadSyncCode,
   makeSyncCode,
   pullSync,
   pushSync,
+  saveSyncCode,
 } from '../lib/backup';
 import { connect as connectStrava, loadToken, saveToken } from '../lib/strava';
 import type { Settings } from '../lib/config';
@@ -359,7 +361,8 @@ function SyncSection({ api }: { api: AppApi }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [workerUrl, setWorkerUrl] = useState(api.settings.syncWorkerUrl ?? '');
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(loadSyncCode() ?? '');
+  const [autoOn, setAutoOn] = useState(!!loadSyncCode());
   const fileRef = useRef<HTMLInputElement>(null);
   const savedUrl = api.settings.syncWorkerUrl;
 
@@ -386,7 +389,9 @@ function SyncSection({ api }: { api: AppApi }) {
       const c = code.trim() || makeSyncCode();
       await pushSync(savedUrl, c);
       setCode(c);
-      flash(`올렸어요! 다른 기기에서 코드 "${c}" 로 가져오세요. (90일 보관)`);
+      saveSyncCode(c); // 이후 변경은 자동으로 올라간다
+      setAutoOn(true);
+      flash(`올렸어요! 이제 변경사항이 자동으로 백업돼요. 다른 기기 코드: ${c}`);
     } catch (e) {
       flash(e instanceof Error ? e.message : '업로드에 실패했어요.');
     } finally {
@@ -399,6 +404,7 @@ function SyncSection({ api }: { api: AppApi }) {
     setBusy(true);
     try {
       const n = await pullSync(savedUrl, code.trim());
+      saveSyncCode(code.trim()); // 이 기기도 같은 코드로 자동 백업을 이어간다
       flash(`${n}개 항목을 받았어요. 새로고침합니다…`);
       setTimeout(() => location.reload(), 1200);
     } catch (e) {
@@ -492,6 +498,30 @@ function SyncSection({ api }: { api: AppApi }) {
               >
                 코드로 가져오기
               </button>
+            </div>
+            <div className="mt-2 flex items-center justify-between">
+              <span
+                className={`inline-flex items-center gap-1.5 text-[11.5px] font-semibold ${
+                  autoOn ? 'text-sage-600' : 'text-espresso-soft'
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${autoOn ? 'bg-sage' : 'bg-espresso-soft/50'}`}
+                />
+                {autoOn ? '자동 백업 켜짐 — 변경사항이 몇 초 안에 올라가요' : '아직 수동 — 한 번 올리면 자동 백업이 켜져요'}
+              </span>
+              {autoOn && (
+                <button
+                  onClick={() => {
+                    saveSyncCode(null);
+                    setAutoOn(false);
+                    flash('자동 백업을 껐어요.');
+                  }}
+                  className="text-[11.5px] font-semibold text-espresso-soft underline active:scale-95"
+                >
+                  끄기
+                </button>
+              )}
             </div>
           </>
         )}

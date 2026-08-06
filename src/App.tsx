@@ -16,6 +16,7 @@ import {
   persistRoutes,
   type SavedRoute,
 } from './lib/savedRoutes';
+import { loadSyncCode, pushSync } from './lib/backup';
 import { captureTokenFromHash } from './lib/strava';
 import type { RouteResult } from './lib/routing';
 import { getConditions, type RunConditions } from './lib/weather';
@@ -82,6 +83,20 @@ export default function App() {
       /* 무시 */
     }
   }, [savedIds]);
+
+  // 자동 백업 — 동기화 코드가 켜져 있으면 변경 몇 초 뒤 조용히 올린다.
+  // (실패해도 무시 — 오프라인이면 다음 변경 때 다시 시도되고, 매 업로드가 90일 보관을 갱신한다)
+  useEffect(() => {
+    const url = settings.syncWorkerUrl;
+    const code = loadSyncCode();
+    if (!url || !code) return;
+    const t = setTimeout(() => {
+      pushSync(url, code).catch(() => {
+        /* 다음 변경 때 재시도 */
+      });
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [savedRoutes, savedIds, settings]);
 
   const toggleSaved = useCallback((id: string) => {
     setSavedIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));

@@ -14,6 +14,7 @@ const KEYS = [
   'run-app-routes-v1',
   'run-app-shoes-v1',
   'run-app-strava-token-v1',
+  'run-app-sync-code-v1', // 코드도 백업에 포함 — 복원한 기기가 곧바로 자동 백업을 이어간다
 ] as const;
 
 export interface BackupFile {
@@ -73,6 +74,28 @@ export async function importBackupFile(file: File): Promise<number> {
 }
 
 // --- 동기화 코드 (sync-worker 필요) ------------------------------------------
+
+const SYNC_CODE_KEY = 'run-app-sync-code-v1';
+
+/** 저장된 동기화 코드 — 있으면 자동 백업이 켜진 상태다 */
+export function loadSyncCode(): string | null {
+  try {
+    const raw = localStorage.getItem(SYNC_CODE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    /* 무시 */
+  }
+  return null;
+}
+
+export function saveSyncCode(code: string | null): void {
+  try {
+    if (code) localStorage.setItem(SYNC_CODE_KEY, JSON.stringify(code));
+    else localStorage.removeItem(SYNC_CODE_KEY);
+  } catch {
+    /* 무시 */
+  }
+}
 
 const trim = (u: string) => u.replace(/\/+$/, '');
 
