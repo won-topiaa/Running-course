@@ -150,7 +150,7 @@ export async function getConditions(loc: LatLng): Promise<RunConditions> {
 
     // 응답이 오래 걸리면 기다리지 말고 샘플로 넘어간다 (첫 화면이 비어 보이지 않도록)
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), 4000);
+    const timer = setTimeout(() => ac.abort(), 2500);
     const [wxRes, aqRes] = await Promise.all([
       fetch(wxUrl, { signal: ac.signal }),
       fetch(aqUrl, { signal: ac.signal }),

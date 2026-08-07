@@ -11,6 +11,8 @@ const LeafletRouteMap = lazy(() => import('./LeafletRouteMap').then((m) => ({ de
 function RouteMap(props: RouteMapProps) {
   const { kakao, status } = useKakao(props.kakaoKey ?? null);
   if (status === 'ready' && kakao) return <KakaoRouteMap {...props} kakao={kakao} />;
+  // 카카오 SDK 를 기다리는 동안에는 Leaflet 을 받지 않는다 (LiveMap 주석 참고)
+  if (status === 'loading') return <div className="h-full w-full animate-pulse bg-ink-soft" />;
   return (
     <Suspense fallback={<div className="h-full w-full bg-ink-soft" />}>
       <LeafletRouteMap {...props} />

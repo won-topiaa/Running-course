@@ -96,6 +96,10 @@ export default function LeafletRouteMap({
       center={center}
       zoom={14}
       zoomControl={false}
+      // 줌 CSS 전환 도중 화면을 떠나면 transitionend 가 제거된 DOM 을 만져
+      // Leaflet 내부(_leaflet_pos)가 터진다. fitBounds 로 줌이 자주 바뀌는
+      // 지도라 전환 자체를 끈다 — 스냅 줌이 오히려 또렷하기도 하다.
+      zoomAnimation={false}
       className="h-full w-full"
       scrollWheelZoom
     >

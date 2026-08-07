@@ -9,8 +9,21 @@ import type { LatLng } from '../lib/types';
 function Follow({ pos }: { pos: LatLng | null }) {
   const map = useMap();
   useEffect(() => {
-    if (pos) map.panTo(pos as [number, number], { animate: true, duration: 0.5 });
+    // 애니메이션 없이 따라간다. GPS 틱(±1초)마다 0.5초짜리 pan 애니메이션을
+    // 새로 시작하면 서로 겹치고, 화면을 닫는 순간 진행 중이던 애니메이션이
+    // 제거된 DOM 을 만져 Leaflet 내부(_leaflet_pos)가 터진다.
+    if (pos) map.panTo(pos as [number, number], { animate: false });
   }, [pos, map]);
+  useEffect(() => {
+    // 언마운트 시 남은 pan/zoom 애니메이션 정리
+    return () => {
+      try {
+        map.stop();
+      } catch {
+        /* 이미 제거된 지도 */
+      }
+    };
+  }, [map]);
   return null;
 }
 

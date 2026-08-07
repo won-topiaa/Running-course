@@ -11,6 +11,10 @@ const LeafletLiveMap = lazy(() => import('./LeafletLiveMap').then((m) => ({ defa
 function LiveMap(props: LiveMapProps) {
   const { kakao, status } = useKakao(props.kakaoKey ?? null);
   if (status === 'ready' && kakao) return <KakaoLiveMap {...props} kakao={kakao} />;
+  // 카카오 SDK 를 기다리는 동안에는 Leaflet 을 받지 않는다. 여기서 미리 마운트하면
+  // 카카오가 뜨는 순간 지도를 두 번 초기화해 깜빡이고, 쓰지도 않을 폴백 엔진을
+  // 모든 사용자가 내려받게 된다. 실패가 확정된 뒤(unavailable)에만 폴백한다.
+  if (status === 'loading') return <div className="h-full w-full animate-pulse bg-ink-soft" />;
   return (
     <Suspense fallback={<div className="h-full w-full bg-ink-soft" />}>
       <LeafletLiveMap {...props} />

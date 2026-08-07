@@ -24,6 +24,7 @@ export default function LeafletPathMap({ path, mapboxToken }: PathMapProps) {
       center={path[0] as [number, number]}
       zoom={14}
       zoomControl={false}
+      zoomAnimation={false}
       className="h-full w-full"
       scrollWheelZoom={false}
     >
