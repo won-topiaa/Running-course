@@ -1,3 +1,4 @@
+import { MUTED, VOLT } from '../ui/theme';
 import { useEffect } from 'react';
 import { CircleMarker, MapContainer, Polyline, useMap } from 'react-leaflet';
 import BaseTiles from './BaseTiles';
@@ -35,7 +36,7 @@ export default function LeafletLiveMap({
       {plannedPath && plannedPath.length > 1 && (
         <Polyline
           positions={plannedPath as [number, number][]}
-          pathOptions={{ color: '#6B615B', weight: 6, opacity: 0.45, dashArray: '2 14', lineCap: 'round' }}
+          pathOptions={{ color: MUTED, weight: 6, opacity: 0.45, dashArray: '2 14', lineCap: 'round' }}
         />
       )}
       {/* 지나온 계획 구간 — 경사 색상으로 채워진다 */}
@@ -57,14 +58,14 @@ export default function LeafletLiveMap({
       {!plannedPath && coords.length > 1 && (
         <>
           <Polyline positions={coords as [number, number][]} pathOptions={{ color: '#fff', weight: 8, opacity: 0.9 }} />
-          <Polyline positions={coords as [number, number][]} pathOptions={{ color: '#FF7A59', weight: 5, opacity: 1 }} />
+          <Polyline positions={coords as [number, number][]} pathOptions={{ color: VOLT, weight: 5, opacity: 1 }} />
         </>
       )}
       {cur && (
         <CircleMarker
           center={cur as [number, number]}
           radius={9}
-          pathOptions={{ color: '#fff', weight: 3, fillColor: '#FF7A59', fillOpacity: 1 }}
+          pathOptions={{ color: '#fff', weight: 3, fillColor: VOLT, fillOpacity: 1 }}
         />
       )}
       <Follow pos={cur} />

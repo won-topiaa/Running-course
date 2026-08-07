@@ -28,37 +28,33 @@
   }
 }
 
-/* ---- 러닝 중 화면: 지도를 어두운 레이아웃에 녹인다 ----
-   기본 저작권 표시는 흰 배경이라 검정 패널 위에서 밝은 띠처럼 도드라진다.
+/* ---- 지도: 어두운 UI 에 녹인다 ----
+   저작권 표시는 기본이 흰 배경이라 검정 화면에서 밝은 띠처럼 도드라진다.
    표기는 지우지 않고(라이선스 준수) 어둡게 낮춰 경로가 주인공이 되게 한다. */
-.run-dark .leaflet-container {
-  background: #1B1B1E;
+.leaflet-container {
+  font-family: inherit;
+  background: #1b1b1e;
 }
-.run-dark .leaflet-control-attribution {
-  background: rgba(11, 11, 12, 0.55);
-  color: #6E6E77;
+/* Leaflet 자체 CSS 가 나중에 로드돼 덮어쓰므로 선택자를 한 단계 더 준다 */
+.leaflet-container .leaflet-control-attribution,
+.leaflet-container .leaflet-control-attribution.leaflet-control {
+  background: rgba(11, 11, 12, 0.6);
+  color: #5f5f68;
   font-size: 9px;
   backdrop-filter: blur(4px);
 }
-.run-dark .leaflet-control-attribution a {
-  color: #8A8A93;
+.leaflet-container .leaflet-control-attribution a {
+  color: #7a7a83;
 }
-/* 밝은 타일을 살짝 눌러 검정 UI와 톤을 맞춘다 */
-.run-dark .leaflet-tile-pane,
-.run-dark .kakao-soft img {
-  filter: saturate(0.6) brightness(0.82) contrast(1.02);
-}
-
-/* ---- 지도: 배경은 차분하게, 경로가 주인공이 되도록 ---- */
-.leaflet-container {
-  font-family: inherit;
-  background: #eceae6;
+/* 밝은 타일을 눌러 검정 UI 와 톤을 맞춘다 — 경로(SVG)·핀은 영향받지 않는다 */
+.leaflet-tile-pane {
+  filter: saturate(0.55) brightness(0.78) contrast(1.05);
 }
 
 /* 카카오맵 타일만 채도를 낮춰 연회색 톤으로.
    경로(SVG)·핀(HTML 오버레이)은 영향을 받지 않아 색이 그대로 살아난다. */
 .kakao-soft img {
-  filter: saturate(0.68) brightness(1.04) contrast(0.96);
+  filter: saturate(0.55) brightness(0.78) contrast(1.05);
 }
 /* 카카오 로고·저작권 표기는 원본 그대로 */
 .kakao-soft .map_attribution img,
@@ -81,13 +77,14 @@
   display: none;
 }
 
-/* 슬라이더(레인지) 코랄 테마 */
+/* 슬라이더(레인지) — 어두운 트랙 + 볼트 손잡이.
+   클래스명 .coral 은 호출부가 그대로 쓰고 있어 유지한다(의미는 '주요 강조색'). */
 input[type='range'].coral {
   -webkit-appearance: none;
   appearance: none;
   height: 6px;
   border-radius: 999px;
-  background: #f0eae1;
+  background: #2a2a2f;
   outline: none;
 }
 input[type='range'].coral::-webkit-slider-thumb {
@@ -96,17 +93,18 @@ input[type='range'].coral::-webkit-slider-thumb {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #ff7a59;
-  border: 4px solid #fff;
-  box-shadow: 0 2px 6px rgba(255, 122, 89, 0.4);
+  background: #d8ff3e;
+  border: 4px solid #0b0b0c;
+  box-shadow: 0 0 14px rgba(216, 255, 62, 0.45);
   cursor: pointer;
 }
 input[type='range'].coral::-moz-range-thumb {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #ff7a59;
-  border: 4px solid #fff;
+  background: #d8ff3e;
+  border: 4px solid #0b0b0c;
+  box-shadow: 0 0 14px rgba(216, 255, 62, 0.45);
   cursor: pointer;
 }
 

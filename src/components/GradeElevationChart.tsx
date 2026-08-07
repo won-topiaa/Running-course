@@ -78,7 +78,7 @@ export default function GradeElevationChart({
         aria-label="구간별 경사 고도 프로파일"
       >
         {segs}
-        <path d={line} fill="none" stroke="#2C2725" strokeOpacity={0.55} strokeWidth={1.5} />
+        <path d={line} fill="none" stroke="#FFFFFF" strokeOpacity={0.45} strokeWidth={1.5} />
       </svg>
       <div className="mt-1 flex justify-between text-[10.5px] text-espresso-soft">
         <span>거리 {distanceKm.toFixed(distanceKm < 10 ? 1 : 0)}km</span>

@@ -7,14 +7,16 @@ interface Props {
   children?: ReactNode;
 }
 
-// 씬별 그라디언트/실루엣 정의 — 외부 이미지 없이 따뜻한 '사진' 느낌을 낸다.
+// 씬별 그라디언트/실루엣 — 외부 이미지 없이 '사진' 느낌을 낸다.
+// 어두운 앱에 맞춰 해질녘~야간 톤으로 낮췄다. 밝은 주간 그라디언트는
+// 검정 화면에서 카드만 형광등처럼 튀어서 목록을 훑기 어려웠다.
 const SKY: Record<Scene, [string, string, string]> = {
-  sunset: ['#FFD9A8', '#FF9E6B', '#F2603E'],
-  river: ['#CDE8F0', '#9FD0DE', '#7AB8C9'],
-  forest: ['#D6E7CE', '#9CC08A', '#6E9E6C'],
-  city: ['#F6C79E', '#C98FA6', '#6E5E8C'],
-  dawn: ['#FDE2E8', '#F7C0CE', '#E79BC4'],
-  autumn: ['#F6E1A8', '#E8B472', '#C98A4B'],
+  sunset: ['#7A3B2E', '#4A2233', '#1A1020'],
+  river: ['#1E3A44', '#162A38', '#0D1620'],
+  forest: ['#1E3527', '#16281E', '#0C1611'],
+  city: ['#3A2740', '#241A33', '#100E1C'],
+  dawn: ['#4A2B3C', '#2E1C2E', '#140E18'],
+  autumn: ['#5A3A20', '#38241A', '#160F0C'],
 };
 
 function Silhouette({ scene, color }: { scene: Scene; color: string }) {
@@ -83,14 +85,14 @@ export default function ScenePhoto({ scene, className = '', children }: Props) {
             cx="300"
             cy="86"
             r="34"
-            fill="#FFF3DC"
-            opacity={scene === 'river' ? 0.7 : 0.9}
+            fill="#F2E4B8"
+            opacity={scene === 'river' ? 0.28 : 0.42}
           />
         )}
         {scene === 'river' && (
-          <rect x="0" y="150" width="400" height="90" fill="#8FC3D4" opacity="0.55" />
+          <rect x="0" y="150" width="400" height="90" fill="#2C5A6B" opacity="0.5" />
         )}
-        <Silhouette scene={scene} color={c2} />
+        <Silhouette scene={scene} color="#08080A" />
       </svg>
       {children && <div className="relative h-full w-full">{children}</div>}
     </div>

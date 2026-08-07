@@ -1,3 +1,4 @@
+import { MUTED } from '../ui/theme';
 import { useEffect, useRef } from 'react';
 import { labelPinHtml, numberPinHtml } from './mapMarkers';
 import { arrowHtml, directionMarkers, endpointHtml } from '../lib/routeDirection';
@@ -70,7 +71,7 @@ export default function KakaoRouteMap({
           new kakao.maps.Polyline({
             path: toPath(plannedPath),
             strokeWeight: 5,
-            strokeColor: '#6B615B',
+            strokeColor: MUTED,
             strokeOpacity: 0.5,
             strokeStyle: 'dot',
           }),
@@ -83,7 +84,7 @@ export default function KakaoRouteMap({
           new kakao.maps.Polyline({
             path: toPath(alt),
             strokeWeight: 3,
-            strokeColor: '#9B9088',
+            strokeColor: MUTED,
             strokeOpacity: 0.55,
             strokeStyle: 'shortdash',
           }),

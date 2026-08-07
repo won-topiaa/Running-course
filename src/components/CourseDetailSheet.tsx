@@ -59,7 +59,7 @@ export default function CourseDetailSheet({
 
   return (
     <div className="fixed inset-0 z-[2000] flex items-end justify-center sm:items-center">
-      <div className="absolute inset-0 bg-espresso/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-ink/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-4xl bg-cream shadow-card sm:rounded-4xl">
         {/* 헤더 이미지 */}
         <ScenePhoto scene={sceneForCourse(course)} className="h-44 w-full">
@@ -67,7 +67,7 @@ export default function CourseDetailSheet({
             <div className="flex justify-end">
               <button
                 onClick={onClose}
-                className="grid h-9 w-9 place-items-center rounded-full bg-white/85 text-espresso shadow-soft backdrop-blur active:scale-90"
+                className="grid h-9 w-9 place-items-center rounded-full bg-ink/70 text-white shadow-soft backdrop-blur active:scale-90"
                 aria-label="닫기"
               >
                 <X size={18} />
@@ -178,9 +178,9 @@ export default function CourseDetailSheet({
                 saved ? 'bg-coral-50 text-coral-600' : 'border border-line bg-paper text-espresso-muted'
               }`}
             >
-              <Heart size={16} fill={saved ? '#FF7A59' : 'none'} /> {saved ? '저장됨' : '저장'}
+              <Heart size={16} fill={saved ? 'currentColor' : 'none'} /> {saved ? '저장됨' : '저장'}
             </button>
-            <button className="flex flex-[1.4] items-center justify-center gap-1.5 rounded-full bg-coral py-3 text-[13.5px] font-semibold text-white shadow-warm active:scale-[0.98]">
+            <button className="flex flex-[1.4] items-center justify-center gap-1.5 rounded-full bg-coral py-3 text-[13.5px] font-semibold text-ink shadow-warm active:scale-[0.98]">
               이 코스로 뛰기
             </button>
           </div>

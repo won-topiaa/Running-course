@@ -173,18 +173,18 @@ export default function RouteSheet({
 
   return (
     <div className="fixed inset-0 z-[2000] flex items-end justify-center sm:items-center">
-      <div className="absolute inset-0 bg-espresso/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-ink/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 max-h-[94vh] w-full max-w-md overflow-y-auto rounded-t-4xl bg-cream shadow-card sm:rounded-4xl">
         {/* 헤더 */}
-        <div className="relative bg-gradient-to-br from-coral to-coral-600 p-5 text-white">
+        <div className="relative bg-gradient-to-br from-coral to-coral-600 p-5 text-ink">
           <button
             onClick={onClose}
-            className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white/20 backdrop-blur active:scale-90"
+            className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-ink/15 text-ink backdrop-blur active:scale-90"
             aria-label="닫기"
           >
             <X size={18} />
           </button>
-          <p className="text-[12.5px] font-semibold text-white/85">{headline}</p>
+          <p className="text-[12.5px] font-semibold text-ink/70">{headline}</p>
           <h2 className="mt-0.5 text-[20px] font-extrabold leading-tight">{view.name}</h2>
           <div className="mt-3 flex items-end gap-4">
             <div>
@@ -195,7 +195,7 @@ export default function RouteSheet({
             </div>
             <div className="mb-0.5">
               <p className="text-[15px] font-bold leading-none">{timeLabel}</p>
-              <p className="mt-1 text-[12px] text-white/80">{formatPace(paceSec)}/km</p>
+              <p className="mt-1 text-[12px] text-ink/70">{formatPace(paceSec)}/km</p>
             </div>
           </div>
         </div>
@@ -248,9 +248,9 @@ export default function RouteSheet({
                 onClose();
                 api.startRecord({ name: view.name, route });
               }}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-espresso py-3.5 text-[14px] font-bold text-white active:scale-[0.98]"
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-espresso py-3.5 text-[14px] font-bold text-ink active:scale-[0.98]"
             >
-              <Play size={16} fill="#fff" /> 이 경로 따라 뛰기
+              <Play size={16} fill="currentColor" /> 이 경로 따라 뛰기
             </button>
           )}
 
@@ -293,7 +293,7 @@ export default function RouteSheet({
       </div>
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 z-[2100] -translate-x-1/2 rounded-full bg-espresso px-4 py-2.5 text-[13px] font-medium text-white shadow-card">
+        <div className="fixed bottom-6 left-1/2 z-[2100] -translate-x-1/2 rounded-full bg-espresso px-4 py-2.5 text-[13px] font-medium text-ink shadow-card">
           {toast}
         </div>
       )}
@@ -320,7 +320,7 @@ function Metric({
 }
 
 const TONES: Record<string, string> = {
-  coral: 'bg-coral text-white shadow-warm',
+  coral: 'bg-coral text-ink shadow-warm',
   sage: 'bg-sage-100 text-sage-600',
   line: 'border border-line bg-paper text-espresso-muted',
   strava: 'bg-[#FC4C02] text-white',

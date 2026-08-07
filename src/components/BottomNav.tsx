@@ -30,7 +30,7 @@ export default function BottomNav({ active, onChange, onRecord, savedCount }: Pr
         {/* 중앙 강조 — 매일 쓰는 행동(뛰기) */}
         <button onClick={onRecord} className="flex flex-col items-center" aria-label="뛰기">
           <span className="grid h-12 w-12 -translate-y-3 place-items-center rounded-full bg-coral shadow-warm transition-transform active:scale-95">
-            <Play className="h-5 w-5 text-white" fill="#fff" strokeWidth={2.2} />
+            <Play className="h-5 w-5 text-ink" fill="currentColor" strokeWidth={2.2} />
           </span>
           <span className="-mt-1 text-[10px] font-semibold text-coral-600">뛰기</span>
         </button>
@@ -81,7 +81,7 @@ function Tab({
         {label}
       </span>
       {badge > 0 && (
-        <span className="absolute right-1/2 top-0 translate-x-3 rounded-full bg-coral px-1.5 text-[9px] font-bold text-white">
+        <span className="absolute right-1/2 top-0 translate-x-3 rounded-full bg-coral px-1.5 text-[9px] font-bold text-ink">
           {badge}
         </span>
       )}

@@ -1,3 +1,4 @@
+import { MUTED } from '../ui/theme';
 import { useEffect } from 'react';
 import L from 'leaflet';
 import {
@@ -104,7 +105,7 @@ export default function LeafletRouteMap({
       {plannedPath && plannedPath.length > 1 && (
         <Polyline
           positions={plannedPath as [number, number][]}
-          pathOptions={{ color: '#6B615B', weight: 5, opacity: 0.5, dashArray: '2 12', lineCap: 'round' }}
+          pathOptions={{ color: MUTED, weight: 5, opacity: 0.5, dashArray: '2 12', lineCap: 'round' }}
         />
       )}
 
@@ -114,7 +115,7 @@ export default function LeafletRouteMap({
           key={`alt${i}`}
           positions={alt as [number, number][]}
           pathOptions={{
-            color: '#9B9088',
+            color: MUTED,
             weight: 3,
             opacity: 0.55,
             dashArray: '7 8',

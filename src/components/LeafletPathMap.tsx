@@ -1,3 +1,4 @@
+import { MINT, VOLT } from '../ui/theme';
 import { useEffect } from 'react';
 import L from 'leaflet';
 import { CircleMarker, MapContainer, Polyline, useMap } from 'react-leaflet';
@@ -27,11 +28,11 @@ export default function LeafletPathMap({ path, mapboxToken }: PathMapProps) {
     >
       <BaseTiles token={mapboxToken} />
       <Polyline positions={path as [number, number][]} pathOptions={{ color: '#fff', weight: 7, opacity: 0.9 }} />
-      <Polyline positions={path as [number, number][]} pathOptions={{ color: '#FF7A59', weight: 4, opacity: 1 }} />
+      <Polyline positions={path as [number, number][]} pathOptions={{ color: VOLT, weight: 4, opacity: 1 }} />
       <CircleMarker
         center={path[0] as [number, number]}
         radius={7}
-        pathOptions={{ color: '#fff', weight: 2, fillColor: '#7A9A8B', fillOpacity: 1 }}
+        pathOptions={{ color: '#fff', weight: 2, fillColor: MINT, fillOpacity: 1 }}
       />
       <Fit path={path} />
     </MapContainer>

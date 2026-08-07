@@ -126,7 +126,7 @@ export default function MyScreen({ api }: { api: AppApi }) {
           </p>
           <button
             onClick={() => api.startRecord()}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-coral px-4 py-2.5 text-[13px] font-semibold text-white shadow-warm active:scale-95"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-coral px-4 py-2.5 text-[13px] font-semibold text-ink shadow-warm active:scale-95"
           >
             <Play size={15} fill="#fff" /> 첫 러닝 시작하기
           </button>
@@ -164,7 +164,7 @@ export default function MyScreen({ api }: { api: AppApi }) {
                 <div key={w.label} className="flex flex-1 flex-col items-center gap-1">
                   <div className="flex w-full flex-1 items-end">
                     <div
-                      className={`w-full rounded-md ${w.km > 0 ? 'bg-sage' : 'bg-line'}`}
+                      className={`w-full rounded-md ${w.km > 0 ? 'bg-coral' : 'bg-line'}`}
                       style={{ height: `${Math.max(4, (w.km / maxWeek) * 56)}px` }}
                       title={`${w.km.toFixed(1)}km`}
                     />
@@ -255,7 +255,7 @@ export default function MyScreen({ api }: { api: AppApi }) {
               ]);
               setShoeName('');
             }}
-            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-white active:scale-95"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-ink active:scale-95"
           >
             <Plus size={14} /> 등록
           </button>
@@ -536,14 +536,14 @@ function CloudSection({ api }: { api: AppApi }) {
                 }
               }}
               disabled={busy}
-              className="rounded-full bg-coral py-2.5 text-[12.5px] font-semibold text-white active:scale-95 disabled:opacity-60"
+              className="rounded-full bg-coral py-2.5 text-[12.5px] font-semibold text-ink active:scale-95 disabled:opacity-60"
             >
               {conflict ? '이 기기 걸로 덮어쓰기' : '지금 백업'}
             </button>
             <button
               onClick={doRestore}
               disabled={busy || remoteAt === null}
-              className="rounded-full bg-espresso py-2.5 text-[12.5px] font-semibold text-white active:scale-95 disabled:opacity-60"
+              className="rounded-full bg-espresso py-2.5 text-[12.5px] font-semibold text-ink active:scale-95 disabled:opacity-60"
             >
               {conflict ? '계정에서 가져오기' : '계정에서 복원'}
             </button>
@@ -577,7 +577,7 @@ function CloudSection({ api }: { api: AppApi }) {
             <button
               onClick={() => doAuth('in')}
               disabled={busy || !email.trim() || pw.length < 6}
-              className="rounded-full bg-coral py-2.5 text-[12.5px] font-bold text-white active:scale-95 disabled:opacity-60"
+              className="rounded-full bg-coral py-2.5 text-[12.5px] font-bold text-ink active:scale-95 disabled:opacity-60"
             >
               로그인
             </button>
@@ -711,7 +711,7 @@ function SyncSection({ api }: { api: AppApi }) {
               onClick={() =>
                 api.setSettings({ ...api.settings, syncWorkerUrl: workerUrl.trim() || null })
               }
-              className="shrink-0 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-white active:scale-95"
+              className="shrink-0 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-ink active:scale-95"
             >
               저장
             </button>
@@ -730,14 +730,14 @@ function SyncSection({ api }: { api: AppApi }) {
               <button
                 onClick={doPush}
                 disabled={busy}
-                className="rounded-full bg-coral py-2.5 text-[12.5px] font-semibold text-white active:scale-95 disabled:opacity-60"
+                className="rounded-full bg-coral py-2.5 text-[12.5px] font-semibold text-ink active:scale-95 disabled:opacity-60"
               >
                 이 기기 → 올리기
               </button>
               <button
                 onClick={doPull}
                 disabled={busy || !code.trim()}
-                className="rounded-full bg-espresso py-2.5 text-[12.5px] font-semibold text-white active:scale-95 disabled:opacity-60"
+                className="rounded-full bg-espresso py-2.5 text-[12.5px] font-semibold text-ink active:scale-95 disabled:opacity-60"
               >
                 코드로 가져오기
               </button>
@@ -823,7 +823,7 @@ function StravaRow({ api }: { api: AppApi }) {
             />
             <button
               onClick={save}
-              className="shrink-0 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-white active:scale-95"
+              className="shrink-0 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-ink active:scale-95"
             >
               저장
             </button>
@@ -904,7 +904,7 @@ function KeyRow({
         />
         <button
           onClick={save}
-          className="shrink-0 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-white active:scale-95"
+          className="shrink-0 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-ink active:scale-95"
         >
           {done ? <Check size={15} /> : '저장'}
         </button>

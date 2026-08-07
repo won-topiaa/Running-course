@@ -1,3 +1,4 @@
+import { HALO, INK, MINT } from '../ui/theme';
 // ---------------------------------------------------------------------------
 // 경로 진행 방향 표시
 // 경로만 그려두면 "어느 쪽으로 먼저 가야 하는지" 알 수 없다.
@@ -63,9 +64,9 @@ export function directionMarkers(
 /** 진행 방향 화살표 HTML (지도 오버레이 공용) */
 export function arrowHtml(angleDeg: number): string {
   return `<div style="transform:rotate(${angleDeg}deg);width:20px;height:20px;display:grid;place-items:center;pointer-events:none">
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2C2725" stroke-width="3.2"
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="${INK}" stroke-width="3.2"
          stroke-linecap="round" stroke-linejoin="round"
-         style="filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff)">
+         style="filter:drop-shadow(0 0 2px ${HALO}) drop-shadow(0 0 2px ${HALO})">
       <path d="M12 19V5M5 12l7-7 7 7"/>
     </svg></div>`;
 }
@@ -73,11 +74,11 @@ export function arrowHtml(angleDeg: number): string {
 /** 출발 / 도착 배지 HTML */
 export function endpointHtml(kind: 'start' | 'finish'): string {
   const isStart = kind === 'start';
-  const bg = isStart ? '#7A9A8B' : '#2C2725';
+  const bg = isStart ? MINT : HALO;
   const text = isStart ? '출발' : '도착';
   return `<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
-    <div style="background:${bg};color:#fff;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap;border:2px solid #fff;box-shadow:0 2px 8px rgba(44,39,37,.3)">${text}</div>
+    <div style="background:${bg};color:${INK};padding:3px 9px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap;border:2px solid ${INK};box-shadow:0 2px 8px rgba(0,0,0,.55)">${text}</div>
     <div style="width:2px;height:7px;background:${bg}"></div>
-    <div style="width:10px;height:10px;border-radius:50%;background:${bg};border:2px solid #fff;box-shadow:0 1px 3px rgba(44,39,37,.35)"></div>
+    <div style="width:10px;height:10px;border-radius:50%;background:${bg};border:2px solid ${INK};box-shadow:0 1px 3px rgba(0,0,0,.6)"></div>
   </div>`;
 }

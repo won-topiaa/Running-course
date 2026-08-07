@@ -1,3 +1,4 @@
+import { MINT, VOLT } from '../ui/theme';
 import { useEffect, useRef } from 'react';
 import type { PathMapProps } from './mapTypes';
 import type { LatLng } from '../lib/types';
@@ -25,13 +26,13 @@ export default function KakaoPathMap({ kakao, path }: PathMapProps & { kakao: an
       new kakao.maps.Polyline({
         path: toPath(path),
         strokeWeight: 4,
-        strokeColor: '#FF7A59',
+        strokeColor: VOLT,
         strokeOpacity: 1,
       }).setMap(map);
       new kakao.maps.CustomOverlay({
         position: new kakao.maps.LatLng(path[0][0], path[0][1]),
         content:
-          '<div style="width:14px;height:14px;border-radius:50%;background:#7A9A8B;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>',
+          `<div style="width:14px;height:14px;border-radius:50%;background:${MINT};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>`,
       }).setMap(map);
 
       if (path.length > 1) {

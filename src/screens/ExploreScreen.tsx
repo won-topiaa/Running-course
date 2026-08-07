@@ -95,7 +95,7 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
                 onClick={() => toggleType(t)}
                 className={`rounded-full px-3 py-1.5 text-[12px] font-medium transition active:scale-95 ${
                   prefs.courseTypes.includes(t)
-                    ? 'bg-coral text-white'
+                    ? 'bg-coral text-ink'
                     : 'border border-line bg-paper text-espresso-muted'
                 }`}
               >
@@ -117,7 +117,7 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
             className="peer sr-only"
           />
           <span className="relative h-6 w-11 rounded-full bg-line transition peer-checked:bg-coral">
-            <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
+            <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-espresso-muted shadow transition peer-checked:translate-x-5 peer-checked:bg-ink" />
           </span>
         </label>
 
@@ -181,11 +181,11 @@ function RecoCard({ rec, rank, api }: { rec: Recommendation; rank: number; api: 
       <ScenePhoto scene={sceneForCourse(course)} className="aspect-[16/9] w-full">
         <div className="flex h-full items-start justify-between p-3">
           {rank < 3 && (
-            <span className="rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-espresso shadow-soft backdrop-blur">
+            <span className="rounded-full bg-ink/70 px-2.5 py-1 text-[11px] font-bold text-white shadow-soft backdrop-blur">
               추천 {rank + 1}위
             </span>
           )}
-          <span className="ml-auto rounded-full bg-white/90 px-2.5 py-1 text-[13px] font-extrabold shadow-soft backdrop-blur">
+          <span className="ml-auto rounded-full bg-ink/70 px-2.5 py-1 text-[13px] font-extrabold shadow-soft backdrop-blur">
             <span className={scoreColor}>{matchScore}%</span>
           </span>
         </div>

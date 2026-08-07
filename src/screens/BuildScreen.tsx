@@ -22,6 +22,7 @@ import { GRADE_LEGEND, GRADE_COLORS, RUN_STYLES, type RunStyle } from '../lib/ro
 import { estimateTimeLabel, formatDistance } from '../lib/format';
 import type { LatLng } from '../lib/types';
 import type { AppApi } from '../ui/appApi';
+import { HALO, VOLT } from '../ui/theme';
 
 type Mode = 'pins' | 'distance';
 
@@ -242,7 +243,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
             {mode === 'distance' ? (
               <>
                 <InputRow
-                  dot="#2C2725"
+                  dot={HALO}
                   label="출발"
                   value="지도를 눌러 시작점 지정"
                   action={
@@ -256,14 +257,14 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                 />
                 <div className="my-1 h-px bg-line" />
                 <InputRow
-                  dot="#FF7A59"
+                  dot={VOLT}
                   label="목표"
                   value={`${targetKm}km ${returnToStart ? '왕복' : '편도'} 코스`}
                 />
               </>
             ) : (
               <InputRow
-                dot="#FF7A59"
+                dot={VOLT}
                 label="경유"
                 value={
                   waypoints.length === 0
@@ -508,7 +509,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                       selected &&
                       api.startRecord({ name: courseName(selected), route: selected.route })
                     }
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-espresso py-3 text-[13.5px] font-bold text-white active:scale-[0.98]"
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-espresso py-3 text-[13.5px] font-bold text-ink active:scale-[0.98]"
                   >
                     <Play size={15} fill="#fff" /> 이 경로로 뛰기
                   </button>
@@ -546,7 +547,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                 <button
                   onClick={generate}
                   disabled={!canGenerate || loading}
-                  className={`mt-3 flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-[14px] font-bold text-white transition active:scale-[0.98] ${
+                  className={`mt-3 flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-[14px] font-bold text-ink transition active:scale-[0.98] ${
                     canGenerate && !loading ? 'bg-coral shadow-warm' : 'bg-espresso-soft/50'
                   }`}
                 >
@@ -740,7 +741,7 @@ function CompareCard({
           <span className="truncate text-[14px] font-bold text-espresso">{r.label}</span>
           <span
             className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-              selected ? 'bg-coral text-white' : 'bg-tint text-espresso-muted'
+              selected ? 'bg-coral text-ink' : 'bg-tint text-espresso-muted'
             }`}
           >
             상승 {route.ascentM}m

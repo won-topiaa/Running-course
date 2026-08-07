@@ -126,7 +126,7 @@ export default function RecordScreen({
   return (
     <div className="fixed inset-0 z-[2000] flex flex-col bg-ink text-white">
       {/* 지도 — 코스를 따라 뛸 때는 넓게, 자유 러닝일 때는 숫자에 자리를 내준다 */}
-      <div className={`run-dark relative ${live ? (planned ? 'h-[46%]' : 'h-[38%]') : 'flex-1'}`}>
+      <div className={`relative ${live ? (planned ? 'h-[46%]' : 'h-[38%]') : 'flex-1'}`}>
         <LiveMap
           coords={rec.coords}
           center={planned?.route.coords[0] ?? api.settings.homeLocation}

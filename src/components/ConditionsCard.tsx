@@ -1,17 +1,20 @@
 import { Droplets, Shirt, Wind } from 'lucide-react';
+import { GRADE, INK_LINE } from '../ui/theme';
 import type { AqiLevel, RunConditions } from '../lib/weather';
 
+// 미세먼지·적합도는 경고 신호라 강조색(볼트)으로 뭉뚱그리지 않는다.
+// 어두운 바탕에서 읽히도록 칩 배경은 어둡게, 글씨는 밝게 뒤집었다.
 const AQI_STYLE: Record<AqiLevel, { bg: string; text: string; dot: string }> = {
-  good: { bg: 'bg-sage-100', text: 'text-sage-600', dot: '#7A9A8B' },
-  moderate: { bg: 'bg-amber-100', text: 'text-amber-700', dot: '#D9A441' },
-  bad: { bg: 'bg-coral-100', text: 'text-coral-600', dot: '#F2603E' },
-  verybad: { bg: 'bg-red-100', text: 'text-red-700', dot: '#DC2626' },
+  good: { bg: 'bg-sage-100', text: 'text-sage-600', dot: GRADE.good },
+  moderate: { bg: 'bg-amber-500/15', text: 'text-amber-300', dot: GRADE.moderate },
+  bad: { bg: 'bg-orange-500/15', text: 'text-orange-300', dot: GRADE.bad },
+  verybad: { bg: 'bg-red-500/15', text: 'text-red-300', dot: GRADE.verybad },
 };
 
 function scoreColor(score: number): string {
-  if (score >= 75) return '#7A9A8B';
-  if (score >= 55) return '#D9A441';
-  return '#F2603E';
+  if (score >= 75) return GRADE.good;
+  if (score >= 55) return GRADE.moderate;
+  return GRADE.bad;
 }
 
 export default function ConditionsCard({ c }: { c: RunConditions | null }) {
@@ -30,7 +33,7 @@ export default function ConditionsCard({ c }: { c: RunConditions | null }) {
         {/* 러닝 적합도 링 */}
         <div className="relative grid h-[72px] w-[72px] shrink-0 place-items-center">
           <svg viewBox="0 0 64 64" className="h-full w-full -rotate-90">
-            <circle cx="32" cy="32" r="26" fill="none" stroke="#F0EAE1" strokeWidth="7" />
+            <circle cx="32" cy="32" r="26" fill="none" stroke={INK_LINE} strokeWidth="7" />
             <circle
               cx="32"
               cy="32"

@@ -91,7 +91,7 @@ export default function InstallPrompt() {
         {deferred && (
           <button
             onClick={install}
-            className="shrink-0 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-white shadow-warm active:scale-95"
+            className="shrink-0 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-ink shadow-warm active:scale-95"
           >
             설치
           </button>

@@ -1,3 +1,4 @@
+import { MUTED, VOLT } from '../ui/theme';
 import { useEffect, useRef } from 'react';
 import type { LiveMapProps } from './mapTypes';
 import type { LatLng } from '../lib/types';
@@ -53,7 +54,7 @@ export default function KakaoLiveMap({
           const pl = new kakao.maps.Polyline({
             path: toPath(plannedPath),
             strokeWeight: 6,
-            strokeColor: '#6B615B',
+            strokeColor: MUTED,
             strokeOpacity: 0.45,
             strokeStyle: 'dot',
           });
@@ -77,7 +78,7 @@ export default function KakaoLiveMap({
         if (!lineRef.current) {
           lineRef.current = new kakao.maps.Polyline({
             strokeWeight: 6,
-            strokeColor: '#FF7A59',
+            strokeColor: VOLT,
             strokeOpacity: 1,
           });
           lineRef.current.setMap(map);
@@ -90,7 +91,7 @@ export default function KakaoLiveMap({
           dotRef.current = new kakao.maps.CustomOverlay({
             position: pos,
             content:
-              '<div style="width:18px;height:18px;border-radius:50%;background:#FF7A59;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35)"></div>',
+              `<div style="width:18px;height:18px;border-radius:50%;background:${VOLT};border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35)"></div>`,
           });
           dotRef.current.setMap(map);
         } else {

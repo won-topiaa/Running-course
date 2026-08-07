@@ -43,7 +43,7 @@ export default function SavedScreen({ api }: { api: AppApi }) {
           <p className="mt-1 text-[12.5px] text-espresso-soft">하트를 눌러 코스를 저장해보세요.</p>
           <button
             onClick={() => api.nav('explore')}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-coral px-4 py-2.5 text-[13px] font-semibold text-white shadow-warm active:scale-95"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-coral px-4 py-2.5 text-[13px] font-semibold text-ink shadow-warm active:scale-95"
           >
             <Compass size={15} /> 추천 코스 보기
           </button>
