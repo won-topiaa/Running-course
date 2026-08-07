@@ -30,10 +30,13 @@ import {
   loadCloudSession,
   pullCloud,
   pushCloud,
+  isReconciled,
+  localRunCount,
   signIn,
   signOut,
   signUp,
   type CloudConfig,
+  type CloudSession,
 } from '../lib/cloud';
 import { connect as connectStrava, loadToken, saveToken } from '../lib/strava';
 import type { Settings } from '../lib/config';
@@ -383,6 +386,10 @@ function CloudSection({ api }: { api: AppApi }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [remoteAt, setRemoteAt] = useState<string | null | undefined>(undefined);
+  // 계정 기록과 기기 기록이 둘 다 있어 방향을 못 정한 상태. 정할 때까지 자동 백업은 멈춘다.
+  const [conflict, setConflict] = useState(
+    () => !!session && !isReconciled(session.userId),
+  );
 
   const flash = (m: string) => {
     setMsg(m);
@@ -403,24 +410,48 @@ function CloudSection({ api }: { api: AppApi }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * 로그인/가입 직후, 계정과 이 기기 중 어느 쪽 데이터를 남길지 정한다.
+   * 새 기기에서 로그인하자마자 빈 상태를 올려 계정 백업을 지우는 사고를 막는 핵심 분기다.
+   */
+  const reconcile = async (c: CloudConfig, s: CloudSession) => {
+    setSession(s);
+    const meta = await cloudBackupMeta(c);
+    setRemoteAt(meta.updatedAt);
+
+    if (!meta.updatedAt) {
+      // 계정이 비어 있다 → 이 기기 걸로 시작
+      await pushCloud(c, { force: true });
+      await refreshMeta(c);
+      setConflict(false);
+      flash('이 기기 기록을 계정에 올렸어요. 이제 자동으로 백업돼요.');
+      return;
+    }
+    if (localRunCount() === 0) {
+      // 기기가 비어 있다 → 새 기기로 보고 계정 기록을 가져온다
+      const n = await pullCloud(c);
+      setConflict(false);
+      flash(`계정에서 ${n}개 항목을 불러왔어요. 새로고침합니다…`);
+      setTimeout(() => location.reload(), 1200);
+      return;
+    }
+    // 양쪽 다 있다 → 사용자가 고를 때까지 아무것도 덮어쓰지 않는다
+    setConflict(true);
+    flash('계정에도 기록이 있어요. 어느 쪽을 남길지 골라 주세요.');
+  };
+
   const doAuth = async (mode: 'in' | 'up') => {
     if (!cfg) return;
     setBusy(true);
     try {
       if (mode === 'in') {
-        const s = await signIn(cfg, email.trim(), pw);
-        setSession(s);
-        await pushCloud(cfg); // 로그인 즉시 현재 기기 데이터를 한 번 올려둔다
-        await refreshMeta(cfg);
-        flash('로그인했어요. 이제 기록이 계정에 자동 백업돼요.');
+        await reconcile(cfg, await signIn(cfg, email.trim(), pw));
       } else {
         const r = await signUp(cfg, email.trim(), pw);
         if (r.needsConfirm) {
           flash('확인 메일을 보냈어요. 메일의 링크를 누른 뒤 로그인해 주세요.');
-        } else {
-          setSession(r.session);
-          if (r.session) await pushCloud(cfg);
-          flash('가입 완료! 이제 기록이 계정에 자동 백업돼요.');
+        } else if (r.session) {
+          await reconcile(cfg, r.session);
         }
       }
       setPw('');
@@ -436,6 +467,7 @@ function CloudSection({ api }: { api: AppApi }) {
     setBusy(true);
     try {
       const n = await pullCloud(cfg);
+      setConflict(false);
       flash(`${n}개 항목을 복원했어요. 새로고침합니다…`);
       setTimeout(() => location.reload(), 1200);
     } catch (e) {
@@ -465,7 +497,7 @@ function CloudSection({ api }: { api: AppApi }) {
                 {session.email}
               </span>
               <span className="text-[11px] text-espresso-muted">
-                기록이 계정에 자동 백업되고 있어요
+                {conflict ? '자동 백업 멈춤 — 아래에서 방향을 골라 주세요' : '기록이 계정에 자동 백업되고 있어요'}
                 {remoteAt && ` · 마지막 ${new Date(remoteAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' })}`}
               </span>
             </span>
@@ -480,14 +512,22 @@ function CloudSection({ api }: { api: AppApi }) {
               로그아웃
             </button>
           </div>
+          {conflict && (
+            <p className="mt-2 rounded-2xl border border-coral/40 bg-coral-50 px-3 py-2.5 text-[11.5px] leading-relaxed text-espresso">
+              계정과 이 기기에 <b>둘 다 기록이 있어요.</b> 한쪽이 다른 쪽을 덮어쓰기 때문에,
+              고르기 전까지 자동 백업을 멈춰 뒀어요. 이 기기 기록이 최신이면{' '}
+              <b>이 기기 걸로 덮어쓰기</b>, 계정 쪽이 최신이면 <b>계정에서 가져오기</b>.
+            </p>
+          )}
           <div className="mt-2 grid grid-cols-2 gap-2">
             <button
               onClick={async () => {
                 if (!cfg) return;
                 setBusy(true);
                 try {
-                  await pushCloud(cfg);
+                  await pushCloud(cfg, { force: true });
                   await refreshMeta(cfg);
+                  setConflict(false);
                   flash('지금 상태를 백업했어요.');
                 } catch (e) {
                   flash(e instanceof Error ? e.message : '백업에 실패했어요.');
@@ -498,14 +538,14 @@ function CloudSection({ api }: { api: AppApi }) {
               disabled={busy}
               className="rounded-full bg-coral py-2.5 text-[12.5px] font-semibold text-white active:scale-95 disabled:opacity-60"
             >
-              지금 백업
+              {conflict ? '이 기기 걸로 덮어쓰기' : '지금 백업'}
             </button>
             <button
               onClick={doRestore}
               disabled={busy || remoteAt === null}
               className="rounded-full bg-espresso py-2.5 text-[12.5px] font-semibold text-white active:scale-95 disabled:opacity-60"
             >
-              계정에서 복원
+              {conflict ? '계정에서 가져오기' : '계정에서 복원'}
             </button>
           </div>
         </>

@@ -12,6 +12,11 @@
 import { applyBackup, collectBackup } from './backup';
 
 const SESSION_KEY = 'run-app-cloud-session-v1';
+// 이 기기가 "계정 데이터와 기기 데이터 중 무엇을 남길지" 한 번 정리했는지 표시한다.
+// 값은 정리를 마친 userId. 이게 없으면 자동 백업은 멈춰 있는다 — 새 기기에서
+// 로그인하자마자 빈 상태가 계정 백업을 덮어쓰는 사고를 막는 잠금장치다.
+const SYNCED_KEY = 'run-app-cloud-synced-v1';
+const ROUTES_KEY = 'run-app-routes-v1';
 
 export interface CloudConfig {
   url: string; //     https://xxxx.supabase.co
@@ -36,6 +41,35 @@ const trim = (u: string) =>
     .trim()
     .replace(/\/+$/, '')
     .replace(/\/(rest|auth|storage|realtime)\/v1$/, '');
+
+/** 이 기기가 해당 계정과 데이터 방향을 정리했는가 */
+export function isReconciled(userId: string): boolean {
+  try {
+    return localStorage.getItem(SYNCED_KEY) === userId;
+  } catch {
+    return false;
+  }
+}
+
+function markReconciled(userId: string | null): void {
+  try {
+    if (userId) localStorage.setItem(SYNCED_KEY, userId);
+    else localStorage.removeItem(SYNCED_KEY);
+  } catch {
+    /* 무시 */
+  }
+}
+
+/** 이 기기에 쌓인 러닝 기록 수 — 비었으면 "새 기기"로 보고 계정 쪽을 가져온다 */
+export function localRunCount(): number {
+  try {
+    const raw = localStorage.getItem(ROUTES_KEY);
+    const arr = raw ? (JSON.parse(raw) as unknown[]) : [];
+    return Array.isArray(arr) ? arr.length : 0;
+  } catch {
+    return 0;
+  }
+}
 
 export function loadCloudSession(): CloudSession | null {
   try {
@@ -122,6 +156,7 @@ export async function signIn(
 
 export function signOut(): void {
   saveCloudSession(null);
+  markReconciled(null);
 }
 
 /** 만료 임박 시 리프레시. 갱신 실패면 세션을 지우고 null (재로그인 필요). */
@@ -159,10 +194,19 @@ async function restError(res: Response, fallback: string): Promise<string> {
   return msg ? `${fallback}: ${msg}` : `${fallback} (${res.status})`;
 }
 
-/** 이 기기의 데이터를 계정에 백업 (사용자당 1행 upsert) */
-export async function pushCloud(cfg: CloudConfig): Promise<void> {
+/**
+ * 이 기기의 데이터를 계정에 백업 (사용자당 1행 upsert).
+ *
+ * `force` 없이 부르면 정리(reconcile)를 마친 기기에서만 올린다. 자동 백업이 이 경로를
+ * 쓰기 때문에, 로그인 직후의 빈 기기가 계정 백업을 지워버리는 일이 생기지 않는다.
+ * 사용자가 "이 기기 걸로 덮어쓰기"를 직접 누른 경우에만 force 로 통과시킨다.
+ */
+export async function pushCloud(cfg: CloudConfig, opts?: { force?: boolean }): Promise<void> {
   const s = await ensureCloudFresh(cfg);
   if (!s) throw new Error('로그인이 풀렸어요. 다시 로그인해 주세요.');
+  if (!opts?.force && !isReconciled(s.userId)) {
+    throw new Error('계정 기록과 이 기기 기록 중 무엇을 남길지 먼저 골라 주세요.');
+  }
   const res = await fetch(`${trim(cfg.url)}/rest/v1/backups`, {
     method: 'POST',
     headers: {
@@ -175,6 +219,7 @@ export async function pushCloud(cfg: CloudConfig): Promise<void> {
     ]),
   });
   if (!res.ok) throw new Error(await restError(res, '백업 실패'));
+  markReconciled(s.userId);
 }
 
 export interface CloudBackupMeta {
@@ -204,5 +249,7 @@ export async function pullCloud(cfg: CloudConfig): Promise<number> {
   if (!res.ok) throw new Error(await restError(res, '가져오기 실패'));
   const rows = await res.json();
   if (!rows?.[0]?.data) throw new Error('이 계정에 저장된 백업이 아직 없어요.');
-  return applyBackup(rows[0].data);
+  const n = applyBackup(rows[0].data);
+  markReconciled(s.userId);
+  return n;
 }
