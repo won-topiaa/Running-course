@@ -1,4 +1,5 @@
 import 'leaflet/dist/leaflet.css';
+import '../lib/leafletPatch';
 import { MUTED } from '../ui/theme';
 import { useEffect } from 'react';
 import L from 'leaflet';
@@ -96,10 +97,11 @@ export default function LeafletRouteMap({
       center={center}
       zoom={14}
       zoomControl={false}
-      // 줌 CSS 전환 도중 화면을 떠나면 transitionend 가 제거된 DOM 을 만져
-      // Leaflet 내부(_leaflet_pos)가 터진다. fitBounds 로 줌이 자주 바뀌는
-      // 지도라 전환 자체를 끈다 — 스냅 줌이 오히려 또렷하기도 하다.
-      zoomAnimation={false}
+      // 줌 감도를 절반으로 — 기본값은 휠 한 칸에 한 레벨씩 튀어
+      // 확대/축소가 널뛰기처럼 느껴진다 (전환 중 제거 크래시는 leafletPatch 가 막는다)
+      zoomSnap={0.5}
+      zoomDelta={0.5}
+      wheelPxPerZoomLevel={120}
       className="h-full w-full"
       scrollWheelZoom
     >

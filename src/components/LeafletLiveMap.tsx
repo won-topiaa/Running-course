@@ -1,4 +1,5 @@
 import 'leaflet/dist/leaflet.css';
+import '../lib/leafletPatch';
 import { MUTED, VOLT } from '../ui/theme';
 import { useEffect } from 'react';
 import { CircleMarker, MapContainer, Polyline, useMap } from 'react-leaflet';
@@ -41,6 +42,9 @@ export default function LeafletLiveMap({
       center={(cur ?? center) as [number, number]}
       zoom={16}
       zoomControl={false}
+      zoomSnap={0.5}
+      zoomDelta={0.5}
+      wheelPxPerZoomLevel={120}
       className="h-full w-full"
       scrollWheelZoom
     >

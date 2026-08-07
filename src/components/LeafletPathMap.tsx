@@ -1,4 +1,5 @@
 import 'leaflet/dist/leaflet.css';
+import '../lib/leafletPatch';
 import { MINT, VOLT } from '../ui/theme';
 import { useEffect } from 'react';
 import L from 'leaflet';
@@ -24,7 +25,8 @@ export default function LeafletPathMap({ path, mapboxToken }: PathMapProps) {
       center={path[0] as [number, number]}
       zoom={14}
       zoomControl={false}
-      zoomAnimation={false}
+      zoomSnap={0.5}
+      zoomDelta={0.5}
       className="h-full w-full"
       scrollWheelZoom={false}
     >
