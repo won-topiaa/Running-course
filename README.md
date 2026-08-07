@@ -77,9 +77,8 @@
   없으면 정직한 빈 상태를 보여줍니다.
 - **주간 목표**(± 조절), **러닝화 등록제** — 등록한 날 이후의 실제 기록 거리로 마일리지 누적
 - **페이스 계산기**(5K·10K·하프 예상 기록) — 코스별 예상 시간에도 반영
-- **데이터 이동**: ① 파일 내보내기/가져오기(항상 동작) ② **동기화 코드** —
-  [`server/sync-worker`](server/sync-worker/README.md) 배포 시 코드 하나로 기기 간 동기화
-- **외부 서비스 연동**(카카오맵 · Mapbox · OpenRouteService · Strava)
+- **계정 동기화**(이메일 로그인) — 기록·설정이 계정에 자동 백업, 기기를 바꿔도 유지
+- **파일 백업** — 로그인 없이 쓰는 안전망 (JSON 내보내기/가져오기)
 
 ## 러너 리서치 반영
 
@@ -177,7 +176,7 @@ src/
 │  ├─ wakeLock.ts             # 러닝 중 화면 꺼짐 방지
 │  └─ registerSW.ts           # 서비스 워커 등록(프로덕션)
 ├─ server/strava-worker/      # Strava 자동 업로드 Cloudflare Worker (선택 배포)
-├─ server/sync-worker/        # 기기 동기화 Worker — 동기화 코드 방식 (선택 배포)
+├─ server/supabase/           # 이메일 로그인 동기화 설정 가이드 (Supabase)
 ├─ public/                    # manifest·서비스워커·앱 아이콘(PWA)
 ├─ data/
 │  └─ courses.ts              # 서울 실제 코스 큐레이션 (14곳)

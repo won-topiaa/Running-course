@@ -26,7 +26,7 @@ export function loadToken(): StravaToken | null {
   return null;
 }
 
-export function saveToken(t: StravaToken | null): void {
+function saveToken(t: StravaToken | null): void {
   try {
     if (t) localStorage.setItem(TOKEN_KEY, JSON.stringify(t));
     else localStorage.removeItem(TOKEN_KEY);
@@ -36,12 +36,6 @@ export function saveToken(t: StravaToken | null): void {
 }
 
 const trim = (base: string) => base.replace(/\/+$/, '');
-
-/** 연결 시작 — Worker 의 /auth 로 이동 */
-export function connect(workerUrl: string): void {
-  const back = `${location.origin}${location.pathname}`;
-  location.href = `${trim(workerUrl)}/auth?redirect=${encodeURIComponent(back)}`;
-}
 
 /** OAuth 복귀 시 URL 해시에서 토큰을 회수 (성공하면 해시를 지운다) */
 export function captureTokenFromHash(): StravaToken | null {

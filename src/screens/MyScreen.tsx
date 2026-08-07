@@ -307,7 +307,7 @@ export default function MyScreen({ api }: { api: AppApi }) {
       <CloudSection api={api} />
 
       {/* 파일 백업 — 로그인 없이 쓰는 안전망 */}
-      <SyncSection api={api} />
+      <SyncSection />
 
     </div>
   );
@@ -540,7 +540,7 @@ function CloudSection({ api }: { api: AppApi }) {
 }
 
 /** 데이터 이동 — 파일 백업(항상 동작) + 동기화 코드(sync-worker 배포 시) */
-function SyncSection({ api: _api }: { api: AppApi }) {
+function SyncSection() {
   const [msg, setMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
