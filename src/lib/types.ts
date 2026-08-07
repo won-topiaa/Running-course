@@ -46,14 +46,6 @@ export const LOOP_TYPE_LABEL: Record<LoopType, string> = {
 /** 노면 종류 */
 export type Surface = 'asphalt' | 'urethane' | 'dirt' | 'track' | 'boardwalk';
 
-export const SURFACE_LABEL: Record<Surface, string> = {
-  asphalt: '아스팔트',
-  urethane: '우레탄',
-  dirt: '흙길',
-  track: '트랙',
-  boardwalk: '데크',
-};
-
 /** 경사도 정보 (1번 요소) */
 export interface Elevation {
   gainM: number; //        누적 상승 고도(m)

@@ -45,6 +45,7 @@ export default function App() {
   const [recordOpen, setRecordOpen] = useState(false);
   const [plannedRun, setPlannedRun] = useState<{ name: string; route: RouteResult } | null>(null);
   const [routeView, setRouteView] = useState<RouteView | null>(null);
+  const [storageFull, setStorageFull] = useState(false);
 
   // 오늘의 러닝 컨디션
   useEffect(() => {
@@ -76,7 +77,12 @@ export default function App() {
   }, []);
 
   useEffect(() => saveSettings(settings), [settings]);
-  useEffect(() => persistRoutes(savedRoutes), [savedRoutes]);
+
+  // 저장 실패(용량 초과)는 조용히 넘기지 않는다. 방금 뛴 기록이 사라지는데
+  // 아무 표시가 없으면 사용자는 한참 뒤에야 알게 된다.
+  useEffect(() => {
+    setStorageFull(!persistRoutes(savedRoutes));
+  }, [savedRoutes]);
   useEffect(() => {
     try {
       localStorage.setItem(SAVED_KEY, JSON.stringify(savedIds));
@@ -150,6 +156,16 @@ export default function App() {
       {screen === 'build' && <BuildScreen api={api} />}
       {screen === 'saved' && <SavedScreen api={api} />}
       {screen === 'my' && <MyScreen api={api} />}
+
+      {storageFull && (
+        <div className="fixed inset-x-0 bottom-[86px] z-[1100] px-3">
+          <div className="mx-auto max-w-md rounded-2xl border border-coral/50 bg-coral-50 px-3.5 py-2.5 text-[12px] leading-relaxed text-espresso shadow-card">
+            <b className="text-coral-600">저장 공간이 가득 찼어요.</b> 새 기록이 이 기기에
+            저장되지 않고 있어요. 마이 → 내 코스에서 오래된 기록을 지우거나,
+            계정에 백업한 뒤 정리해 주세요.
+          </div>
+        </div>
+      )}
 
       <BottomNav
         active={screen}

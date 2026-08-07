@@ -1,3 +1,4 @@
+import 'leaflet/dist/leaflet.css';
 import { MINT, VOLT } from '../ui/theme';
 import { useEffect } from 'react';
 import L from 'leaflet';

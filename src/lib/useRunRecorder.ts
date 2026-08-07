@@ -163,7 +163,15 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     beginSession(false);
     watchRef.current = navigator.geolocation.watchPosition(
       (pos) => ingest(pos.coords.latitude, pos.coords.longitude, pos.coords.altitude),
-      () => sync({ error: 'denied' }),
+      (err) => {
+        // 권한 거부는 회복 불가 — 계속 '기록 중'으로 두면 아무것도 안 쌓이는데
+        // 사용자는 뛰고 있다고 믿게 된다. 즉시 멈추고 알린다.
+        // 그 외(일시적 신호 없음)는 다음 콜백에서 회복될 수 있으니 유지한다.
+        if (err.code === err.PERMISSION_DENIED) {
+          sync({ error: 'denied' });
+          pauseRef.current?.();
+        }
+      },
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 12000 },
     );
   }, [beginSession, ingest, sync]);
@@ -183,11 +191,21 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     demoRef.current = setInterval(() => {
       if (statusRef.current !== 'recording') return;
       const path = demoPathRef.current;
-      if (demoIdxRef.current >= path.length) return;
+      if (demoIdxRef.current >= path.length) {
+        // 경로를 다 돌았으면 타이머를 정리한다 (계속 두면 빈 틱이 무한히 돈다)
+        if (demoRef.current) {
+          clearInterval(demoRef.current);
+          demoRef.current = null;
+        }
+        return;
+      }
       const [lat, lng] = path[demoIdxRef.current++];
       ingest(lat, lng, syntheticElevation(lat, lng));
     }, 500);
   }, [beginSession, ingest, startLoc]);
+
+  // start 안에서 pause 를 부르는데 선언 순서상 직접 참조할 수 없어 ref 로 우회
+  const pauseRef = useRef<(() => void) | null>(null);
 
   const pause = useCallback(() => {
     if (statusRef.current !== 'recording') return;
@@ -197,8 +215,14 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     sync({ status: 'paused' });
   }, [sync]);
 
+  pauseRef.current = pause;
+
   const resume = useCallback(() => {
     if (statusRef.current !== 'paused') return;
+    // 마지막 위치를 버려서 재개 직후 첫 좌표가 '다시 기준점'이 되게 한다.
+    // 이걸 안 하면 멈춰 있는 동안 이동한 거리(지하철·차량 이동 등)가
+    // 재개하는 순간 한 번에 더해져 기록이 부풀려진다.
+    lastRef.current = null;
     segStartRef.current = Date.now();
     statusRef.current = 'recording';
     void wakeRef.current?.enable();

@@ -76,14 +76,6 @@ export function densifyPath(points: LatLng[], stepMeters = 60): LatLng[] {
 }
 
 /** 좌표열을 최대 maxPoints 개로 균등 다운샘플 (고도 API 한도 대응) */
-export function decimate<T>(arr: T[], maxPoints: number): T[] {
-  if (arr.length <= maxPoints) return arr;
-  const out: T[] = [];
-  const step = (arr.length - 1) / (maxPoints - 1);
-  for (let i = 0; i < maxPoints; i++) out.push(arr[Math.round(i * step)]);
-  return out;
-}
-
 /**
  * 최근접 이웃(Nearest-Neighbor) 순서로 경유지를 재배열한다.
  * 첫 지점은 고정하고 이후 가장 가까운 지점을 차례로 잇는다. (핀 순서 최적화 후보용)

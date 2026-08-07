@@ -51,7 +51,3 @@ export function formatDistance(km: number): string {
   return `${km.toFixed(km < 10 ? 2 : 1).replace(/\.0$/, '')}km`;
 }
 
-/** 대략적인 소모 칼로리 (체중 62kg 가정, kcal ≈ 0.9 × kg × km) */
-export function estimateCalories(distanceKm: number, weightKg = 62): number {
-  return Math.round(0.9 * weightKg * distanceKm);
-}

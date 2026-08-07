@@ -33,11 +33,6 @@ export function kakaoRoadviewUrl([lat, lng]: LatLng): string {
   return `${BASE}/roadview/${lat},${lng}`;
 }
 
-/** 장소명 검색 */
-export function kakaoSearchUrl(query: string): string {
-  return `${BASE}/search/${encodeURIComponent(query)}`;
-}
-
 export function openKakao(url: string): void {
   window.open(url, '_blank', 'noopener');
 }

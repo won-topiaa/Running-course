@@ -1,3 +1,4 @@
+import 'leaflet/dist/leaflet.css';
 import { MUTED, VOLT } from '../ui/theme';
 import { useEffect } from 'react';
 import { CircleMarker, MapContainer, Polyline, useMap } from 'react-leaflet';

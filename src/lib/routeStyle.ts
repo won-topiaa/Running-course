@@ -36,7 +36,7 @@ export interface StyleEval {
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
-export function computeMetrics(route: RouteResult): StyleMetrics {
+function computeMetrics(route: RouteResult): StyleMetrics {
   const totalM = route.distanceKm * 1000 || 1;
   let flatLen = 0;
   let transitions = 0;

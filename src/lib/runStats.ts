@@ -28,11 +28,19 @@ const dayKey = (t: number) => {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 };
 
+/**
+ * 날짜를 n일 옮긴 자정. `t - n*DAY` 로 계산하면 서머타임이 있는 지역에서
+ * 하루가 23/25시간이라 같은 날을 두 번 세거나 하루를 건너뛴다.
+ * 달력 기준으로 옮기면 그 문제가 없다 (한국은 무관하지만 해외 러너도 쓴다).
+ */
+function midnightShift(base: Date, days: number): Date {
+  return new Date(base.getFullYear(), base.getMonth(), base.getDate() + days);
+}
+
 /** 이번 주 월요일 00:00 (로컬) */
 function mondayStart(now: Date): number {
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dow = (d.getDay() + 6) % 7; // 월=0
-  return d.getTime() - dow * DAY;
+  const dow = (now.getDay() + 6) % 7; // 월=0
+  return midnightShift(now, -dow).getTime();
 }
 
 export function computeRunStats(routes: SavedRoute[], now = new Date()): RunStats {
@@ -51,10 +59,11 @@ export function computeRunStats(routes: SavedRoute[], now = new Date()): RunStat
     km: 0,
   }));
   let weekKm = 0;
+  const weekEnd = midnightShift(now, 7 - ((now.getDay() + 6) % 7)).getTime();
   for (const r of runs) {
-    if (r.createdAt >= weekStart && r.createdAt < weekStart + 7 * DAY) {
-      const idx = Math.floor((r.createdAt - weekStart) / DAY);
-      if (idx >= 0 && idx < 7) weekly[idx].km += r.distanceKm;
+    if (r.createdAt >= weekStart && r.createdAt < weekEnd) {
+      const idx = (new Date(r.createdAt).getDay() + 6) % 7; // 월=0
+      weekly[idx].km += r.distanceKm;
       weekKm += r.distanceKm;
     }
   }
@@ -62,17 +71,21 @@ export function computeRunStats(routes: SavedRoute[], now = new Date()): RunStat
   // 연속 일수: 오늘부터 거꾸로. 오늘 안 뛰었으면 어제부터 세어준다(아직 안 끊긴 것으로).
   const runDays = new Set(runs.map((r) => dayKey(r.createdAt)));
   let streakDays = 0;
-  const todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  let cursor = runDays.has(dayKey(todayMid)) ? todayMid : todayMid - DAY;
-  while (runDays.has(dayKey(cursor))) {
+  let offset = runDays.has(dayKey(midnightShift(now, 0).getTime())) ? 0 : -1;
+  while (runDays.has(dayKey(midnightShift(now, offset).getTime()))) {
     streakDays++;
-    cursor -= DAY;
+    offset--;
   }
 
   const monthsTogether = firstRunAt
     ? Math.max(1, Math.round((now.getTime() - firstRunAt) / (30 * DAY)))
     : 0;
+  // 시작한 지 2주밖에 안 된 사람을 4로 나누면 실제 빈도의 절반으로 보인다.
+  // 실제로 관찰된 기간(최대 4주)으로 나눈다.
   const recent = runs.filter((r) => r.createdAt >= now.getTime() - 28 * DAY).length;
+  const observedWeeks = firstRunAt
+    ? Math.min(4, Math.max(1, (now.getTime() - firstRunAt) / (7 * DAY)))
+    : 4;
 
   return {
     runCount: runs.length,
@@ -83,7 +96,7 @@ export function computeRunStats(routes: SavedRoute[], now = new Date()): RunStat
     longestKm,
     firstRunAt,
     monthsTogether,
-    runsPerWeekRecent: recent / 4,
+    runsPerWeekRecent: recent / observedWeeks,
   };
 }
 
@@ -113,7 +126,7 @@ export function levelLabel(stats: RunStats): string {
   if (stats.runCount === 0) return '첫 러닝을 기다리는 중';
   const w = stats.runsPerWeekRecent;
   if (w >= 5) return '매일 뛰는 러너';
-  if (w >= 3) return `주 ${Math.round(w)}회 러너`;
   if (w >= 1) return `주 ${Math.round(w)}회 러너`;
+  if (w > 0) return '천천히 쌓는 중';
   return '다시 시동 거는 중';
 }

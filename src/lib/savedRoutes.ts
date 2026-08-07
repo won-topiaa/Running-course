@@ -31,6 +31,26 @@ export interface SavedRoute {
   durationSec?: number; // 기록한 러닝에만
 }
 
+/**
+ * 저장 전 부피 줄이기.
+ *
+ * GPS 원본은 좌표를 소수점 15자리까지 들고 있는데 실제 GPS 정확도는 ±5m 라
+ * 5자리(약 1.1m)면 충분하다. 고도도 0.1m 면 넘친다. 포인트 수도 상한을 둔다
+ * — 거리·고도 같은 수치는 이미 계산해서 따로 들고 있으므로 솎아내도 안 틀린다.
+ *
+ * 이걸 안 하면 10km 기록 1건이 약 108KB, localStorage 5MB 한도에 47건이면 꽉 찬다.
+ * 주 3회 뛰는 사람은 넉 달이면 도달한다.
+ */
+const MAX_POINTS = 1500; // 10km 기준 약 7m 간격 — 지도·차트에 차이가 안 보인다
+
+export function compactRoute(r: SavedRoute): SavedRoute {
+  const coords = downsample(r.coords, MAX_POINTS).map(
+    ([la, ln]) => [Math.round(la * 1e5) / 1e5, Math.round(ln * 1e5) / 1e5] as LatLng,
+  );
+  const elevations = downsample(r.elevations, MAX_POINTS).map((e) => Math.round(e * 10) / 10);
+  return { ...r, coords, elevations };
+}
+
 export function loadRoutes(): SavedRoute[] {
   try {
     const raw = localStorage.getItem(KEY);
@@ -41,11 +61,16 @@ export function loadRoutes(): SavedRoute[] {
   return [];
 }
 
-export function persistRoutes(routes: SavedRoute[]): void {
+/**
+ * 저장. 용량이 꽉 차면 false 를 돌려준다 — 조용히 삼키면 사용자는 방금 뛴
+ * 기록이 저장된 줄 알고 앱을 닫았다가 사라진 걸 나중에 발견하게 된다.
+ */
+export function persistRoutes(routes: SavedRoute[]): boolean {
   try {
     localStorage.setItem(KEY, JSON.stringify(routes));
+    return true;
   } catch {
-    /* 무시 */
+    return false;
   }
 }
 
@@ -62,7 +87,7 @@ export function savedFromView(v: {
 }): SavedRoute {
   const src: SavedRoute['source'] =
     v.source === 'ors' || v.source === 'gps' ? v.source : 'offline';
-  return {
+  return compactRoute({
     id: rid(),
     name: v.name,
     createdAt: Date.now(),
@@ -75,7 +100,7 @@ export function savedFromView(v: {
     coords: v.route.coords,
     elevations: v.route.elevations,
     durationSec: v.durationSec,
-  };
+  });
 }
 
 /** SavedRoute 를 지도/차트에서 쓰는 RouteResult 로 복원 */
