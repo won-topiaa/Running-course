@@ -173,9 +173,14 @@ export default function BuildScreen({ api }: { api: AppApi }) {
         />
       </div>
 
-      {/* ── 상단 떠 있는 입력 카드 ─────────────────────────── */}
-      <div className="absolute inset-x-0 top-0 z-[500] px-3 pt-3 sm:inset-x-auto sm:left-0 sm:w-[420px]">
-        <div className="mx-auto w-full max-w-md sm:mx-0 overflow-hidden rounded-3xl border border-line/70 bg-paper/95 shadow-card backdrop-blur-md">
+      {/* ── 좌측 오버레이 컬럼 ─────────────────────────────
+          입력 카드(위) · 거리 슬라이더 · 바텀시트(아래)를 한 세로 컬럼에 담는다.
+          예전엔 카드는 top, 시트는 bottom 기준으로 따로 띄웠는데, 창이 낮으면
+          위에서 자란 카드와 아래에서 올라온 시트가 만나 왕복/편도 줄이 가려졌다.
+          같은 flex 컬럼에 두면 공간이 모자랄 때 각자 내부 스크롤로 줄어들 뿐
+          서로 겹칠 수가 없다. 컬럼 자체는 클릭을 통과시켜 지도를 가리지 않는다. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-[100px] top-0 z-[500] flex flex-col px-3 pt-3 sm:inset-x-auto sm:left-0 sm:w-[420px]">
+        <div className="pointer-events-auto mx-auto w-full max-w-md shrink-0 rounded-3xl border border-line/70 bg-paper/95 shadow-card backdrop-blur-md sm:mx-0">
           {/* 오늘의 러닝 컨디션 — 한 줄 요약 (뛸지 말지 바로 판단) */}
           {api.conditions && (
             <div
@@ -311,99 +316,65 @@ export default function BuildScreen({ api }: { api: AppApi }) {
             </div>
           </div>
         </div>
-      </div>
 
-      {/* ── 우측 상단 경사 색상 범례 ───────────────────────── */}
-      <div className="pointer-events-none absolute right-3 top-3 z-[500] hidden rounded-2xl border border-line/70 bg-paper/95 p-2.5 shadow-card backdrop-blur-md sm:block">
-        <p className="mb-1.5 text-[10px] font-bold text-espresso-muted">경사</p>
-        <div className="space-y-1">
-          {[...GRADE_LEGEND].reverse().map((g) => (
-            <div key={g.band} className="flex items-center gap-1.5">
-              <span
-                className="h-2 w-4 rounded-full"
-                style={{ background: GRADE_COLORS[g.band] }}
-              />
-              <span className="text-[10px] text-espresso-muted">{g.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── 우측 원형 플로팅 버튼 ─────────────────────────── */}
-      <div className="absolute right-3 top-[46%] z-[500] flex flex-col gap-2">
-        <RoundBtn label="내 위치" onClick={useMyLocation}>
-          <Crosshair size={19} className="text-coral" />
-        </RoundBtn>
-        {mode === 'pins' && waypoints.length > 0 && (
-          <RoundBtn
-            label="되돌리기"
-            onClick={() => {
-              setWaypoints((w) => w.slice(0, -1));
-              reset();
-            }}
-          >
-            <Undo2 size={19} className="text-espresso-muted" />
-          </RoundBtn>
-        )}
-      </div>
-
-      {/* ── 지도 위 거리 슬라이더 (거리 모드) ──────────────── */}
-      {mode === 'distance' && (
-        <div
-          className="absolute inset-x-0 z-[500] px-3 sm:inset-x-auto sm:left-0 sm:w-[420px]"
-          style={{ bottom: sheetOpen ? 'calc(46vh + 156px)' : '166px' }}
-        >
-          <div className="mx-auto flex w-full max-w-md items-center gap-3 rounded-full sm:mx-0 border border-line/70 bg-paper/95 py-2.5 pl-3 pr-4 shadow-card backdrop-blur-md">
-            <span className="shrink-0 rounded-full bg-tint px-3 py-1.5 text-[12px] font-bold text-espresso">
-              거리
-            </span>
-            <div className="min-w-0 flex-1">
-              <input
-                type="range"
-                min={1}
-                max={15}
-                step={0.5}
-                value={targetKm}
-                onChange={(e) => {
-                  setTargetKm(Number(e.target.value));
-                  reset();
-                }}
-                className="coral w-full"
-                list="km-ticks"
-              />
-              {/* 눈금 — 1·5·10·15km 위치 표시 */}
-              <div className="relative mt-1 h-3.5">
-                {[1, 5, 10, 15].map((v) => (
-                  <span
-                    key={v}
-                    className="absolute -translate-x-1/2 text-[9.5px] font-semibold text-espresso-soft"
-                    style={{ left: `${((v - 1) / 14) * 100}%` }}
-                  >
-                    {v}
-                  </span>
-                ))}
+        {/* 거리 슬라이더 — 카드 바로 아래, 같은 컬럼 안 */}
+        {mode === 'distance' && (
+          <div className="pointer-events-auto mt-2 shrink-0">
+            <div className="mx-auto flex w-full max-w-md items-center gap-3 rounded-full border border-line/70 bg-paper/95 py-2.5 pl-3 pr-4 shadow-card backdrop-blur-md sm:mx-0">
+              <span className="shrink-0 rounded-full bg-tint px-3 py-1.5 text-[12px] font-bold text-espresso">
+                거리
+              </span>
+              <div className="min-w-0 flex-1">
+                <input
+                  type="range"
+                  min={1}
+                  max={15}
+                  step={0.5}
+                  value={targetKm}
+                  onChange={(e) => {
+                    setTargetKm(Number(e.target.value));
+                    reset();
+                  }}
+                  className="coral w-full"
+                  list="km-ticks"
+                />
+                {/* 눈금 — 1·5·10·15km 위치 표시 */}
+                <div className="relative mt-1 h-3.5">
+                  {[1, 5, 10, 15].map((v) => (
+                    <span
+                      key={v}
+                      className="absolute -translate-x-1/2 text-[9.5px] font-semibold text-espresso-soft"
+                      style={{ left: `${((v - 1) / 14) * 100}%` }}
+                    >
+                      {v}
+                    </span>
+                  ))}
+                </div>
               </div>
+              <datalist id="km-ticks">
+                {[1, 5, 10, 15].map((v) => (
+                  <option key={v} value={v} />
+                ))}
+              </datalist>
+              <span className="w-[62px] shrink-0 text-right text-[16px] font-extrabold text-espresso">
+                {targetKm}
+                <span className="text-[11px] font-bold text-espresso-muted">km</span>
+              </span>
             </div>
-            <datalist id="km-ticks">
-              {[1, 5, 10, 15].map((v) => (
-                <option key={v} value={v} />
-              ))}
-            </datalist>
-            <span className="w-[62px] shrink-0 text-right text-[16px] font-extrabold text-espresso">
-              {targetKm}
-              <span className="text-[11px] font-bold text-espresso-muted">km</span>
-            </span>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── 바텀시트 ──────────────────────────────────────── */}
-      <div className="absolute inset-x-0 bottom-[100px] z-[600] px-3 sm:inset-x-auto sm:left-0 sm:w-[420px]">
-        <div className="mx-auto w-full max-w-md sm:mx-0 overflow-hidden rounded-4xl border border-line/70 bg-paper shadow-card">
+        {/* 지도가 보이는 구멍 — 남는 높이를 여기서 먹는다 */}
+        <div className="min-h-2 flex-1" />
+
+        {/* ── 바텀시트 ─────────────────────────────────────
+            컬럼의 마지막 자식. 공간이 모자라면 내부 스크롤로 줄어든다. */}
+        <div className="pointer-events-auto min-h-0 shrink px-0">
+          <div className="mx-auto flex h-full w-full max-w-md flex-col overflow-hidden rounded-4xl border border-line/70 bg-paper shadow-card sm:mx-0">
           {/* 핸들 */}
           <button
             onClick={() => setSheetOpen((v) => !v)}
-            className="flex w-full items-center justify-center gap-1.5 py-2.5"
+            className="flex w-full shrink-0 items-center justify-center gap-1.5 py-2.5"
             aria-label={sheetOpen ? '접기' : '펼치기'}
           >
             <span className="h-1 w-9 rounded-full bg-line" />
@@ -414,8 +385,8 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           </button>
 
           <div
-            className={`px-4 transition-[max-height] duration-300 ${
-              sheetOpen ? 'overflow-y-auto pb-4' : 'overflow-hidden pb-0'
+            className={`min-h-0 px-4 ${
+              sheetOpen ? 'flex-1 overflow-y-auto pb-4' : 'overflow-hidden pb-0'
             }`}
             style={{ maxHeight: sheetOpen ? '46vh' : '0px' }}
           >
@@ -588,7 +559,42 @@ export default function BuildScreen({ api }: { api: AppApi }) {
               </p>
             )}
           </div>
+          </div>
         </div>
+      </div>
+
+      {/* ── 우측 상단 경사 색상 범례 ───────────────────────── */}
+      <div className="pointer-events-none absolute right-3 top-3 z-[500] hidden rounded-2xl border border-line/70 bg-paper/95 p-2.5 shadow-card backdrop-blur-md sm:block">
+        <p className="mb-1.5 text-[10px] font-bold text-espresso-muted">경사</p>
+        <div className="space-y-1">
+          {[...GRADE_LEGEND].reverse().map((g) => (
+            <div key={g.band} className="flex items-center gap-1.5">
+              <span
+                className="h-2 w-4 rounded-full"
+                style={{ background: GRADE_COLORS[g.band] }}
+              />
+              <span className="text-[10px] text-espresso-muted">{g.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── 우측 원형 플로팅 버튼 ─────────────────────────── */}
+      <div className="absolute right-3 top-[46%] z-[500] flex flex-col gap-2">
+        <RoundBtn label="내 위치" onClick={useMyLocation}>
+          <Crosshair size={19} className="text-coral" />
+        </RoundBtn>
+        {mode === 'pins' && waypoints.length > 0 && (
+          <RoundBtn
+            label="되돌리기"
+            onClick={() => {
+              setWaypoints((w) => w.slice(0, -1));
+              reset();
+            }}
+          >
+            <Undo2 size={19} className="text-espresso-muted" />
+          </RoundBtn>
+        )}
       </div>
     </div>
   );
