@@ -31,9 +31,13 @@ export interface Settings {
 }
 
 // 카카오 JavaScript 키는 도메인 제한으로 보호되는 공개용 클라이언트 키.
-// 배포 도메인을 카카오 개발자 콘솔의 Web 플랫폼에 등록해야 지도가 뜬다.
+// 소유자의 카카오맵 사용 설정이 살아있는 앱의 키를 쓴다 (콘솔에서 해당 앱의
+// JavaScript SDK 도메인에 배포 도메인이 등록돼 있어야 지도가 뜬다).
 // 교체하려면 마이 페이지에 새 키를 넣거나 VITE_KAKAO_JS_KEY 로 주입.
-const KAKAO_DEFAULT = 'f8d52c354ff017870d132f16204d56ab';
+const KAKAO_DEFAULT = '75ab8b6a544d1d4a8c64326c2c3d9f81';
+// 예전 기본 키 — 카카오맵 미활성 앱의 키라 지도가 안 떴다. 이 값이 저장돼
+// 있으면 사용자가 직접 넣은 게 아니라 옛 기본값이 남은 것이므로 새 키로 넘긴다.
+const KAKAO_LEGACY = 'f8d52c354ff017870d132f16204d56ab';
 
 // OpenRouteService 무료 키 (도보 경로·왕복 생성·고도).
 // 소유자 결정으로 기본값 내장 — 무료 한도(일일 쿼터)라 남용 시 소진될 수 있으며,
@@ -80,11 +84,13 @@ export function loadSettings(): Settings {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const saved = JSON.parse(raw) as Partial<Settings>;
+      // 옛 기본 키가 저장돼 있으면 무시하고 새 기본 키를 쓴다
+      const savedKakao = saved.kakaoJsKey === KAKAO_LEGACY ? null : saved.kakaoJsKey;
       return {
         ...base,
         ...saved,
         // env 값이 있으면 항상 우선 (배포 환경 주입값)
-        kakaoJsKey: ENV_KAKAO ?? saved.kakaoJsKey ?? KAKAO_DEFAULT,
+        kakaoJsKey: ENV_KAKAO ?? savedKakao ?? KAKAO_DEFAULT,
         orsKey: ENV_ORS ?? saved.orsKey ?? ORS_DEFAULT,
         mapboxToken: ENV_MAPBOX ?? saved.mapboxToken ?? null,
         stravaWorkerUrl: ENV_STRAVA ?? saved.stravaWorkerUrl ?? null,
