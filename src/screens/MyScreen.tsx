@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Activity,
-  Check,
   Cloud,
   Lock,
   Download,
   Flame,
   Footprints,
-  Map as MapIcon,
   Play,
   Plus,
   Timer,
@@ -16,15 +13,7 @@ import {
 } from 'lucide-react';
 import { estimateTimeLabel, formatPace } from '../lib/format';
 import { computeRunStats, earnedBadges, levelLabel } from '../lib/runStats';
-import {
-  exportBackupFile,
-  importBackupFile,
-  loadSyncCode,
-  makeSyncCode,
-  pullSync,
-  pushSync,
-  saveSyncCode,
-} from '../lib/backup';
+import { exportBackupFile, importBackupFile } from '../lib/backup';
 import {
   cloudBackupMeta,
   loadCloudSession,
@@ -38,8 +27,6 @@ import {
   type CloudConfig,
   type CloudSession,
 } from '../lib/cloud';
-import { connect as connectStrava, loadToken, saveToken } from '../lib/strava';
-import type { Settings } from '../lib/config';
 import type { AppApi } from '../ui/appApi';
 
 // --- 러닝화 등록제: 등록일 이후의 실제 기록 거리로 마일리지를 누적 -------------
@@ -65,9 +52,6 @@ function loadShoes(): Shoe[] {
 export default function MyScreen({ api }: { api: AppApi }) {
   const pace = api.settings.paceSecPerKm;
   const setPace = (v: number) => api.setSettings({ ...api.settings, paceSecPerKm: v });
-  const saveField = (field: keyof Settings, value: string) =>
-    api.setSettings({ ...api.settings, [field]: value.trim() || null });
-
   // ── 실제 기록에서 계산한 통계 ──────────────────────────────
   const stats = useMemo(() => computeRunStats(api.savedRoutes), [api.savedRoutes]);
   const badges = useMemo(() => earnedBadges(api.savedRoutes, stats), [api.savedRoutes, stats]);
@@ -322,53 +306,9 @@ export default function MyScreen({ api }: { api: AppApi }) {
       {/* 계정 — 이메일 로그인으로 기록을 계정에 보관 */}
       <CloudSection api={api} />
 
-      {/* 데이터 이동 — 로그인 없이 쓰는 대안 (파일/코드) */}
+      {/* 파일 백업 — 로그인 없이 쓰는 안전망 */}
       <SyncSection api={api} />
 
-      {/* 외부 서비스 연동 */}
-      <div className="mt-4 rounded-3xl border border-line bg-paper p-4 shadow-soft">
-        <h2 className="text-[14px] font-bold text-espresso">🔌 외부 서비스 연동</h2>
-        <p className="mt-1 text-[12px] leading-relaxed text-espresso-muted">
-          키를 넣으면 실지도·실경로가 켜져요. 없어도 앱은 오프라인 데모로 동작합니다.
-        </p>
-
-        <div className="mt-3 space-y-3">
-          <KeyRow
-            icon={<MapIcon size={15} className="text-coral" />}
-            title="카카오맵 (기본 지도)"
-            desc="한국 지도. 개발자 콘솔에 배포 도메인을 등록해야 표시됩니다."
-            placeholder="카카오 JavaScript 키"
-            current={api.settings.kakaoJsKey}
-            connected="카카오맵 연결됨"
-            offline="OSM 폴백"
-            link="https://developers.kakao.com/console/app"
-            onSave={(v) => saveField('kakaoJsKey', v)}
-          />
-          <KeyRow
-            icon={<MapIcon size={15} className="text-espresso-soft" />}
-            title="Mapbox 지도 (대체)"
-            desc="카카오 대신 쓰고 싶을 때. 없으면 OpenStreetMap."
-            placeholder="pk.eyJ... 토큰"
-            current={api.settings.mapboxToken}
-            connected="Mapbox 연결됨"
-            offline="미사용"
-            link="https://account.mapbox.com/access-tokens/"
-            onSave={(v) => saveField('mapboxToken', v)}
-          />
-          <KeyRow
-            icon={<Activity size={15} className="text-coral" />}
-            title="OpenRouteService 경로"
-            desc="코스 만들기의 실제 도로 경로·경사."
-            placeholder="ORS API 키"
-            current={api.settings.orsKey}
-            connected="실경로 연결됨"
-            offline="오프라인 데모"
-            link="https://openrouteservice.org/dev/#/signup"
-            onSave={(v) => saveField('orsKey', v)}
-          />
-          <StravaRow api={api} />
-        </div>
-      </div>
     </div>
   );
 }
@@ -600,14 +540,9 @@ function CloudSection({ api }: { api: AppApi }) {
 }
 
 /** 데이터 이동 — 파일 백업(항상 동작) + 동기화 코드(sync-worker 배포 시) */
-function SyncSection({ api }: { api: AppApi }) {
+function SyncSection({ api: _api }: { api: AppApi }) {
   const [msg, setMsg] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [workerUrl, setWorkerUrl] = useState(api.settings.syncWorkerUrl ?? '');
-  const [code, setCode] = useState(loadSyncCode() ?? '');
-  const [autoOn, setAutoOn] = useState(!!loadSyncCode());
   const fileRef = useRef<HTMLInputElement>(null);
-  const savedUrl = api.settings.syncWorkerUrl;
 
   const flash = (m: string) => {
     setMsg(m);
@@ -625,48 +560,15 @@ function SyncSection({ api }: { api: AppApi }) {
     }
   };
 
-  const doPush = async () => {
-    if (!savedUrl) return;
-    setBusy(true);
-    try {
-      const c = code.trim() || makeSyncCode();
-      await pushSync(savedUrl, c);
-      setCode(c);
-      saveSyncCode(c); // 이후 변경은 자동으로 올라간다
-      setAutoOn(true);
-      flash(`올렸어요! 이제 변경사항이 자동으로 백업돼요. 다른 기기 코드: ${c}`);
-    } catch (e) {
-      flash(e instanceof Error ? e.message : '업로드에 실패했어요.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const doPull = async () => {
-    if (!savedUrl || !code.trim()) return;
-    setBusy(true);
-    try {
-      const n = await pullSync(savedUrl, code.trim());
-      saveSyncCode(code.trim()); // 이 기기도 같은 코드로 자동 백업을 이어간다
-      flash(`${n}개 항목을 받았어요. 새로고침합니다…`);
-      setTimeout(() => location.reload(), 1200);
-    } catch (e) {
-      flash(e instanceof Error ? e.message : '가져오기에 실패했어요.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="mt-4 rounded-3xl border border-line bg-paper p-4 shadow-soft">
       <h2 className="inline-flex items-center gap-1.5 text-[14px] font-bold text-espresso">
-        <Cloud size={16} className="text-coral" /> 데이터 이동
+        <Cloud size={16} className="text-coral" /> 파일 백업
       </h2>
       <p className="mt-1 text-[12px] leading-relaxed text-espresso-muted">
-        기록·설정은 이 기기 안에만 저장돼요. 기기를 바꿀 땐 아래로 옮기세요.
+        로그인 없이 쓰는 안전망이에요. 기록·설정을 파일로 내려받아 두거나, 다른
+        기기에서 가져올 수 있어요.
       </p>
-
-      {/* 1) 파일 — 서버 없이 항상 동작 */}
       <div className="mt-3 grid grid-cols-2 gap-2">
         <button
           onClick={() => {
@@ -692,241 +594,9 @@ function SyncSection({ api }: { api: AppApi }) {
         />
       </div>
 
-      {/* 2) 동기화 코드 — sync-worker 배포 시 */}
-      <div className="mt-3 rounded-2xl bg-tint/50 p-3">
-        <p className="text-[12.5px] font-bold text-espresso">동기화 코드 (선택)</p>
-        <p className="mt-0.5 text-[11.5px] leading-relaxed text-espresso-soft">
-          <code className="text-[10.5px]">server/sync-worker</code>를 배포하면 파일 없이
-          코드 하나로 기기 간 동기화가 돼요.
-        </p>
-        {!savedUrl ? (
-          <div className="mt-2 flex gap-2">
-            <input
-              value={workerUrl}
-              onChange={(e) => setWorkerUrl(e.target.value)}
-              placeholder="https://...workers.dev"
-              className="min-w-0 flex-1 rounded-full border border-line bg-paper px-3.5 py-2 text-[12.5px] text-espresso outline-none focus:border-coral"
-            />
-            <button
-              onClick={() =>
-                api.setSettings({ ...api.settings, syncWorkerUrl: workerUrl.trim() || null })
-              }
-              className="shrink-0 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-ink active:scale-95"
-            >
-              저장
-            </button>
-          </div>
-        ) : (
-          <>
-            <div className="mt-2 flex gap-2">
-              <input
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="동기화 코드 (비우면 새로 생성)"
-                className="min-w-0 flex-1 rounded-full border border-line bg-paper px-3.5 py-2 font-mono text-[12.5px] text-espresso outline-none focus:border-coral"
-              />
-            </div>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <button
-                onClick={doPush}
-                disabled={busy}
-                className="rounded-full bg-coral py-2.5 text-[12.5px] font-semibold text-ink active:scale-95 disabled:opacity-60"
-              >
-                이 기기 → 올리기
-              </button>
-              <button
-                onClick={doPull}
-                disabled={busy || !code.trim()}
-                className="rounded-full bg-espresso py-2.5 text-[12.5px] font-semibold text-ink active:scale-95 disabled:opacity-60"
-              >
-                코드로 가져오기
-              </button>
-            </div>
-            <div className="mt-2 flex items-center justify-between">
-              <span
-                className={`inline-flex items-center gap-1.5 text-[11.5px] font-semibold ${
-                  autoOn ? 'text-sage-600' : 'text-espresso-soft'
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${autoOn ? 'bg-sage' : 'bg-espresso-soft/50'}`}
-                />
-                {autoOn ? '자동 백업 켜짐 — 변경사항이 몇 초 안에 올라가요' : '아직 수동 — 한 번 올리면 자동 백업이 켜져요'}
-              </span>
-              {autoOn && (
-                <button
-                  onClick={() => {
-                    saveSyncCode(null);
-                    setAutoOn(false);
-                    flash('자동 백업을 껐어요.');
-                  }}
-                  className="text-[11.5px] font-semibold text-espresso-soft underline active:scale-95"
-                >
-                  끄기
-                </button>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
       {msg && (
         <p className="mt-2.5 rounded-2xl bg-sage-50 px-3 py-2 text-[12px] text-sage-600">{msg}</p>
       )}
-    </div>
-  );
-}
-
-/** Strava 자동 업로드 — Worker 주소 저장 + OAuth 연결/해제 */
-function StravaRow({ api }: { api: AppApi }) {
-  const [url, setUrl] = useState(api.settings.stravaWorkerUrl ?? '');
-  const [token, setToken] = useState(loadToken());
-  const saved = api.settings.stravaWorkerUrl;
-
-  const save = () => api.setSettings({ ...api.settings, stravaWorkerUrl: url.trim() || null });
-  const disconnect = () => {
-    saveToken(null);
-    setToken(null);
-  };
-
-  return (
-    <div className="rounded-2xl bg-tint/50 p-3">
-      <div className="flex items-center gap-1.5 text-[13px] font-bold text-espresso">
-        <Activity size={15} style={{ color: '#FC4C02' }} /> Strava 자동 업로드 (선택)
-      </div>
-      <p className="mt-0.5 text-[11.5px] leading-relaxed text-espresso-soft">
-        연결 안 해도 <b className="text-espresso-muted">GPX 내보내기</b>로 업로드할 수 있어요.
-        자동 업로드를 쓰려면 <code className="text-[10.5px]">server/strava-worker</code>를 배포하고
-        주소를 넣으세요.
-      </p>
-
-      {token ? (
-        <div className="mt-2 flex items-center justify-between rounded-xl bg-paper px-3 py-2.5">
-          <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-sage-600">
-            <Check size={14} /> 연결됨{token.athlete ? ` · ${token.athlete}님` : ''}
-          </span>
-          <button
-            onClick={disconnect}
-            className="rounded-full border border-line px-3 py-1.5 text-[11.5px] font-semibold text-espresso-muted active:scale-95"
-          >
-            연결 해제
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="mt-2 flex gap-2">
-            <input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://...workers.dev"
-              className="min-w-0 flex-1 rounded-full border border-line bg-paper px-3.5 py-2 text-[12.5px] text-espresso outline-none focus:border-coral"
-            />
-            <button
-              onClick={save}
-              className="shrink-0 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-ink active:scale-95"
-            >
-              저장
-            </button>
-          </div>
-          {saved && (
-            <button
-              onClick={() => connectStrava(saved)}
-              className="mt-2 w-full rounded-full bg-[#FC4C02] py-2.5 text-[12.5px] font-bold text-white active:scale-[0.98]"
-            >
-              Strava 계정 연결하기
-            </button>
-          )}
-        </>
-      )}
-
-      <div className="mt-2 flex items-center justify-between">
-        <span
-          className={`inline-flex items-center gap-1.5 text-[11.5px] font-semibold ${
-            token ? 'text-sage-600' : 'text-espresso-soft'
-          }`}
-        >
-          <span className={`h-1.5 w-1.5 rounded-full ${token ? 'bg-sage' : 'bg-espresso-soft/50'}`} />
-          {token ? '자동 업로드 켜짐' : 'GPX 수동 업로드'}
-        </span>
-        <a
-          href="https://www.strava.com/settings/api"
-          target="_blank"
-          rel="noreferrer"
-          className="text-[11.5px] font-medium text-coral-600 underline"
-        >
-          Strava API 설정 →
-        </a>
-      </div>
-    </div>
-  );
-}
-
-function KeyRow({
-  icon,
-  title,
-  desc,
-  placeholder,
-  current,
-  connected,
-  offline,
-  link,
-  onSave,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  desc: string;
-  placeholder: string;
-  current: string | null;
-  connected: string;
-  offline: string;
-  link: string;
-  onSave: (v: string) => void;
-}) {
-  const [val, setVal] = useState(current ?? '');
-  const [done, setDone] = useState(false);
-  const save = () => {
-    onSave(val);
-    setDone(true);
-    setTimeout(() => setDone(false), 1600);
-  };
-  return (
-    <div className="rounded-2xl bg-tint/50 p-3">
-      <div className="flex items-center gap-1.5 text-[13px] font-bold text-espresso">
-        {icon} {title}
-      </div>
-      <p className="mt-0.5 text-[11.5px] leading-relaxed text-espresso-soft">{desc}</p>
-      <div className="mt-2 flex gap-2">
-        <input
-          value={val}
-          onChange={(e) => setVal(e.target.value)}
-          placeholder={placeholder}
-          className="min-w-0 flex-1 rounded-full border border-line bg-paper px-3.5 py-2 text-[12.5px] text-espresso outline-none focus:border-coral"
-        />
-        <button
-          onClick={save}
-          className="shrink-0 rounded-full bg-coral px-3.5 py-2 text-[12.5px] font-semibold text-ink active:scale-95"
-        >
-          {done ? <Check size={15} /> : '저장'}
-        </button>
-      </div>
-      <div className="mt-2 flex items-center justify-between">
-        <span
-          className={`inline-flex items-center gap-1.5 text-[11.5px] font-semibold ${
-            current ? 'text-sage-600' : 'text-espresso-soft'
-          }`}
-        >
-          <span className={`h-1.5 w-1.5 rounded-full ${current ? 'bg-sage' : 'bg-espresso-soft/50'}`} />
-          {current ? connected : offline}
-        </span>
-        <a
-          href={link}
-          target="_blank"
-          rel="noreferrer"
-          className="text-[11.5px] font-medium text-coral-600 underline"
-        >
-          키 발급 →
-        </a>
-      </div>
     </div>
   );
 }

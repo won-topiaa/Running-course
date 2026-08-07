@@ -16,7 +16,6 @@ import {
   persistRoutes,
   type SavedRoute,
 } from './lib/savedRoutes';
-import { loadSyncCode, pushSync } from './lib/backup';
 import { loadCloudSession, pushCloud } from './lib/cloud';
 import { captureTokenFromHash } from './lib/strava';
 import type { RouteResult } from './lib/routing';
@@ -91,22 +90,14 @@ export default function App() {
     }
   }, [savedIds]);
 
-  // 자동 백업 — 변경 몇 초 뒤 조용히 올린다. 계정 로그인이 있으면 클라우드로,
-  // 아니면 동기화 코드로. (실패는 무시 — 오프라인이면 다음 변경 때 재시도)
+  // 자동 백업 — 로그인 상태면 변경 몇 초 뒤 조용히 계정에 올린다.
+  // (실패는 무시 — 오프라인이면 다음 변경 때 재시도)
   useEffect(() => {
     const t = setTimeout(() => {
       const sbUrl = settings.supabaseUrl;
       const sbKey = settings.supabaseAnonKey;
       if (sbUrl && sbKey && loadCloudSession()) {
         pushCloud({ url: sbUrl, anonKey: sbKey }).catch(() => {
-          /* 다음 변경 때 재시도 */
-        });
-        return;
-      }
-      const url = settings.syncWorkerUrl;
-      const code = loadSyncCode();
-      if (url && code) {
-        pushSync(url, code).catch(() => {
           /* 다음 변경 때 재시도 */
         });
       }
