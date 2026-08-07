@@ -28,6 +28,27 @@
   }
 }
 
+/* ---- 러닝 중 화면: 지도를 어두운 레이아웃에 녹인다 ----
+   기본 저작권 표시는 흰 배경이라 검정 패널 위에서 밝은 띠처럼 도드라진다.
+   표기는 지우지 않고(라이선스 준수) 어둡게 낮춰 경로가 주인공이 되게 한다. */
+.run-dark .leaflet-container {
+  background: #1B1B1E;
+}
+.run-dark .leaflet-control-attribution {
+  background: rgba(11, 11, 12, 0.55);
+  color: #6E6E77;
+  font-size: 9px;
+  backdrop-filter: blur(4px);
+}
+.run-dark .leaflet-control-attribution a {
+  color: #8A8A93;
+}
+/* 밝은 타일을 살짝 눌러 검정 UI와 톤을 맞춘다 */
+.run-dark .leaflet-tile-pane,
+.run-dark .kakao-soft img {
+  filter: saturate(0.6) brightness(0.82) contrast(1.02);
+}
+
 /* ---- 지도: 배경은 차분하게, 경로가 주인공이 되도록 ---- */
 .leaflet-container {
   font-family: inherit;

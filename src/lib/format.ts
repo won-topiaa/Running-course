@@ -20,6 +20,21 @@ export function formatDuration(totalSec: number): string {
   return `${s}초`;
 }
 
+/**
+ * 흐르는 시계용 포맷 — "07:42" / "1:02:15".
+ * `formatDuration` 은 "7분 42초"처럼 읽기 좋지만 매 초 글자 수가 바뀌어
+ * 러닝 중 화면에서 숫자가 덜컹거린다. 실시간 타이머에는 이쪽을 쓴다.
+ */
+export function formatClock(totalSec: number): string {
+  const sec = Math.max(0, Math.round(totalSec));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
 /** 거리(km) × 페이스(초/km) → 예상 소요 시간(초) */
 export function estimateSeconds(distanceKm: number, paceSecPerKm: number): number {
   return distanceKm * paceSecPerKm;

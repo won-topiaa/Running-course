@@ -1,3 +1,15 @@
+// ---------------------------------------------------------------------------
+// 러닝 중 화면
+//
+// 이 화면만 앱의 따뜻한 톤에서 벗어나 어두운 고대비 레이아웃을 쓴다.
+// 계획·탐색 화면은 소파에서 천천히 보는 화면이지만, 이 화면은 팔을 흔들며
+// 0.5초 흘깃 보는 화면이기 때문이다. 그래서:
+//   - 검정 바탕 + 볼트 강조색 하나 → 멈춤 버튼을 읽지 않고 찾을 수 있다
+//   - 거리 숫자를 압도적으로 크게 → 팔 길이에서 초점 없이 읽힌다
+//   - 모든 실시간 숫자에 tabular-nums → 초가 바뀔 때 폭이 흔들리지 않는다
+//   - 어두운 바탕은 야간 러닝에 눈부심이 없고 OLED 배터리도 덜 쓴다
+// ---------------------------------------------------------------------------
+
 import { useMemo, useRef, useState } from 'react';
 import { Pause, Play, Square, X, Zap } from 'lucide-react';
 import LiveMap from './LiveMap';
@@ -6,9 +18,10 @@ import { savedFromView } from '../lib/savedRoutes';
 import { useRunRecorder } from '../lib/useRunRecorder';
 import { wakeLockSupported } from '../lib/wakeLock';
 import { buildResult } from '../lib/routing';
-import { formatDistance, formatDuration, formatPace } from '../lib/format';
+import { formatClock, formatDistance, formatPace } from '../lib/format';
 import { coloredSegments } from '../lib/routeColor';
 import { advanceProgress, progressRatio, remainingMeters } from '../lib/routeProgress';
+import { kmSplits, type Split } from '../lib/splits';
 import type { RouteResult } from '../lib/routing';
 import type { AppApi, RouteView } from '../ui/appApi';
 
@@ -59,6 +72,12 @@ export default function RecordScreen({
     };
   }, [planned, idx]);
 
+  // km 구간 기록 — 큰 숫자 아래 남는 공간을 러너가 실제로 보고 싶어하는 것으로 채운다
+  const splits = useMemo(
+    () => kmSplits(rec.coords, rec.times, true),
+    [rec.coords, rec.times],
+  );
+
   // 기록 종료 → 요약 시트
   if (rec.status === 'finished' && rec.coords.length > 1) {
     const route = buildResult(rec.coords, rec.elevations, 'offline', [rec.coords[0]]);
@@ -85,11 +104,29 @@ export default function RecordScreen({
   }
 
   const keepAwake = wakeLockSupported();
+  const live = rec.status === 'recording' || rec.status === 'paused';
+
+  const finish = () => {
+    // 데모가 아니면 자동으로 내 코스에 저장 — 마이 통계가 여기서 나온다
+    if (!rec.demo && rec.coords.length > 1 && !autoSaved.current) {
+      const route = buildResult(rec.coords, rec.elevations, 'offline', [rec.coords[0]]);
+      const saved = savedFromView({
+        name,
+        route,
+        kind: 'recorded',
+        source: 'gps',
+        durationSec: rec.elapsedSec,
+      });
+      api.addSavedRoute(saved);
+      autoSaved.current = saved.id;
+    }
+    rec.stop();
+  };
 
   return (
-    <div className="fixed inset-0 z-[2000] flex flex-col bg-cream">
-      {/* 지도 */}
-      <div className="relative flex-1">
+    <div className="fixed inset-0 z-[2000] flex flex-col bg-ink text-white">
+      {/* 지도 — 코스를 따라 뛸 때는 넓게, 자유 러닝일 때는 숫자에 자리를 내준다 */}
+      <div className={`run-dark relative ${live ? (planned ? 'h-[46%]' : 'h-[38%]') : 'flex-1'}`}>
         <LiveMap
           coords={rec.coords}
           center={planned?.route.coords[0] ?? api.settings.homeLocation}
@@ -98,94 +135,80 @@ export default function RecordScreen({
           kakaoKey={api.settings.kakaoJsKey}
           mapboxToken={api.settings.mapboxToken}
         />
+        {/* 지도와 검정 패널 사이 경계를 부드럽게 */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[900] h-12 bg-gradient-to-t from-ink to-transparent" />
         <button
           onClick={() => {
             rec.reset();
             onClose();
           }}
-          className="absolute left-4 top-4 z-[1000] grid h-10 w-10 place-items-center rounded-full bg-paper/90 text-espresso shadow-card backdrop-blur active:scale-90"
+          className="absolute left-4 top-4 z-[1000] grid h-10 w-10 place-items-center rounded-full bg-ink/80 text-white backdrop-blur active:scale-90"
           aria-label="닫기"
         >
           <X size={20} />
         </button>
         {rec.demo && (
-          <span className="absolute right-4 top-4 z-[1000] inline-flex items-center gap-1 rounded-full bg-espresso/80 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur">
-            <Zap size={12} /> 데모 재생 중
+          <span className="absolute right-4 top-4 z-[1000] inline-flex items-center gap-1 rounded-full bg-ink/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-volt backdrop-blur">
+            <Zap size={12} /> DEMO
           </span>
         )}
       </div>
 
-      {/* 하단 패널 */}
-      <div className="rounded-t-4xl bg-paper px-5 pb-8 pt-5 shadow-[0_-8px_24px_rgba(44,39,37,0.08)]">
-        {rec.status === 'idle' ? (
-          <div className="text-center">
-            <h2 className="text-[19px] font-extrabold text-espresso">
-              {planned ? '이 경로로 뛰기' : '지금 바로 뛰기'}
-            </h2>
-            <p className="mt-1 text-[13px] text-espresso-muted">
-              {planned
-                ? `점선을 따라 ${formatDistance(planned.route.distanceKm)}. 지나간 구간은 경사 색으로 채워져요.`
-                : '위치를 추적해 거리·시간·페이스를 실시간으로 기록해요.'}
-            </p>
-            {(rec.error === 'no-geo' || rec.error === 'denied') && (
-              <p className="mt-2 rounded-2xl bg-coral-50 px-3 py-2 text-[12px] text-coral-600">
-                {rec.error === 'no-geo'
-                  ? '이 기기에서 위치를 쓸 수 없어요.'
-                  : '위치 권한이 거부됐어요.'}{' '}
-                아래 데모로 체험해보세요.
-              </p>
-            )}
-            <button
-              onClick={rec.start}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-coral py-4 text-[15px] font-bold text-white shadow-warm active:scale-[0.98]"
-            >
-              <Play size={18} fill="#fff" /> 러닝 시작
-            </button>
-            <button
-              onClick={rec.startDemo}
-              className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-espresso-muted underline"
-            >
-              <Zap size={13} /> GPS 없이 데모로 체험
-            </button>
-          </div>
+      {/* 지표 · 컨트롤 */}
+      <div className="flex flex-1 flex-col px-6 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] pt-2">
+        {!live ? (
+          <StartPanel rec={rec} planned={planned} />
         ) : (
           <>
-            {/* 실시간 지표 */}
-            <div className="flex items-end justify-center gap-2">
-              <span className="text-[52px] font-extrabold leading-none tracking-tight text-espresso">
-                {rec.distanceKm.toFixed(2)}
-              </span>
-              <span className="mb-2 text-[16px] font-bold text-espresso-muted">km</span>
-            </div>
-            {planned && (
-              <div className="mt-3">
-                <div className="mb-1 flex items-center justify-between text-[11.5px]">
-                  <span className="font-semibold text-espresso-muted">코스 진행</span>
-                  <span className="font-bold text-espresso">
-                    {Math.round(ratio * 100)}% · 남은 {formatDistance(remainM / 1000)}
-                  </span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-tint">
-                  <div
-                    className="h-full rounded-full bg-coral transition-[width]"
-                    style={{ width: `${Math.round(ratio * 100)}%` }}
-                  />
-                </div>
+            {/* 거리 — 이 화면의 주인공 */}
+            <div className="flex flex-col pt-3">
+              <Label>DISTANCE</Label>
+              <div className="flex items-baseline gap-2">
+                <span className="font-black leading-[0.85] tracking-[-0.045em] tabular-nums text-[clamp(64px,22vw,104px)]">
+                  {rec.distanceKm.toFixed(2)}
+                </span>
+                <span className="text-[20px] font-black tracking-[0.06em] text-ink-muted">KM</span>
               </div>
-            )}
 
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-              <Live label="시간" value={formatDuration(rec.elapsedSec)} />
-              <Live label="평균 페이스" value={rec.avgPaceSec ? `${formatPace(rec.avgPaceSec)}` : '--'} />
-              <Live label="현재 페이스" value={rec.currentPaceSec ? `${formatPace(rec.currentPaceSec)}` : '--'} />
+              {planned && (
+                <div className="mt-5">
+                  <div className="mb-2 flex items-baseline justify-between">
+                    <Label>COURSE</Label>
+                    <span className="text-[12px] font-bold tabular-nums text-white">
+                      {Math.round(ratio * 100)}% · 남은 {formatDistance(remainM / 1000)}
+                    </span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-ink-line">
+                    <div
+                      className="h-full rounded-full bg-volt transition-[width] duration-500"
+                      style={{ width: `${Math.round(ratio * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-6 grid grid-cols-3 gap-3 border-t border-ink-line pt-5">
+                <Stat label="TIME" value={formatClock(rec.elapsedSec)} />
+                <Stat
+                  label="AVG PACE"
+                  value={rec.avgPaceSec ? formatPace(rec.avgPaceSec) : '--'}
+                />
+                <Stat
+                  label="PACE"
+                  value={rec.currentPaceSec ? formatPace(rec.currentPaceSec) : '--'}
+                  accent
+                />
+              </div>
             </div>
 
-            {/* 컨트롤 */}
-            <div className="mt-5 flex items-center justify-center gap-3">
+            <SplitList splits={splits} />
+
+            {/* 컨트롤 — 볼트는 '계속 간다', 흰 테두리는 '멈춘다' */}
+            <div className="mt-auto flex items-center gap-3 pt-5">
               {rec.status === 'recording' ? (
                 <button
                   onClick={rec.pause}
-                  className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-line bg-paper text-espresso active:scale-95"
+                  className="grid h-[68px] w-[68px] shrink-0 place-items-center rounded-full border-2 border-ink-line text-white active:scale-95"
                   aria-label="일시정지"
                 >
                   <Pause size={26} fill="currentColor" />
@@ -193,41 +216,25 @@ export default function RecordScreen({
               ) : (
                 <button
                   onClick={rec.resume}
-                  className="flex h-16 w-16 items-center justify-center rounded-full bg-coral text-white shadow-warm active:scale-95"
+                  className="grid h-[68px] w-[68px] shrink-0 place-items-center rounded-full bg-volt text-ink shadow-[0_0_28px_rgba(216,255,62,0.35)] active:scale-95"
                   aria-label="재개"
                 >
-                  <Play size={26} fill="#fff" />
+                  <Play size={26} fill="currentColor" />
                 </button>
               )}
               <button
-                onClick={() => {
-                  // 데모가 아니면 자동으로 내 코스에 저장 — 마이 통계가 여기서 나온다
-                  if (!rec.demo && rec.coords.length > 1 && !autoSaved.current) {
-                    const route = buildResult(rec.coords, rec.elevations, 'offline', [
-                      rec.coords[0],
-                    ]);
-                    const saved = savedFromView({
-                      name,
-                      route,
-                      kind: 'recorded',
-                      source: 'gps',
-                      durationSec: rec.elapsedSec,
-                    });
-                    api.addSavedRoute(saved);
-                    autoSaved.current = saved.id;
-                  }
-                  rec.stop();
-                }}
-                className="flex h-16 flex-1 items-center justify-center gap-2 rounded-full bg-espresso text-[15px] font-bold text-white active:scale-[0.98]"
+                onClick={finish}
+                className="flex h-[68px] flex-1 items-center justify-center gap-2 rounded-full bg-white text-[15px] font-black uppercase tracking-[0.08em] text-ink active:scale-[0.98]"
               >
-                <Square size={18} fill="#fff" /> 종료 · 저장
+                <Square size={17} fill="currentColor" /> 종료 · 저장
               </button>
             </div>
-            <p className="mt-3 text-center text-[11.5px] font-medium">
+
+            <p className="mt-3 h-4 text-center text-[11px] font-bold uppercase tracking-[0.14em]">
               {rec.status === 'paused' ? (
-                <span className="text-coral-600">일시정지됨</span>
+                <span className="text-volt">PAUSED</span>
               ) : keepAwake ? (
-                <span className="text-espresso-soft">🔆 뛰는 동안 화면이 꺼지지 않아요</span>
+                <span className="text-ink-muted">화면 꺼짐 방지 중</span>
               ) : null}
             </p>
           </>
@@ -237,11 +244,130 @@ export default function RecordScreen({
   );
 }
 
-function Live({ label, value }: { label: string; value: string }) {
+/** 시작 전 — 큰 원형 버튼 하나로 뭘 해야 하는지 즉시 보이게 */
+function StartPanel({
+  rec,
+  planned,
+}: {
+  rec: ReturnType<typeof useRunRecorder>;
+  planned?: { name: string; route: RouteResult } | null;
+}) {
   return (
-    <div className="rounded-2xl bg-tint/70 py-3">
-      <p className="text-[18px] font-extrabold leading-none text-espresso">{value}</p>
-      <p className="mt-1 text-[11px] text-espresso-soft">{label}</p>
+    <div className="flex flex-1 flex-col items-center justify-center text-center">
+      <Label>{planned ? 'FOLLOW COURSE' : 'FREE RUN'}</Label>
+      <h2 className="mt-1.5 max-w-[19rem] text-[19px] font-black leading-snug">
+        {planned ? planned.name : '지금 바로 뛰기'}
+      </h2>
+      <p className="mt-1.5 max-w-[19rem] text-[12.5px] leading-relaxed text-ink-muted">
+        {planned
+          ? `점선을 따라 ${formatDistance(planned.route.distanceKm)}. 지나간 구간은 경사 색으로 채워져요.`
+          : '위치를 추적해 거리·시간·페이스를 실시간으로 기록해요.'}
+      </p>
+
+      {(rec.error === 'no-geo' || rec.error === 'denied') && (
+        <p className="mt-3 max-w-[19rem] rounded-2xl bg-ink-soft px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-muted">
+          {rec.error === 'no-geo'
+            ? '이 기기에서 위치를 쓸 수 없어요.'
+            : '위치 권한이 거부됐어요.'}{' '}
+          아래 데모로 체험해보세요.
+        </p>
+      )}
+
+      <button
+        onClick={rec.start}
+        className="mt-7 grid h-[132px] w-[132px] place-items-center rounded-full bg-volt text-ink shadow-[0_0_50px_rgba(216,255,62,0.3)] active:scale-95"
+      >
+        <span className="text-[19px] font-black uppercase tracking-[0.06em]">START</span>
+      </button>
+
+      <button
+        onClick={rec.startDemo}
+        className="mt-6 inline-flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-muted active:scale-95"
+      >
+        <Zap size={13} /> GPS 없이 데모
+      </button>
+    </div>
+  );
+}
+
+/**
+ * km 구간 기록. 막대 길이는 그 구간에서 가장 느렸던 페이스 기준 상대값이라,
+ * 숫자를 읽지 않아도 어느 km 에서 처졌는지 한눈에 보인다.
+ */
+function SplitList({ splits }: { splits: Split[] }) {
+  const done = splits.filter((s) => !s.partial);
+  if (!done.length) {
+    return (
+      <p className="mt-6 text-[11.5px] leading-relaxed text-ink-muted">
+        1km 를 채우면 구간 기록이 여기에 쌓여요.
+      </p>
+    );
+  }
+  const slowest = Math.max(...done.map((s) => s.sec));
+  const fastest = Math.min(...done.map((s) => s.sec));
+  // 최근 구간이 위로 오게 — 화면이 좁으면 스크롤
+  const rows = [...splits].reverse();
+
+  return (
+    <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
+      <Label>SPLITS</Label>
+      <ul className="mt-2 space-y-1.5">
+        {rows.map((s) => {
+          const width = s.partial
+            ? Math.round(((s.partialKm ?? 0) / 1) * 100)
+            : Math.round((s.sec / slowest) * 100);
+          return (
+            <li key={s.km} className="flex items-center gap-2.5">
+              <span className="w-6 shrink-0 text-[11px] font-black tabular-nums text-ink-muted">
+                {s.partial ? '—' : s.km}
+              </span>
+              <span className="h-2 flex-1 overflow-hidden rounded-full bg-ink-soft">
+                <span
+                  className={`block h-full rounded-full ${
+                    s.partial
+                      ? 'bg-ink-line'
+                      : s.sec === fastest
+                        ? 'bg-volt'
+                        : 'bg-white/45'
+                  }`}
+                  style={{ width: `${Math.max(width, 4)}%` }}
+                />
+              </span>
+              <span
+                className={`w-14 shrink-0 text-right text-[12.5px] font-black tabular-nums ${
+                  s.partial ? 'text-ink-muted' : s.sec === fastest ? 'text-volt' : 'text-white'
+                }`}
+              >
+                {s.partial ? formatDistance(s.partialKm ?? 0) : formatPace(s.sec)}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** 대문자 마이크로 라벨 — 자간을 넓혀 숫자와 확실히 구분된다 */
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-[10.5px] font-black uppercase tracking-[0.2em] text-ink-muted">
+      {children}
+    </span>
+  );
+}
+
+function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <p
+        className={`mt-1 text-[26px] font-black leading-none tabular-nums tracking-[-0.02em] ${
+          accent ? 'text-volt' : 'text-white'
+        }`}
+      >
+        {value}
+      </p>
     </div>
   );
 }
