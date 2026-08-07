@@ -26,7 +26,16 @@ export interface CloudSession {
   email: string;
 }
 
-const trim = (u: string) => u.replace(/\/+$/, '');
+/**
+ * 프로젝트 루트 URL 로 정규화한다.
+ * Supabase 대시보드는 Data API 주소를 `https://xxx.supabase.co/rest/v1/` 형태로 보여주므로
+ * 사용자가 그대로 붙여넣는 경우가 많다. 뒤에 붙은 API 경로와 슬래시를 걷어낸다.
+ */
+const trim = (u: string) =>
+  u
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/(rest|auth|storage|realtime)\/v1$/, '');
 
 export function loadCloudSession(): CloudSession | null {
   try {
@@ -136,6 +145,20 @@ export async function ensureCloudFresh(cfg: CloudConfig): Promise<CloudSession |
   return next;
 }
 
+/** PostgREST 오류를 사람이 읽을 수 있는 문장으로 */
+async function restError(res: Response, fallback: string): Promise<string> {
+  const body = await res.json().catch(() => ({}) as any);
+  const msg: string = body?.message || body?.hint || '';
+  // 테이블을 아직 안 만든 경우가 가장 흔하다
+  if (res.status === 404 || /relation .* does not exist|schema cache/i.test(msg)) {
+    return 'backups 테이블이 없어요. Supabase SQL Editor 에서 설정 SQL 을 먼저 실행해 주세요.';
+  }
+  if (res.status === 401 || res.status === 403) {
+    return '접근 권한이 없어요. 로그인 상태와 RLS 정책을 확인해 주세요.';
+  }
+  return msg ? `${fallback}: ${msg}` : `${fallback} (${res.status})`;
+}
+
 /** 이 기기의 데이터를 계정에 백업 (사용자당 1행 upsert) */
 export async function pushCloud(cfg: CloudConfig): Promise<void> {
   const s = await ensureCloudFresh(cfg);
@@ -151,7 +174,7 @@ export async function pushCloud(cfg: CloudConfig): Promise<void> {
       { user_id: s.userId, data: collectBackup(), updated_at: new Date().toISOString() },
     ]),
   });
-  if (!res.ok) throw new Error(`백업 실패 (${res.status})`);
+  if (!res.ok) throw new Error(await restError(res, '백업 실패'));
 }
 
 export interface CloudBackupMeta {
@@ -165,7 +188,7 @@ export async function cloudBackupMeta(cfg: CloudConfig): Promise<CloudBackupMeta
     `${trim(cfg.url)}/rest/v1/backups?select=updated_at&user_id=eq.${s.userId}`,
     { headers: { ...authHeaders(cfg), Authorization: `Bearer ${s.access}` } },
   );
-  if (!res.ok) throw new Error(`조회 실패 (${res.status})`);
+  if (!res.ok) throw new Error(await restError(res, '조회 실패'));
   const rows = await res.json();
   return { updatedAt: rows?.[0]?.updated_at ?? null };
 }
@@ -178,7 +201,7 @@ export async function pullCloud(cfg: CloudConfig): Promise<number> {
     `${trim(cfg.url)}/rest/v1/backups?select=data&user_id=eq.${s.userId}`,
     { headers: { ...authHeaders(cfg), Authorization: `Bearer ${s.access}` } },
   );
-  if (!res.ok) throw new Error(`가져오기 실패 (${res.status})`);
+  if (!res.ok) throw new Error(await restError(res, '가져오기 실패'));
   const rows = await res.json();
   if (!rows?.[0]?.data) throw new Error('이 계정에 저장된 백업이 아직 없어요.');
   return applyBackup(rows[0].data);

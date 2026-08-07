@@ -42,6 +42,12 @@ const KAKAO_DEFAULT = 'f8d52c354ff017870d132f16204d56ab';
 const ORS_DEFAULT =
   'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjZiMjU3YzY3Y2FhZjQ0MTdhNjc5N2FhN2NjZmI1OTUyIiwiaCI6Im11cm11cjY0In0=';
 
+// Supabase 이메일 로그인 동기화. publishable(구 anon) 키는 브라우저 공개용으로 설계된
+// 클라이언트 키이며, 실제 데이터 보호는 backups 테이블의 RLS(auth.uid() = user_id)가 한다.
+// 서버 전용 secret/service_role 키는 절대 여기에 넣지 않는다.
+const SUPABASE_URL_DEFAULT = 'https://tpolklovxtxveouogian.supabase.co';
+const SUPABASE_KEY_DEFAULT = 'sb_publishable_txfUhRgEImnZzJAU1oC6tg_tR1A0Yum';
+
 const ENV_KAKAO = import.meta.env.VITE_KAKAO_JS_KEY?.trim() || null;
 const ENV_ORS = import.meta.env.VITE_ORS_API_KEY?.trim() || null;
 const ENV_MAPBOX = import.meta.env.VITE_MAPBOX_TOKEN?.trim() || null;
@@ -62,8 +68,8 @@ export function defaultSettings(): Settings {
     paceSecPerKm: 360, // 6'00"/km
     weekGoalKm: 15,
     syncWorkerUrl: ENV_SYNC,
-    supabaseUrl: ENV_SB_URL,
-    supabaseAnonKey: ENV_SB_KEY,
+    supabaseUrl: ENV_SB_URL ?? SUPABASE_URL_DEFAULT,
+    supabaseAnonKey: ENV_SB_KEY ?? SUPABASE_KEY_DEFAULT,
     homeLocation: DEFAULT_LOCATION,
   };
 }
@@ -83,8 +89,8 @@ export function loadSettings(): Settings {
         mapboxToken: ENV_MAPBOX ?? saved.mapboxToken ?? null,
         stravaWorkerUrl: ENV_STRAVA ?? saved.stravaWorkerUrl ?? null,
         syncWorkerUrl: ENV_SYNC ?? saved.syncWorkerUrl ?? null,
-        supabaseUrl: ENV_SB_URL ?? saved.supabaseUrl ?? null,
-        supabaseAnonKey: ENV_SB_KEY ?? saved.supabaseAnonKey ?? null,
+        supabaseUrl: ENV_SB_URL ?? saved.supabaseUrl ?? SUPABASE_URL_DEFAULT,
+        supabaseAnonKey: ENV_SB_KEY ?? saved.supabaseAnonKey ?? SUPABASE_KEY_DEFAULT,
       };
     }
   } catch {
