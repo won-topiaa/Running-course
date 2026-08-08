@@ -46,12 +46,32 @@ export default function App() {
   const [routeView, setRouteView] = useState<RouteView | null>(null);
   const [storageFull, setStorageFull] = useState(false);
 
-  // 오늘의 러닝 컨디션
+  // 오늘의 러닝 컨디션 — 한 번 받고 끝나면 PWA 를 오래 열어둘 때 어제 날씨가
+  // 남는다. 성공 시 30분마다 갱신, 실패(샘플 폴백) 시 30초 뒤 재시도,
+  // 앱으로 돌아오면(visibilitychange) 5분 넘었을 때 즉시 갱신한다.
   useEffect(() => {
     let alive = true;
-    getConditions(settings.homeLocation).then((c) => alive && setConditions(c));
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let lastAt = 0;
+    const load = async () => {
+      const c = await getConditions(settings.homeLocation);
+      if (!alive) return;
+      setConditions(c);
+      lastAt = Date.now();
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(load, c.source === 'sample' ? 30_000 : 30 * 60_000);
+    };
+    void load();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastAt > 5 * 60_000) {
+        void load();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       alive = false;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [settings.homeLocation]);
 

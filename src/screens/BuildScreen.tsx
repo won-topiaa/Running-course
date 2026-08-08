@@ -197,6 +197,10 @@ export default function BuildScreen({ api }: { api: AppApi }) {
               <span className="opacity-70">·</span>
               <span>미세먼지 {api.conditions.aqiLabel}</span>
               <span className="ml-auto font-semibold">
+                {/* 실측이 아닌 폴백 값이면 숨기지 말고 정직하게 표시 */}
+                {api.conditions.source === 'sample' && (
+                  <span className="mr-1.5 font-normal opacity-60">예시 ·</span>
+                )}
                 러닝 적합도 {api.conditions.runScore}
               </span>
             </div>
