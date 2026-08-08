@@ -170,17 +170,17 @@ export default function RouteSheet({
     }
   };
 
-  const headline = mode === 'summary' ? '🎉 러닝 완료!' : styleLabel ?? '내 코스';
+  const headline = mode === 'summary' ? '🎉 러닝 완료!' : (styleLabel ?? '내 코스');
 
   return (
     <div className="fixed inset-0 z-[2000] flex items-end justify-center sm:items-center">
       <div className="absolute inset-0 bg-ink/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 max-h-[94vh] w-full max-w-md overflow-y-auto rounded-t-4xl bg-cream shadow-card sm:rounded-4xl">
+      <div className="relative z-10 max-h-[calc(100vh-env(safe-area-inset-top,0px)-1.5rem)] w-full max-w-md overflow-y-auto rounded-t-4xl bg-cream shadow-card sm:max-h-[94vh] sm:rounded-4xl">
         {/* 헤더 */}
         <div className="relative bg-gradient-to-br from-coral to-coral-600 p-5 text-ink">
           <button
             onClick={onClose}
-            className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-ink/15 text-ink backdrop-blur active:scale-90"
+            className="absolute right-3 top-3 grid h-11 w-11 place-items-center rounded-full bg-ink/15 text-ink backdrop-blur active:scale-90"
             aria-label="닫기"
           >
             <X size={18} />
@@ -219,7 +219,10 @@ export default function RouteSheet({
           <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[10.5px] text-espresso-muted">
             {GRADE_LEGEND.map((g) => (
               <span key={g.band} className="inline-flex items-center gap-1">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: GRADE_COLORS[g.band] }} />
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ background: GRADE_COLORS[g.band] }}
+                />
                 {g.label}
               </span>
             ))}
@@ -229,7 +232,11 @@ export default function RouteSheet({
           <div className="mt-3 grid grid-cols-3 gap-2">
             <Metric icon={<Timer size={15} />} value={timeLabel.replace('약 ', '')} label="시간" />
             <Metric icon={<TrendingUp size={15} />} value={`${route.ascentM}m`} label="총 오르막" />
-            <Metric icon={<Mountain size={15} />} value={`${route.maxGradePct}%`} label="최대 경사" />
+            <Metric
+              icon={<Mountain size={15} />}
+              value={`${route.maxGradePct}%`}
+              label="최대 경사"
+            />
           </div>
 
           {/* 고도 */}
@@ -243,39 +250,44 @@ export default function RouteSheet({
           </div>
 
           {/* 구간 기록 — 방금 뛴 러닝의 km 별 페이스 (활성 시간 기준) */}
-          {mode === 'summary' && view.activeTimes && view.activeTimes.length > 1 && (() => {
-            const splits = kmSplits(route.coords, view.activeTimes, false);
-            if (!splits.length) return null;
-            const fastest = Math.min(...splits.map((x) => x.sec));
-            const slowest = Math.max(...splits.map((x) => x.sec));
-            return (
-              <div className="mt-3 rounded-3xl border border-line bg-paper p-4 shadow-soft">
-                <p className="mb-2 text-[13px] font-bold text-espresso">구간 기록</p>
-                <ul className="space-y-1.5">
-                  {splits.map((x) => (
-                    <li key={x.km} className="flex items-center gap-2.5">
-                      <span className="w-7 shrink-0 text-[11.5px] font-bold tabular-nums text-espresso-muted">
-                        {x.km}km
-                      </span>
-                      <span className="h-2 flex-1 overflow-hidden rounded-full bg-tint">
+          {mode === 'summary' &&
+            view.activeTimes &&
+            view.activeTimes.length > 1 &&
+            (() => {
+              const splits = kmSplits(route.coords, view.activeTimes, false);
+              if (!splits.length) return null;
+              const fastest = Math.min(...splits.map((x) => x.sec));
+              const slowest = Math.max(...splits.map((x) => x.sec));
+              return (
+                <div className="mt-3 rounded-3xl border border-line bg-paper p-4 shadow-soft">
+                  <p className="mb-2 text-[13px] font-bold text-espresso">구간 기록</p>
+                  <ul className="space-y-1.5">
+                    {splits.map((x) => (
+                      <li key={x.km} className="flex items-center gap-2.5">
+                        <span className="w-7 shrink-0 text-[11.5px] font-bold tabular-nums text-espresso-muted">
+                          {x.km}km
+                        </span>
+                        <span className="h-2 flex-1 overflow-hidden rounded-full bg-tint">
+                          <span
+                            className={`block h-full rounded-full ${x.sec === fastest ? 'bg-coral' : 'bg-espresso-soft/40'}`}
+                            style={{
+                              width: `${Math.max(8, Math.round((x.sec / slowest) * 100))}%`,
+                            }}
+                          />
+                        </span>
                         <span
-                          className={`block h-full rounded-full ${x.sec === fastest ? 'bg-coral' : 'bg-espresso-soft/40'}`}
-                          style={{ width: `${Math.max(8, Math.round((x.sec / slowest) * 100))}%` }}
-                        />
-                      </span>
-                      <span
-                        className={`w-14 shrink-0 text-right text-[12.5px] font-bold tabular-nums ${
-                          x.sec === fastest ? 'text-coral-600' : 'text-espresso'
-                        }`}
-                      >
-                        {formatPace(x.sec)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })()}
+                          className={`w-14 shrink-0 text-right text-[12.5px] font-bold tabular-nums ${
+                            x.sec === fastest ? 'text-coral-600' : 'text-espresso'
+                          }`}
+                        >
+                          {formatPace(x.sec)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
 
           {/* 이 경로 따라 뛰기 — 기록 요약에서는 이미 뛴 것이라 숨긴다 */}
           {mode !== 'summary' && (
@@ -324,8 +336,8 @@ export default function RouteSheet({
           {/* 워치 연동 안내 — GPX 가 손목시계 내비게이션으로 가는 표준 입구다 */}
           <p className="mt-2.5 rounded-2xl bg-tint/50 px-3 py-2 text-[11.5px] leading-relaxed text-espresso-muted">
             ⌚ 손목시계로 경로를 보며 뛰려면 — <b className="text-espresso">GPX 내보내기</b> 후
-            애플워치는 <b className="text-espresso">WorkOutDoors</b> 앱, 가민·코로스·순토는
-            각사 앱(Garmin Connect 등)으로 가져오면 워치 내비게이션이 켜져요.
+            애플워치는 <b className="text-espresso">WorkOutDoors</b> 앱, 가민·코로스·순토는 각사
+            앱(Garmin Connect 등)으로 가져오면 워치 내비게이션이 켜져요.
           </p>
           {savedId && (
             <p className="mt-2 inline-flex items-center gap-1 text-[12px] text-sage-600">
@@ -344,15 +356,7 @@ export default function RouteSheet({
   );
 }
 
-function Metric({
-  icon,
-  value,
-  label,
-}: {
-  icon: React.ReactNode;
-  value: string;
-  label: string;
-}) {
+function Metric({ icon, value, label }: { icon: React.ReactNode; value: string; label: string }) {
   return (
     <div className="rounded-2xl border border-line bg-paper p-3 text-center shadow-soft">
       <div className="mx-auto mb-1 flex items-center justify-center text-coral">{icon}</div>

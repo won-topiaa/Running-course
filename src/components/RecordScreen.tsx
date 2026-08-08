@@ -203,6 +203,17 @@ export default function RecordScreen({
               </div>
             </div>
 
+            {/* GPS 오차가 커지면 거리 적산을 멈춘다 — 화면은 그대로인데 숫자만
+                안 오르면 고장으로 보이니 이유를 말해준다. */}
+            {rec.weakSignal && (
+              <p className="mt-4 rounded-2xl border border-ink-line bg-ink-soft px-3 py-2.5 text-[11.5px] leading-relaxed text-white/80">
+                <b className="text-volt">
+                  GPS 신호가 약해요{rec.accuracyM ? ` (오차 ±${Math.round(rec.accuracyM)}m)` : ''}.
+                </b>{' '}
+                오차가 큰 위치는 거리에 넣지 않아요. 하늘이 보이는 곳으로 나오면 다시 쌓입니다.
+              </p>
+            )}
+
             {rec.gapSec > 0 && (
               <p className="mt-4 rounded-2xl border border-coral/50 bg-coral-50 px-3 py-2.5 text-[11.5px] leading-relaxed text-espresso">
                 <b className="text-coral-600">

@@ -1,14 +1,5 @@
 import { useEffect, useState } from 'react';
-import {
-  Heart,
-  Lightbulb,
-  MapPin,
-  Moon,
-  ShieldCheck,
-  Timer,
-  TrendingUp,
-  X,
-} from 'lucide-react';
+import { Heart, Lightbulb, MapPin, Moon, ShieldCheck, Timer, TrendingUp, X } from 'lucide-react';
 import GradeElevationChart from './GradeElevationChart';
 import KakaoLinkRow from './KakaoLinkRow';
 import PathMap from './PathMap';
@@ -22,7 +13,12 @@ import {
   LOOP_TYPE_LABEL,
   type Course,
 } from '../lib/types';
-import { fallbackProvider, makeProvider, type RouteResult, type RoutingProvider } from '../lib/routing';
+import {
+  fallbackProvider,
+  makeProvider,
+  type RouteResult,
+  type RoutingProvider,
+} from '../lib/routing';
 import type { AppApi } from '../ui/appApi';
 
 const AMENITIES: { key: keyof Course['amenities']; label: string; icon: string }[] = [
@@ -48,9 +44,7 @@ export default function CourseDetailSheet({
   // 큐레이션 데이터의 path 는 손으로 딴 대략 폴리곤이라 지도에 그대로 그리면
   // 도로와 무관한 다각형이 나온다. 열 때마다 실제 보행 경로로 스냅해 보여주고,
   // 실패하면 지도를 아예 숨긴다 — 가짜 도형을 보여주는 것보다 없는 게 낫다.
-  const [real, setReal] = useState<RouteResult | null>(
-    () => realRouteCache.get(course.id) ?? null,
-  );
+  const [real, setReal] = useState<RouteResult | null>(() => realRouteCache.get(course.id) ?? null);
   const [mapFailed, setMapFailed] = useState(false);
 
   useEffect(() => {
@@ -100,7 +94,7 @@ export default function CourseDetailSheet({
   return (
     <div className="fixed inset-0 z-[2000] flex items-end justify-center sm:items-center">
       <div className="absolute inset-0 bg-ink/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-4xl bg-cream shadow-card sm:rounded-4xl">
+      <div className="relative z-10 max-h-[calc(100vh-env(safe-area-inset-top,0px)-1.5rem)] w-full max-w-md overflow-y-auto rounded-t-4xl bg-cream shadow-card sm:max-h-[92vh] sm:rounded-4xl">
         {/* 헤더 이미지 */}
         <ScenePhoto scene={sceneForCourse(course)} className="h-44 w-full">
           <div className="flex h-full flex-col justify-between p-4">
@@ -133,9 +127,7 @@ export default function CourseDetailSheet({
             <Pill icon={<Timer size={12} />}>약 {paceTime}</Pill>
           </div>
 
-          <p className="mt-3 text-[13.5px] leading-relaxed text-espresso-muted">
-            {course.summary}
-          </p>
+          <p className="mt-3 text-[13.5px] leading-relaxed text-espresso-muted">{course.summary}</p>
 
           {/* 지도 — 실제 보행 경로를 받아왔을 때만 보여준다 */}
           {!mapFailed &&
@@ -167,7 +159,10 @@ export default function CourseDetailSheet({
           {/* 취향 태그 */}
           <div className="mt-4 flex flex-wrap gap-2">
             {course.courseTypes.map((t) => (
-              <span key={t} className="rounded-full bg-sage-50 px-3 py-1.5 text-[12px] font-medium text-sage-600">
+              <span
+                key={t}
+                className="rounded-full bg-sage-50 px-3 py-1.5 text-[12px] font-medium text-sage-600"
+              >
                 {COURSE_TYPE_EMOJI[t]} {COURSE_TYPE_LABEL[t]}
               </span>
             ))}
@@ -191,7 +186,11 @@ export default function CourseDetailSheet({
                 {AMENITIES.map((a) => (
                   <span
                     key={a.key}
-                    className={course.amenities[a.key] ? 'text-espresso' : 'text-espresso-soft/50 line-through'}
+                    className={
+                      course.amenities[a.key]
+                        ? 'text-espresso'
+                        : 'text-espresso-soft/50 line-through'
+                    }
                   >
                     {a.icon}
                   </span>
@@ -220,7 +219,9 @@ export default function CourseDetailSheet({
             <button
               onClick={() => api.toggleSaved(course.id)}
               className={`flex flex-1 items-center justify-center gap-1.5 rounded-full py-3 text-[13.5px] font-semibold transition active:scale-[0.98] ${
-                saved ? 'bg-coral-50 text-coral-600' : 'border border-line bg-paper text-espresso-muted'
+                saved
+                  ? 'bg-coral-50 text-coral-600'
+                  : 'border border-line bg-paper text-espresso-muted'
               }`}
             >
               <Heart size={16} fill={saved ? 'currentColor' : 'none'} /> {saved ? '저장됨' : '저장'}
