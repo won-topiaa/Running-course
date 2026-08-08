@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Compass, Crosshair, Loader2, Play, Sparkles, Undo2 } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Compass,
+  Crosshair,
+  Loader2,
+  Play,
+  Sparkles,
+  Undo2,
+} from 'lucide-react';
 import RouteMap from '../components/RouteMap';
 import GradeElevationChart from '../components/GradeElevationChart';
 import { buildFromDistance, buildFromPins, type BuiltRoute } from '../lib/courseBuilder';
@@ -29,6 +38,8 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(true);
+  // 고도·경사 상세는 기본으로 접는다. 한 줄 요약만 두고, 궁금한 사람만 편다.
+  const [gradeOpen, setGradeOpen] = useState(false);
   // 지도를 만지는 동안에는 오버레이를 비켜준다. 반투명·블러는 실측해보니
   // 뒤가 거의 안 비쳐서 대비만 잃었다 — 잠깐 치우는 쪽이 실제로 지도를 보여준다.
   const [peek, setPeek] = useState(false);
@@ -124,6 +135,13 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     },
     [],
   );
+
+  // 접힌 상태에서도 남길 한 줄용 고도 범위
+  const elevRange = useMemo(() => {
+    const e = selected?.route.elevations ?? [];
+    if (e.length === 0) return null;
+    return { lo: Math.round(Math.min(...e)), hi: Math.round(Math.max(...e)) };
+  }, [selected]);
 
   // 선택되지 않은 후보는 지도에 흐린 점선으로 함께 그려 비교를 돕는다
   const alternatives = useMemo(
@@ -277,7 +295,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           같은 flex 컬럼에 두면 공간이 모자랄 때 각자 내부 스크롤로 줄어들 뿐
           서로 겹칠 수가 없다. 컬럼 자체는 클릭을 통과시켜 지도를 가리지 않는다. */}
       <div
-        className={`pointer-events-none absolute inset-x-0 bottom-[100px] top-0 z-[500] flex flex-col px-3 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] transition-opacity duration-200 sm:inset-x-auto sm:left-0 sm:w-[420px] ${
+        className={`pointer-events-none absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+88px)] top-0 z-[500] flex flex-col px-3 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] transition-opacity duration-200 sm:inset-x-auto sm:left-0 sm:w-[420px] ${
           peek ? 'opacity-0' : 'opacity-100'
         }`}
       >
@@ -462,24 +480,55 @@ export default function BuildScreen({ api }: { api: AppApi }) {
         )}
 
         {/* 지도가 보이는 구멍 — 남는 높이를 여기서 먹는다.
-            여기 크기를 재서 화면 맞추기 여백으로 쓴다. */}
-        <div ref={gapRef} className="min-h-2 flex-1" />
+            여기 크기를 재서 화면 맞추기 여백으로 쓴다.
+
+            원형 버튼도 여기에 절대배치로 얹는다. 예전엔 top-[46%] 로 화면
+            비율에 고정돼 있었는데, 시트 높이가 상태에 따라 바뀌면서 시트
+            위로 겹쳐 올라갔다. 구멍 바닥에 붙이면 항상 시트 바로 위에 선다. */}
+        <div ref={gapRef} className="relative min-h-2 flex-1">
+          <div className="pointer-events-auto absolute bottom-2 right-0 flex flex-col gap-2">
+            <RoundBtn label="내 위치" onClick={useMyLocation}>
+              <Crosshair size={19} className="text-coral" />
+            </RoundBtn>
+            {mode === 'pins' && waypoints.length > 0 && (
+              <RoundBtn
+                label="되돌리기"
+                onClick={() => {
+                  setWaypoints((w) => w.slice(0, -1));
+                  reset();
+                }}
+              >
+                <Undo2 size={19} className="text-espresso-muted" />
+              </RoundBtn>
+            )}
+          </div>
+        </div>
 
         {/* ── 바텀시트 ─────────────────────────────────────
             컬럼의 마지막 자식. 공간이 모자라면 내부 스크롤로 줄어든다. */}
         <div className="pointer-events-auto min-h-0 shrink px-0">
           <div className="mx-auto flex h-full w-full max-w-md flex-col overflow-hidden rounded-4xl border border-line/70 bg-paper shadow-card sm:mx-0">
-            {/* 핸들 */}
+            {/* 핸들 — 접었을 때는 손잡이 모양만으로는 뭘 하라는 건지 안 보여서
+                (하단 네비에 붙어 애매하게 겹쳐 보였다) 글자로 알려준다. */}
             <button
               onClick={() => setSheetOpen((v) => !v)}
               className="flex w-full shrink-0 items-center justify-center gap-1.5 py-2.5"
               aria-label={sheetOpen ? '접기' : '펼치기'}
+              aria-expanded={sheetOpen}
             >
-              <span className="h-1 w-9 rounded-full bg-line" />
-              <ChevronDown
-                size={14}
-                className={`text-espresso-soft transition-transform ${sheetOpen ? '' : 'rotate-180'}`}
-              />
+              {sheetOpen ? (
+                <>
+                  <span className="h-1 w-9 rounded-full bg-line" />
+                  <ChevronDown size={14} className="text-espresso-soft" />
+                </>
+              ) : (
+                <>
+                  <ChevronUp size={15} className="text-coral" />
+                  <span className="text-[12.5px] font-bold text-espresso-muted">
+                    {results ? '코스 다시 보기' : '위로 올리기'}
+                  </span>
+                </>
+              )}
             </button>
 
             <div
@@ -491,30 +540,36 @@ export default function BuildScreen({ api }: { api: AppApi }) {
               {/* 결과 */}
               {results && headline ? (
                 <>
-                  {/* 되돌리기 — 결과를 보다가 '다른 스타일로 뛰고 싶다'로 생각이
-                    바뀌면 취향 선택으로 돌아간다. 입력(출발점·거리)은 유지된다. */}
-                  <button
-                    onClick={reset}
-                    aria-label="취향 다시 고르기"
-                    className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-[12px] font-semibold text-espresso-muted active:scale-95"
-                  >
-                    <Undo2 size={13} /> 취향 다시 고르기
-                  </button>
-                  <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[15.5px] font-extrabold leading-snug tracking-tightish text-espresso">
-                    <span>{headline.lead}</span>
-                    {headline.from && (
-                      <>
-                        <span className="text-[14px] font-semibold text-espresso-soft line-through">
-                          {headline.from}
-                        </span>
-                        <span className="font-bold text-espresso-soft">→</span>
-                      </>
-                    )}
-                    <span className="text-[21px] leading-none text-coral-600">
-                      {headline.value}
-                    </span>
-                    <span>{headline.tail}</span>
-                  </p>
+                  {/* 헤드라인 + 되돌리기.
+                      되돌리기는 원래 위에 한 줄을 따로 차지했는데, 그 46px 이
+                      그대로 지도에서 빠지는 높이라 헤드라인 오른쪽으로 붙였다.
+                      결과를 보다가 '다른 스타일로 뛰고 싶다'로 바뀌면 취향
+                      선택으로 돌아간다(출발점·거리는 유지). */}
+                  <div className="flex items-start gap-2">
+                    <p className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[15.5px] font-extrabold leading-snug tracking-tightish text-espresso">
+                      <span>{headline.lead}</span>
+                      {headline.from && (
+                        <>
+                          <span className="text-[14px] font-semibold text-espresso-soft line-through">
+                            {headline.from}
+                          </span>
+                          <span className="font-bold text-espresso-soft">→</span>
+                        </>
+                      )}
+                      <span className="text-[21px] leading-none text-coral-600">
+                        {headline.value}
+                      </span>
+                      <span>{headline.tail}</span>
+                    </p>
+                    <button
+                      onClick={reset}
+                      aria-label="취향 다시 고르기"
+                      title="취향 다시 고르기"
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line text-espresso-muted active:scale-90"
+                    >
+                      <Undo2 size={15} />
+                    </button>
+                  </div>
 
                   {/* 가로 스와이프 스트립. 카드 폭 86% + 양끝 7% 여백이라
                     첫/마지막 카드도 정확히 가운데에 스냅되고, 옆 카드가
@@ -565,30 +620,51 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                     </div>
                   )}
 
+                  {/* 고도·경사 상세 — 기본은 접어둔다. 그래프+범례가 200px 가까이
+                      먹어서 지도를 다 덮었다. 접힌 상태에서도 '어떤 코스인지'
+                      한 줄과 고도 범위는 남는다. */}
                   {selected && (
-                    <div className="mt-3 rounded-2xl bg-tint/60 p-3">
-                      <GradeElevationChart
-                        elevations={selected.route.elevations}
-                        lengthsM={selected.route.segments.map((s) => s.lengthM)}
-                        distanceKm={selected.route.distanceKm}
-                        ascentM={selected.route.ascentM}
-                        height={84}
-                      />
-                      {/* 경사 색 범례 — 지도의 경로 색과 1:1 대응 */}
-                      <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-line/70 pt-2 text-[10px] text-espresso-soft">
-                        {GRADE_LEGEND.map((g) => (
-                          <span key={g.band} className="inline-flex items-center gap-1">
-                            <span
-                              className="h-1.5 w-3 rounded-full"
-                              style={{ background: GRADE_COLORS[g.band] }}
-                            />
-                            {g.label}
-                          </span>
-                        ))}
-                      </div>
-                      <p className="mt-2 text-[12px] leading-relaxed text-espresso-muted">
-                        {selected.styleEval.reason}
-                      </p>
+                    <div className="mt-3 overflow-hidden rounded-2xl bg-tint/60">
+                      <button
+                        onClick={() => setGradeOpen((v) => !v)}
+                        aria-expanded={gradeOpen}
+                        className="flex w-full items-center gap-2 p-3 text-left active:scale-[0.99]"
+                      >
+                        <span className="min-w-0 flex-1 text-[12px] leading-snug text-espresso-muted">
+                          {selected.styleEval.reason}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-0.5 text-[11.5px] font-bold text-espresso-soft">
+                          {elevRange ? `고도 ${elevRange.lo}~${elevRange.hi}m` : '고도'}
+                          <ChevronDown
+                            size={13}
+                            className={`transition-transform ${gradeOpen ? 'rotate-180' : ''}`}
+                          />
+                        </span>
+                      </button>
+
+                      {gradeOpen && (
+                        <div className="px-3 pb-3">
+                          <GradeElevationChart
+                            elevations={selected.route.elevations}
+                            lengthsM={selected.route.segments.map((s) => s.lengthM)}
+                            distanceKm={selected.route.distanceKm}
+                            ascentM={selected.route.ascentM}
+                            height={84}
+                          />
+                          {/* 경사 색 범례 — 지도의 경로 색과 1:1 대응 */}
+                          <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-line/70 pt-2 text-[10px] text-espresso-soft">
+                            {GRADE_LEGEND.map((g) => (
+                              <span key={g.band} className="inline-flex items-center gap-1">
+                                <span
+                                  className="h-1.5 w-3 rounded-full"
+                                  style={{ background: GRADE_COLORS[g.band] }}
+                                />
+                                {g.label}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -721,24 +797,6 @@ export default function BuildScreen({ api }: { api: AppApi }) {
             </div>
           ))}
         </div>
-      </div>
-
-      {/* ── 우측 원형 플로팅 버튼 ─────────────────────────── */}
-      <div className="absolute right-3 top-[46%] z-[500] flex flex-col gap-2">
-        <RoundBtn label="내 위치" onClick={useMyLocation}>
-          <Crosshair size={19} className="text-coral" />
-        </RoundBtn>
-        {mode === 'pins' && waypoints.length > 0 && (
-          <RoundBtn
-            label="되돌리기"
-            onClick={() => {
-              setWaypoints((w) => w.slice(0, -1));
-              reset();
-            }}
-          >
-            <Undo2 size={19} className="text-espresso-muted" />
-          </RoundBtn>
-        )}
       </div>
     </div>
   );
