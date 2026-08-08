@@ -1,22 +1,9 @@
-import { useMemo, useRef, useState } from 'react';
-import {
-  ChevronDown,
-  Compass,
-  Crosshair,
-  Loader2,
-  Play,
-  Sparkles,
-  Undo2,
-} from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, Compass, Crosshair, Loader2, Play, Sparkles, Undo2 } from 'lucide-react';
 import RouteMap from '../components/RouteMap';
 import GradeElevationChart from '../components/GradeElevationChart';
 import { buildFromDistance, buildFromPins, type BuiltRoute } from '../lib/courseBuilder';
-import {
-  fallbackProvider,
-  makeProvider,
-  RoutingError,
-  type RoutingProvider,
-} from '../lib/routing';
+import { fallbackProvider, makeProvider, RoutingError, type RoutingProvider } from '../lib/routing';
 import { GRADE_LEGEND, GRADE_COLORS, RUN_STYLES, type RunStyle } from '../lib/routeStyle';
 import { estimateTimeLabel, formatDistance } from '../lib/format';
 import type { LatLng } from '../lib/types';
@@ -50,6 +37,93 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const attemptRef = useRef(0);
 
   const selected = results?.[selIdx] ?? null;
+
+  // 후보 카드는 가로로 넘긴다. 세로로 쌓으면 3개가 시트 절반을 먹어서
+  // 지도가 거의 안 보였다. 스크롤이 멈춘 자리의 카드가 곧 선택이다.
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const stripRaf = useRef<number | null>(null);
+  // 프로그램 스크롤(점 클릭·카드 탭) 중에는 중간에 지나가는 카드로 선택이
+  // 튀지 않게 잠근다 — 안 그러면 지도 경로가 한 번 깜빡였다 돌아온다.
+  const stripLock = useRef(0);
+
+  /** 스트립 중앙에 가장 가까운 카드의 index */
+  const centeredIndex = (el: HTMLElement) => {
+    const mid = el.getBoundingClientRect().left + el.clientWidth / 2;
+    let best = 0;
+    let bestD = Infinity;
+    Array.from(el.children).forEach((c, i) => {
+      const b = (c as HTMLElement).getBoundingClientRect();
+      const d = Math.abs(b.left + b.width / 2 - mid);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    return best;
+  };
+
+  const onStripScroll = () => {
+    const el = stripRef.current;
+    if (!el || Date.now() < stripLock.current) return;
+    // scroll 은 프레임마다 수십 번 온다 — rAF 로 한 번만 반영한다
+    if (stripRaf.current) cancelAnimationFrame(stripRaf.current);
+    stripRaf.current = requestAnimationFrame(() => {
+      const i = centeredIndex(el);
+      setSelIdx((prev) => (prev === i ? prev : i));
+    });
+  };
+
+  const scrollToCard = (i: number) => {
+    const el = stripRef.current;
+    const child = el?.children[i] as HTMLElement | undefined;
+    if (!el || !child) return;
+    const left =
+      child.getBoundingClientRect().left -
+      el.getBoundingClientRect().left +
+      el.scrollLeft -
+      (el.clientWidth - child.offsetWidth) / 2;
+    stripLock.current = Date.now() + 600;
+    el.scrollTo({ left, behavior: 'smooth' });
+  };
+
+  // 오버레이에 가리지 않는 '지도 창'의 크기. 화면 맞추기에 이 여백을 넘겨야
+  // 경로가 시트 뒤에 반쯤 숨지 않는다. 스페이서(flex-1)가 곧 그 창이다.
+  const gapRef = useRef<HTMLDivElement | null>(null);
+  const [gapInset, setGapInset] = useState({ top: 0, bottom: 0 });
+  useEffect(() => {
+    const el = gapRef.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      const next = {
+        top: Math.max(0, Math.round(r.top) + 10),
+        bottom: Math.max(0, Math.round(window.innerHeight - r.bottom) + 10),
+      };
+      // 값이 같으면 새 객체를 만들지 않는다 — RouteMap 의 memo 가 깨진다
+      setGapInset((prev) => (prev.top === next.top && prev.bottom === next.bottom ? prev : next));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
+
+  // 새 결과가 오면 첫 카드로 되돌린다(같은 DOM 노드가 재사용되면 스크롤이 남는다)
+  useEffect(() => {
+    stripRef.current?.scrollTo({ left: 0 });
+  }, [results]);
+
+  useEffect(
+    () => () => {
+      if (stripRaf.current) cancelAnimationFrame(stripRaf.current);
+      if (peekTimer.current) clearTimeout(peekTimer.current);
+    },
+    [],
+  );
 
   // 선택되지 않은 후보는 지도에 흐린 점선으로 함께 그려 비교를 돕는다
   const alternatives = useMemo(
@@ -192,6 +266,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           }
           kakaoKey={api.settings.kakaoJsKey}
           mapboxToken={api.settings.mapboxToken}
+          fitInsets={gapInset}
         />
       </div>
 
@@ -206,7 +281,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           peek ? 'opacity-0' : 'opacity-100'
         }`}
       >
-        <div className="pointer-events-auto mx-auto w-full max-w-md shrink-0 rounded-3xl border border-line/70 bg-paper/95 shadow-card backdrop-blur-md sm:mx-0">
+        <div className="pointer-events-auto mx-auto w-full max-w-md shrink-0 overflow-hidden rounded-3xl border border-line/70 bg-paper/95 shadow-card backdrop-blur-md sm:mx-0">
           {/* 오늘의 러닝 컨디션 — 한 줄 요약 (뛸지 말지 바로 판단) */}
           {api.conditions && (
             <div
@@ -240,98 +315,107 @@ export default function BuildScreen({ api }: { api: AppApi }) {
             </div>
           )}
 
-          {/* 모드 세그먼트 — 화면 제목은 하단 네비가 이미 알려주므로 두지 않는다 */}
-          <div className="mx-4 mt-3 flex rounded-full bg-tint p-1">
-            <SegBtn
-              active={mode === 'distance'}
-              onClick={() => {
-                setMode('distance');
-                reset();
-              }}
-            >
-              🎯 거리로
-            </SegBtn>
-            <SegBtn
-              active={mode === 'pins'}
-              onClick={() => {
-                setMode('pins');
-                reset();
-              }}
-            >
-              📍 핀으로
-            </SegBtn>
-          </div>
+          {/* 결과를 보는 동안에는 입력 컨트롤을 접는다. 코스를 고르는 단계에서
+              모드·출발·왕복·거리는 이미 정해진 값이고, 바꾸려면 시트의
+              '취향 다시 고르기'(reset)로 돌아오면 된다. 이 블록이 284px 중
+              대부분을 차지해서, 접어야 가로 스와이프로 아낀 높이가 실제로
+              지도에 돌아간다. */}
+          {!results && (
+            <>
+              {/* 모드 세그먼트 — 화면 제목은 하단 네비가 이미 알려주므로 두지 않는다 */}
+              <div className="mx-4 mt-3 flex rounded-full bg-tint p-1">
+                <SegBtn
+                  active={mode === 'distance'}
+                  onClick={() => {
+                    setMode('distance');
+                    reset();
+                  }}
+                >
+                  🎯 거리로
+                </SegBtn>
+                <SegBtn
+                  active={mode === 'pins'}
+                  onClick={() => {
+                    setMode('pins');
+                    reset();
+                  }}
+                >
+                  📍 핀으로
+                </SegBtn>
+              </div>
 
-          {/* 입력 행 */}
-          <div className="mt-2 px-4 pb-3">
-            {mode === 'distance' ? (
-              <>
-                <InputRow
-                  dot={HALO}
-                  label="출발"
-                  value="지도를 눌러 시작점 지정"
-                  action={
-                    <button
-                      onClick={useMyLocation}
-                      className="rounded-full bg-tint px-2.5 py-1 text-[11px] font-semibold text-espresso-muted active:scale-95"
-                    >
-                      내 위치
-                    </button>
-                  }
-                />
-              </>
-            ) : (
-              <InputRow
-                dot={VOLT}
-                label="경유"
-                value={
-                  waypoints.length === 0
-                    ? '지도를 눌러 지점을 찍어주세요'
-                    : `${waypoints.length}개 지점 · 핀을 누르면 삭제`
-                }
-                action={
-                  waypoints.length > 0 ? (
-                    <button
-                      onClick={() => {
-                        setWaypoints([]);
-                        reset();
-                      }}
-                      className="rounded-full bg-tint px-2.5 py-1 text-[11px] font-semibold text-espresso-muted active:scale-95"
-                    >
-                      전체 지우기
-                    </button>
-                  ) : undefined
-                }
-              />
-            )}
+              {/* 입력 행 */}
+              <div className="mt-2 px-4 pb-3">
+                {mode === 'distance' ? (
+                  <>
+                    <InputRow
+                      dot={HALO}
+                      label="출발"
+                      value="지도를 눌러 시작점 지정"
+                      action={
+                        <button
+                          onClick={useMyLocation}
+                          className="rounded-full bg-tint px-2.5 py-1 text-[11px] font-semibold text-espresso-muted active:scale-95"
+                        >
+                          내 위치
+                        </button>
+                      }
+                    />
+                  </>
+                ) : (
+                  <InputRow
+                    dot={VOLT}
+                    label="경유"
+                    value={
+                      waypoints.length === 0
+                        ? '지도를 눌러 지점을 찍어주세요'
+                        : `${waypoints.length}개 지점 · 핀을 누르면 삭제`
+                    }
+                    action={
+                      waypoints.length > 0 ? (
+                        <button
+                          onClick={() => {
+                            setWaypoints([]);
+                            reset();
+                          }}
+                          className="rounded-full bg-tint px-2.5 py-1 text-[11px] font-semibold text-espresso-muted active:scale-95"
+                        >
+                          전체 지우기
+                        </button>
+                      ) : undefined
+                    }
+                  />
+                )}
 
-            {/* 왕복(시작점 복귀) / 편도 — 두 모드 공통 */}
-            <div className="my-1 h-px bg-line" />
-            <div className="flex rounded-full bg-tint p-1">
-              <SegBtn
-                active={returnToStart}
-                onClick={() => {
-                  setReturnToStart(true);
-                  reset();
-                }}
-              >
-                🔄 왕복
-              </SegBtn>
-              <SegBtn
-                active={!returnToStart}
-                onClick={() => {
-                  setReturnToStart(false);
-                  reset();
-                }}
-              >
-                ➡️ 편도
-              </SegBtn>
-            </div>
-          </div>
+                {/* 왕복(시작점 복귀) / 편도 — 두 모드 공통 */}
+                <div className="my-1 h-px bg-line" />
+                <div className="flex rounded-full bg-tint p-1">
+                  <SegBtn
+                    active={returnToStart}
+                    onClick={() => {
+                      setReturnToStart(true);
+                      reset();
+                    }}
+                  >
+                    🔄 왕복
+                  </SegBtn>
+                  <SegBtn
+                    active={!returnToStart}
+                    onClick={() => {
+                      setReturnToStart(false);
+                      reset();
+                    }}
+                  >
+                    ➡️ 편도
+                  </SegBtn>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* 거리 슬라이더 — 카드 바로 아래, 같은 컬럼 안 */}
-        {mode === 'distance' && (
+        {mode === 'distance' && !results && (
           <div className="pointer-events-auto mt-2 shrink-0">
             <div className="mx-auto flex w-full max-w-md items-center gap-3 rounded-full border border-line/70 bg-paper/95 py-2.5 pl-3 pr-4 shadow-card backdrop-blur-md sm:mx-0">
               <span className="shrink-0 rounded-full bg-tint px-3 py-1.5 text-[12px] font-bold text-espresso">
@@ -377,208 +461,251 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           </div>
         )}
 
-        {/* 지도가 보이는 구멍 — 남는 높이를 여기서 먹는다 */}
-        <div className="min-h-2 flex-1" />
+        {/* 지도가 보이는 구멍 — 남는 높이를 여기서 먹는다.
+            여기 크기를 재서 화면 맞추기 여백으로 쓴다. */}
+        <div ref={gapRef} className="min-h-2 flex-1" />
 
         {/* ── 바텀시트 ─────────────────────────────────────
             컬럼의 마지막 자식. 공간이 모자라면 내부 스크롤로 줄어든다. */}
         <div className="pointer-events-auto min-h-0 shrink px-0">
           <div className="mx-auto flex h-full w-full max-w-md flex-col overflow-hidden rounded-4xl border border-line/70 bg-paper shadow-card sm:mx-0">
-          {/* 핸들 */}
-          <button
-            onClick={() => setSheetOpen((v) => !v)}
-            className="flex w-full shrink-0 items-center justify-center gap-1.5 py-2.5"
-            aria-label={sheetOpen ? '접기' : '펼치기'}
-          >
-            <span className="h-1 w-9 rounded-full bg-line" />
-            <ChevronDown
-              size={14}
-              className={`text-espresso-soft transition-transform ${sheetOpen ? '' : 'rotate-180'}`}
-            />
-          </button>
+            {/* 핸들 */}
+            <button
+              onClick={() => setSheetOpen((v) => !v)}
+              className="flex w-full shrink-0 items-center justify-center gap-1.5 py-2.5"
+              aria-label={sheetOpen ? '접기' : '펼치기'}
+            >
+              <span className="h-1 w-9 rounded-full bg-line" />
+              <ChevronDown
+                size={14}
+                className={`text-espresso-soft transition-transform ${sheetOpen ? '' : 'rotate-180'}`}
+              />
+            </button>
 
-          <div
-            className={`min-h-0 px-4 ${
-              sheetOpen ? 'flex-1 overflow-y-auto pb-4' : 'overflow-hidden pb-0'
-            }`}
-            style={{ maxHeight: sheetOpen ? '46vh' : '0px' }}
-          >
-            {/* 결과 */}
-            {results && headline ? (
-              <>
-                {/* 되돌리기 — 결과를 보다가 '다른 스타일로 뛰고 싶다'로 생각이
+            <div
+              className={`min-h-0 px-4 ${
+                sheetOpen ? 'flex-1 overflow-y-auto pb-4' : 'overflow-hidden pb-0'
+              }`}
+              style={{ maxHeight: sheetOpen ? '46vh' : '0px' }}
+            >
+              {/* 결과 */}
+              {results && headline ? (
+                <>
+                  {/* 되돌리기 — 결과를 보다가 '다른 스타일로 뛰고 싶다'로 생각이
                     바뀌면 취향 선택으로 돌아간다. 입력(출발점·거리)은 유지된다. */}
-                <button
-                  onClick={reset}
-                  aria-label="취향 다시 고르기"
-                  className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-[12px] font-semibold text-espresso-muted active:scale-95"
-                >
-                  <Undo2 size={13} /> 취향 다시 고르기
-                </button>
-                <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[15.5px] font-extrabold leading-snug tracking-tightish text-espresso">
-                  <span>{headline.lead}</span>
-                  {headline.from && (
-                    <>
-                      <span className="text-[14px] font-semibold text-espresso-soft line-through">
-                        {headline.from}
-                      </span>
-                      <span className="font-bold text-espresso-soft">→</span>
-                    </>
-                  )}
-                  <span className="text-[21px] leading-none text-coral-600">{headline.value}</span>
-                  <span>{headline.tail}</span>
-                </p>
-
-                <div className="mt-3 space-y-2">
-                  {results.map((r, i) => (
-                    <CompareCard
-                      key={i}
-                      r={r}
-                      selected={i === selIdx}
-                      paceSec={api.settings.paceSecPerKm}
-                      onSelect={() => setSelIdx(i)}
-                    />
-                  ))}
-                </div>
-
-                {selected && (
-                  <div className="mt-3 rounded-2xl bg-tint/60 p-3">
-                    <GradeElevationChart
-                      elevations={selected.route.elevations}
-                      lengthsM={selected.route.segments.map((s) => s.lengthM)}
-                      distanceKm={selected.route.distanceKm}
-                      ascentM={selected.route.ascentM}
-                      height={84}
-                    />
-                    {/* 경사 색 범례 — 지도의 경로 색과 1:1 대응 */}
-                    <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-line/70 pt-2 text-[10px] text-espresso-soft">
-                      {GRADE_LEGEND.map((g) => (
-                        <span key={g.band} className="inline-flex items-center gap-1">
-                          <span
-                            className="h-1.5 w-3 rounded-full"
-                            style={{ background: GRADE_COLORS[g.band] }}
-                          />
-                          {g.label}
+                  <button
+                    onClick={reset}
+                    aria-label="취향 다시 고르기"
+                    className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-[12px] font-semibold text-espresso-muted active:scale-95"
+                  >
+                    <Undo2 size={13} /> 취향 다시 고르기
+                  </button>
+                  <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[15.5px] font-extrabold leading-snug tracking-tightish text-espresso">
+                    <span>{headline.lead}</span>
+                    {headline.from && (
+                      <>
+                        <span className="text-[14px] font-semibold text-espresso-soft line-through">
+                          {headline.from}
                         </span>
+                        <span className="font-bold text-espresso-soft">→</span>
+                      </>
+                    )}
+                    <span className="text-[21px] leading-none text-coral-600">
+                      {headline.value}
+                    </span>
+                    <span>{headline.tail}</span>
+                  </p>
+
+                  {/* 가로 스와이프 스트립. 카드 폭 86% + 양끝 7% 여백이라
+                    첫/마지막 카드도 정확히 가운데에 스냅되고, 옆 카드가
+                    살짝 보여서 '넘길 수 있다'는 게 드러난다. */}
+                  <div
+                    ref={stripRef}
+                    onScroll={onStripScroll}
+                    className="no-scrollbar -mx-4 mt-3 flex snap-x snap-mandatory gap-2 overflow-x-auto overscroll-x-contain pb-1"
+                  >
+                    {results.map((r, i) => (
+                      <div
+                        key={i}
+                        className="w-[86%] shrink-0 snap-center first:ml-[7%] last:mr-[7%]"
+                      >
+                        <CompareCard
+                          r={r}
+                          selected={i === selIdx}
+                          paceSec={api.settings.paceSecPerKm}
+                          onSelect={() => {
+                            setSelIdx(i);
+                            scrollToCard(i);
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  {results.length > 1 && (
+                    <div className="mt-1.5 flex items-center justify-center gap-1.5">
+                      {results.map((_, i) => (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            setSelIdx(i);
+                            scrollToCard(i);
+                          }}
+                          aria-label={`${i + 1}번째 코스 보기`}
+                          aria-current={i === selIdx}
+                          className="grid h-4 w-4 place-items-center"
+                        >
+                          <span
+                            className={`block rounded-full transition-all ${
+                              i === selIdx ? 'h-1.5 w-4 bg-coral' : 'h-1.5 w-1.5 bg-line'
+                            }`}
+                          />
+                        </button>
                       ))}
                     </div>
-                    <p className="mt-2 text-[12px] leading-relaxed text-espresso-muted">
-                      {selected.styleEval.reason}
-                    </p>
-                  </div>
-                )}
+                  )}
 
-                {/* 하단 액션 — 스크롤해도 항상 보이도록 고정 */}
-                <div className="sticky bottom-0 -mx-4 mt-3 flex items-center gap-2 border-t border-line/60 bg-paper px-4 pb-1 pt-2.5">
+                  {selected && (
+                    <div className="mt-3 rounded-2xl bg-tint/60 p-3">
+                      <GradeElevationChart
+                        elevations={selected.route.elevations}
+                        lengthsM={selected.route.segments.map((s) => s.lengthM)}
+                        distanceKm={selected.route.distanceKm}
+                        ascentM={selected.route.ascentM}
+                        height={84}
+                      />
+                      {/* 경사 색 범례 — 지도의 경로 색과 1:1 대응 */}
+                      <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-line/70 pt-2 text-[10px] text-espresso-soft">
+                        {GRADE_LEGEND.map((g) => (
+                          <span key={g.band} className="inline-flex items-center gap-1">
+                            <span
+                              className="h-1.5 w-3 rounded-full"
+                              style={{ background: GRADE_COLORS[g.band] }}
+                            />
+                            {g.label}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[12px] leading-relaxed text-espresso-muted">
+                        {selected.styleEval.reason}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* 하단 액션 — 스크롤해도 항상 보이도록 고정 */}
+                  <div className="sticky bottom-0 -mx-4 mt-3 flex items-center gap-2 border-t border-line/60 bg-paper px-4 pb-1 pt-2.5">
+                    <button
+                      onClick={generate}
+                      disabled={loading}
+                      className="flex shrink-0 items-center gap-1.5 rounded-full border border-line px-3.5 py-3 text-[12.5px] font-semibold text-espresso-muted transition active:scale-95 disabled:opacity-60"
+                    >
+                      {loading ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={14} />
+                      )}
+                      {loading ? '찾는 중…' : '다시 찾기'}
+                    </button>
+                    <button
+                      onClick={() =>
+                        selected &&
+                        api.viewRoute({
+                          name: courseName(selected),
+                          route: selected.route,
+                          kind: 'built',
+                          style: selected.styleEval.style,
+                          source: selected.route.source,
+                        })
+                      }
+                      className="shrink-0 rounded-full border border-line px-3.5 py-3 text-[12.5px] font-semibold text-espresso-muted active:scale-95"
+                    >
+                      저장 · 공유
+                    </button>
+                    <button
+                      onClick={() =>
+                        selected &&
+                        api.startRecord({
+                          name: courseName(selected),
+                          route: selected.route,
+                        })
+                      }
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-espresso py-3 text-[13.5px] font-bold text-ink active:scale-[0.98]"
+                    >
+                      <Play size={15} fill="#fff" /> 이 경로로 뛰기
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* 스타일 선택 — 가로 한 줄 칩. 2×2 카드(설명 포함)는 세로로 너무 커서
+                    지도를 다 덮었다. 선택한 것의 설명만 아래 한 줄로 보여준다. */}
+                  <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
+                    {RUN_STYLES.map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => {
+                          setStyle(s.id);
+                          reset();
+                        }}
+                        className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-[12.5px] font-bold transition active:scale-95 ${
+                          style === s.id
+                            ? 'border-coral bg-coral-50 text-coral-600'
+                            : 'border-line bg-paper text-espresso-muted'
+                        }`}
+                      >
+                        <span className="text-[14px]">{s.emoji}</span>
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-[11.5px] text-espresso-soft">
+                    {RUN_STYLES.find((s) => s.id === style)?.desc}
+                  </p>
+
                   <button
                     onClick={generate}
-                    disabled={loading}
-                    className="flex shrink-0 items-center gap-1.5 rounded-full border border-line px-3.5 py-3 text-[12.5px] font-semibold text-espresso-muted transition active:scale-95 disabled:opacity-60"
+                    disabled={!canGenerate || loading}
+                    className={`mt-3 flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-[14px] font-bold text-ink transition active:scale-[0.98] ${
+                      canGenerate && !loading ? 'bg-coral shadow-warm' : 'bg-espresso-soft/50'
+                    }`}
                   >
                     {loading ? (
-                      <Loader2 size={14} className="animate-spin" />
+                      <>
+                        <Loader2 size={17} className="animate-spin" /> 최적 코스 찾는 중…
+                      </>
                     ) : (
-                      <Sparkles size={14} />
+                      <>
+                        <Sparkles size={17} /> 코스 추천받기
+                      </>
                     )}
-                    {loading ? '찾는 중…' : '다시 찾기'}
                   </button>
-                  <button
-                    onClick={() =>
-                      selected &&
-                      api.viewRoute({
-                        name: courseName(selected),
-                        route: selected.route,
-                        kind: 'built',
-                        style: selected.styleEval.style,
-                        source: selected.route.source,
-                      })
-                    }
-                    className="shrink-0 rounded-full border border-line px-3.5 py-3 text-[12.5px] font-semibold text-espresso-muted active:scale-95"
-                  >
-                    저장 · 공유
-                  </button>
-                  <button
-                    onClick={() =>
-                      selected &&
-                      api.startRecord({ name: courseName(selected), route: selected.route })
-                    }
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-espresso py-3 text-[13.5px] font-bold text-ink active:scale-[0.98]"
-                  >
-                    <Play size={15} fill="#fff" /> 이 경로로 뛰기
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                {/* 스타일 선택 — 가로 한 줄 칩. 2×2 카드(설명 포함)는 세로로 너무 커서
-                    지도를 다 덮었다. 선택한 것의 설명만 아래 한 줄로 보여준다. */}
-                <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
-                  {RUN_STYLES.map((s) => (
-                    <button
-                      key={s.id}
-                      onClick={() => {
-                        setStyle(s.id);
-                        reset();
-                      }}
-                      className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-[12.5px] font-bold transition active:scale-95 ${
-                        style === s.id
-                          ? 'border-coral bg-coral-50 text-coral-600'
-                          : 'border-line bg-paper text-espresso-muted'
-                      }`}
-                    >
-                      <span className="text-[14px]">{s.emoji}</span>
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-1.5 text-[11.5px] text-espresso-soft">
-                  {RUN_STYLES.find((s) => s.id === style)?.desc}
-                </p>
-
-                <button
-                  onClick={generate}
-                  disabled={!canGenerate || loading}
-                  className={`mt-3 flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-[14px] font-bold text-ink transition active:scale-[0.98] ${
-                    canGenerate && !loading ? 'bg-coral shadow-warm' : 'bg-espresso-soft/50'
-                  }`}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 size={17} className="animate-spin" /> 최적 코스 찾는 중…
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles size={17} /> 코스 추천받기
-                    </>
+                  {mode === 'pins' && waypoints.length < 2 && (
+                    <p className="mt-2 text-center text-[11.5px] text-espresso-soft">
+                      지도를 눌러 지점을 2개 이상 찍어주세요.
+                    </p>
                   )}
-                </button>
-                {mode === 'pins' && waypoints.length < 2 && (
-                  <p className="mt-2 text-center text-[11.5px] text-espresso-soft">
-                    지도를 눌러 지점을 2개 이상 찍어주세요.
-                  </p>
-                )}
 
-                {/* 코스를 짜는 것 자체가 막막한 사람을 위한 보조 진입로 */}
-                <button
-                  onClick={() => api.nav('explore')}
-                  className="mt-2.5 flex w-full items-center justify-center gap-1.5 py-1 text-[12px] font-semibold text-espresso-soft underline decoration-line underline-offset-4"
-                >
-                  <Compass size={13} /> 어디서 뛸지 모르겠다면 · 추천 코스 보기
-                </button>
-              </>
-            )}
+                  {/* 코스를 짜는 것 자체가 막막한 사람을 위한 보조 진입로 */}
+                  <button
+                    onClick={() => api.nav('explore')}
+                    className="mt-2.5 flex w-full items-center justify-center gap-1.5 py-1 text-[12px] font-semibold text-espresso-soft underline decoration-line underline-offset-4"
+                  >
+                    <Compass size={13} /> 어디서 뛸지 모르겠다면 · 추천 코스 보기
+                  </button>
+                </>
+              )}
 
-            {notice && (
-              <p className="mt-2.5 rounded-2xl bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700">
-                {notice}
-              </p>
-            )}
-            {error && (
-              <p className="mt-2.5 rounded-2xl bg-coral-50 px-3 py-2 text-[11.5px] text-coral-600">
-                {error}
-              </p>
-            )}
-          </div>
+              {notice && (
+                <p className="mt-2.5 rounded-2xl bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700">
+                  {notice}
+                </p>
+              )}
+              {error && (
+                <p className="mt-2.5 rounded-2xl bg-coral-50 px-3 py-2 text-[11.5px] text-coral-600">
+                  {error}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -589,10 +716,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
         <div className="space-y-1">
           {[...GRADE_LEGEND].reverse().map((g) => (
             <div key={g.band} className="flex items-center gap-1.5">
-              <span
-                className="h-2 w-4 rounded-full"
-                style={{ background: GRADE_COLORS[g.band] }}
-              />
+              <span className="h-2 w-4 rounded-full" style={{ background: GRADE_COLORS[g.band] }} />
               <span className="text-[10px] text-espresso-muted">{g.label}</span>
             </div>
           ))}
@@ -701,9 +825,7 @@ function InputRow({
         style={{ background: dot }}
       />
       <span className="shrink-0 text-[12px] font-bold text-espresso-muted">{label}</span>
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-espresso">
-        {value}
-      </span>
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-espresso">{value}</span>
       {action}
     </div>
   );
@@ -774,8 +896,8 @@ function CompareCard({
           </span>
         </span>
         <span className="mt-0.5 block truncate text-[11.5px] text-espresso-muted">
-          {formatDistance(route.distanceKm)} · {estimateTimeLabel(route.distanceKm, paceSec)} ·
-          최대 {route.maxGradePct}%
+          {formatDistance(route.distanceKm)} · {estimateTimeLabel(route.distanceKm, paceSec)} · 최대{' '}
+          {route.maxGradePct}%
         </span>
       </span>
 

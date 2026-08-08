@@ -3,13 +3,7 @@ import '../lib/leafletPatch';
 import { MUTED } from '../ui/theme';
 import { useEffect } from 'react';
 import L from 'leaflet';
-import {
-  MapContainer,
-  Marker,
-  Polyline,
-  useMap,
-  useMapEvents,
-} from 'react-leaflet';
+import { MapContainer, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import BaseTiles from './BaseTiles';
 import { labelPinHtml, numberPinHtml } from './mapMarkers';
 import { arrowHtml, directionMarkers, endpointHtml } from '../lib/routeDirection';
@@ -30,12 +24,22 @@ function numberIcon(n: number, deletable: boolean) {
 
 /** 진행 방향 화살표 */
 function arrowIcon(angleDeg: number) {
-  return L.divIcon({ className: '', html: arrowHtml(angleDeg), iconSize: [20, 20], iconAnchor: [10, 10] });
+  return L.divIcon({
+    className: '',
+    html: arrowHtml(angleDeg),
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+  });
 }
 
 /** 출발/도착 배지 */
 function endpointIcon(kind: 'start' | 'finish') {
-  return L.divIcon({ className: '', html: endpointHtml(kind), iconSize: [52, 40], iconAnchor: [26, 40] });
+  return L.divIcon({
+    className: '',
+    html: endpointHtml(kind),
+    iconSize: [52, 40],
+    iconAnchor: [26, 40],
+  });
 }
 
 /** 라벨 핀 (출발 등) */
@@ -61,20 +65,41 @@ function FitBounds({
   route,
   waypoints,
   start,
+  fitInsets,
 }: {
   route: RouteResult | null;
   waypoints: LatLng[];
   start: LatLng | null;
+  fitInsets?: { top: number; bottom: number };
 }) {
   const map = useMap();
+  const top = fitInsets?.top ?? 0;
+  const bottom = fitInsets?.bottom ?? 0;
   useEffect(() => {
     const pts: LatLng[] = route ? route.coords : [...waypoints, ...(start ? [start] : [])];
     if (pts.length === 1) {
       map.setView(pts[0] as [number, number], 15);
     } else if (pts.length > 1) {
-      map.fitBounds(L.latLngBounds(pts as [number, number][]), { padding: [50, 50] });
+      const b = L.latLngBounds(pts as [number, number][]);
+      // 남는 창이 너무 얇으면(입력 상태처럼 위아래가 다 차 있으면) 비대칭 여백이
+      // 오히려 과하게 축소시킨다 — 그때는 예전처럼 균등 여백으로 맞춘다.
+      const usable = map.getSize().y - top - bottom;
+      // animate:false 가 핵심이다. 이 effect 는 결과가 바뀔 때 연달아 두 번
+      // 도는데(여백 측정 전/후), 첫 호출의 줌 애니메이션이 도는 동안 들어온
+      // 두 번째 setView 는 Leaflet 이 조용히 버린다(_tryAnimatedZoom 의
+      // _animatingZoom 가드). 그래서 줌만 반영되고 비대칭 여백으로 옮긴
+      // 중심은 사라져 경로가 화면 정중앙 = 시트 뒤로 갔다.
+      if (top + bottom > 0 && usable >= 140) {
+        map.fitBounds(b, {
+          paddingTopLeft: [24, top],
+          paddingBottomRight: [24, bottom],
+          animate: false,
+        });
+      } else {
+        map.fitBounds(b, { padding: [50, 50], animate: false });
+      }
     }
-  }, [route, waypoints, start, map]);
+  }, [route, waypoints, start, map, top, bottom]);
   return null;
 }
 
@@ -89,6 +114,7 @@ export default function LeafletRouteMap({
   alternatives = [],
   onPinClick,
   plannedPath,
+  fitInsets,
 }: RouteMapProps) {
   const colored = coloredSegments(route);
 
@@ -112,7 +138,13 @@ export default function LeafletRouteMap({
       {plannedPath && plannedPath.length > 1 && (
         <Polyline
           positions={plannedPath as [number, number][]}
-          pathOptions={{ color: MUTED, weight: 5, opacity: 0.5, dashArray: '2 12', lineCap: 'round' }}
+          pathOptions={{
+            color: MUTED,
+            weight: 5,
+            opacity: 0.5,
+            dashArray: '2 12',
+            lineCap: 'round',
+          }}
         />
       )}
 
@@ -184,7 +216,7 @@ export default function LeafletRouteMap({
         <Marker position={start as [number, number]} icon={labelIcon('출발')} />
       )}
 
-      <FitBounds route={route} waypoints={waypoints} start={start} />
+      <FitBounds route={route} waypoints={waypoints} start={start} fitInsets={fitInsets} />
     </MapContainer>
   );
 }

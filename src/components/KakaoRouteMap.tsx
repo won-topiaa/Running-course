@@ -18,6 +18,7 @@ export default function KakaoRouteMap({
   alternatives = [],
   onPinClick,
   plannedPath,
+  fitInsets,
 }: RouteMapProps & { kakao: any }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -178,12 +179,18 @@ export default function KakaoRouteMap({
       } else if (pts.length > 1) {
         const bounds = new kakao.maps.LatLngBounds();
         pts.forEach((p) => bounds.extend(new kakao.maps.LatLng(p[0], p[1])));
-        map.setBounds(bounds);
+        // setBounds(bounds, top, right, bottom, left) — 오버레이에 가리는 만큼
+        // 위아래 여백을 다르게 줘서 경로가 '보이는 창' 안에 들어오게 한다.
+        const top = fitInsets?.top ?? 0;
+        const bottom = fitInsets?.bottom ?? 0;
+        const usable = (boxRef.current?.clientHeight ?? 0) - top - bottom;
+        if (top + bottom > 0 && usable >= 140) map.setBounds(bounds, top, 24, bottom, 24);
+        else map.setBounds(bounds);
       }
     } catch {
       /* 무시 */
     }
-  }, [kakao, route, waypoints, start, mode, alternatives, plannedPath]);
+  }, [kakao, route, waypoints, start, mode, alternatives, plannedPath, fitInsets]);
 
   return <div ref={boxRef} className="kakao-soft h-full w-full" />;
 }

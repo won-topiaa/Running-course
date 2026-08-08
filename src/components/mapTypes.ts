@@ -20,6 +20,12 @@ export interface RouteMapProps extends MapKeys {
   onPinClick?: (index: number) => void;
   /** 아직 안 뛴 계획 경로 — 눈금(점선)으로 표시 */
   plannedPath?: LatLng[];
+  /**
+   * 오버레이(상단 카드·바텀시트)에 가려지는 위/아래 픽셀.
+   * 화면 맞추기를 이 여백만큼 비대칭으로 줘야 경로가 '보이는 창' 안에 들어온다.
+   * 안 주면 경로가 화면 정중앙에 놓여 절반이 시트 뒤로 숨는다.
+   */
+  fitInsets?: { top: number; bottom: number };
 }
 
 export interface PathMapProps extends MapKeys {
