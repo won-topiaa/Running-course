@@ -42,6 +42,10 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(true);
+  // 지도를 만지는 동안에는 오버레이를 비켜준다. 반투명·블러는 실측해보니
+  // 뒤가 거의 안 비쳐서 대비만 잃었다 — 잠깐 치우는 쪽이 실제로 지도를 보여준다.
+  const [peek, setPeek] = useState(false);
+  const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [returnToStart, setReturnToStart] = useState(true);
   const attemptRef = useRef(0);
 
@@ -150,8 +154,26 @@ export default function BuildScreen({ api }: { api: AppApi }) {
 
   return (
     <div className="fixed inset-0 z-0 overflow-hidden bg-cream">
-      {/* ── 배경: 전체 화면 지도 ───────────────────────────── */}
-      <div className="absolute inset-0">
+      {/* ── 배경: 전체 화면 지도 ─────────────────────────────
+          지도를 누르고 있는 동안 오버레이를 잠깐 치워 전체를 보여준다.
+          손을 떼면 잠시 뒤 되돌아온다 (탭으로 시작점을 찍는 흐름은 그대로). */}
+      <div
+        className="absolute inset-0"
+        /* 캡처 단계로 듣는다 — Leaflet/카카오가 지도 위 포인터 이벤트의 전파를
+           막기 때문에, 버블 단계에서는 이 핸들러까지 오지 않는다. */
+        onPointerDownCapture={() => {
+          if (peekTimer.current) clearTimeout(peekTimer.current);
+          setPeek(true);
+        }}
+        onPointerUpCapture={() => {
+          if (peekTimer.current) clearTimeout(peekTimer.current);
+          peekTimer.current = setTimeout(() => setPeek(false), 1400);
+        }}
+        onPointerCancelCapture={() => {
+          if (peekTimer.current) clearTimeout(peekTimer.current);
+          peekTimer.current = setTimeout(() => setPeek(false), 1400);
+        }}
+      >
         <RouteMap
           mode={mode}
           center={mode === 'distance' ? start : api.settings.homeLocation}
@@ -179,7 +201,11 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           위에서 자란 카드와 아래에서 올라온 시트가 만나 왕복/편도 줄이 가려졌다.
           같은 flex 컬럼에 두면 공간이 모자랄 때 각자 내부 스크롤로 줄어들 뿐
           서로 겹칠 수가 없다. 컬럼 자체는 클릭을 통과시켜 지도를 가리지 않는다. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-[100px] top-0 z-[500] flex flex-col px-3 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] sm:inset-x-auto sm:left-0 sm:w-[420px]">
+      <div
+        className={`pointer-events-none absolute inset-x-0 bottom-[100px] top-0 z-[500] flex flex-col px-3 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] transition-opacity duration-200 sm:inset-x-auto sm:left-0 sm:w-[420px] ${
+          peek ? 'opacity-0' : 'opacity-100'
+        }`}
+      >
         <div className="pointer-events-auto mx-auto w-full max-w-md shrink-0 rounded-3xl border border-line/70 bg-paper/95 shadow-card backdrop-blur-md sm:mx-0">
           {/* 오늘의 러닝 컨디션 — 한 줄 요약 (뛸지 말지 바로 판단) */}
           {api.conditions && (
