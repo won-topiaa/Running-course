@@ -21,6 +21,10 @@ import {
 } from './geo';
 
 const ORS_BASE = 'https://api.openrouteservice.org/v2/directions/foot-walking/geojson';
+// ORS 는 주 경로 provider 라 응답이 늦으면 빨리 포기하고 OSRM 으로 넘어가는 편이
+// 낫다. 실측 응답은 15km 8점 링까지 1초 이내 — 8초면 정상 응답의 8배 여유다.
+// (OSRM 은 최후 수단이라 기본값 12초를 그대로 쓴다)
+const ORS_TIMEOUT_MS = 8_000;
 // FOSSGIS 가 운영하는 공개 OSRM (도보 프로파일). 키가 필요 없다.
 const OSRM_FOOT = 'https://routing.openstreetmap.de/routed-foot/route/v1/foot';
 
@@ -219,17 +223,21 @@ export class OrsProvider implements RoutingProvider {
   private async rawPost(body: Record<string, unknown>): Promise<any> {
     let res: Response;
     try {
-      res = await fetchWithTimeout(ORS_BASE, {
-        method: 'POST',
-        headers: {
-          Authorization: this.apiKey,
-          'Content-Type': 'application/json',
-          Accept: 'application/geo+json',
+      res = await fetchWithTimeout(
+        ORS_BASE,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: this.apiKey,
+            'Content-Type': 'application/json',
+            Accept: 'application/geo+json',
+          },
+          // 페리 회피: 한강 유람선 항로 같은 뱃길이 OSM 에 페리로 등록돼 있으면
+          // 도보 프로파일이 태워버린다. 뛸 수 없는 경로이므로 전 요청에서 막는다.
+          body: JSON.stringify({ ...body, options: { avoid_features: ['ferries'] } }),
         },
-        // 페리 회피: 한강 유람선 항로 같은 뱃길이 OSM 에 페리로 등록돼 있으면
-        // 도보 프로파일이 태워버린다. 뛸 수 없는 경로이므로 전 요청에서 막는다.
-        body: JSON.stringify({ ...body, options: { avoid_features: ['ferries'] } }),
-      });
+        ORS_TIMEOUT_MS,
+      );
     } catch {
       throw new RoutingError('network', '네트워크에 연결할 수 없습니다.');
     }
