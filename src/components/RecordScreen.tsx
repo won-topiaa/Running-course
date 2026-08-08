@@ -143,13 +143,17 @@ export default function RecordScreen({
             rec.reset();
             onClose();
           }}
-          className="absolute left-4 top-4 z-[1000] grid h-10 w-10 place-items-center rounded-full bg-ink/80 text-white backdrop-blur active:scale-90"
+          /* top-4 로 두면 노치 기기의 PWA 에서 이 버튼이 상태바 밑으로 들어간다.
+             화면에는 보이는데 그 영역의 탭은 iOS 가 먼저 가져가서 눌리지 않는다
+             (index.html 이 viewport-fit=cover 라 콘텐츠가 상태바 아래까지 깔린다).
+             안전영역만큼 내려서 항상 누를 수 있게 한다. 손가락 기준 44px. */
+          className="absolute left-4 top-[calc(env(safe-area-inset-top,0px)+0.75rem)] z-[1000] grid h-11 w-11 place-items-center rounded-full bg-ink/80 text-white backdrop-blur active:scale-90"
           aria-label="닫기"
         >
           <X size={20} />
         </button>
         {rec.demo && (
-          <span className="absolute right-4 top-4 z-[1000] inline-flex items-center gap-1 rounded-full bg-ink/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-volt backdrop-blur">
+          <span className="absolute right-4 top-[calc(env(safe-area-inset-top,0px)+0.75rem)] z-[1000] inline-flex items-center gap-1 rounded-full bg-ink/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-volt backdrop-blur">
             <Zap size={12} /> DEMO
           </span>
         )}
@@ -190,10 +194,7 @@ export default function RecordScreen({
 
               <div className="mt-6 grid grid-cols-3 gap-3 border-t border-ink-line pt-5">
                 <Stat label="TIME" value={formatClock(rec.elapsedSec)} />
-                <Stat
-                  label="AVG PACE"
-                  value={rec.avgPaceSec ? formatPace(rec.avgPaceSec) : '--'}
-                />
+                <Stat label="AVG PACE" value={rec.avgPaceSec ? formatPace(rec.avgPaceSec) : '--'} />
                 <Stat
                   label="PACE"
                   value={rec.currentPaceSec ? formatPace(rec.currentPaceSec) : '--'}
@@ -276,9 +277,7 @@ function StartPanel({
 
       {(rec.error === 'no-geo' || rec.error === 'denied') && (
         <p className="mt-3 max-w-[19rem] rounded-2xl bg-ink-soft px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-muted">
-          {rec.error === 'no-geo'
-            ? '이 기기에서 위치를 쓸 수 없어요.'
-            : '위치 권한이 거부됐어요.'}{' '}
+          {rec.error === 'no-geo' ? '이 기기에서 위치를 쓸 수 없어요.' : '위치 권한이 거부됐어요.'}{' '}
           아래 데모로 체험해보세요.
         </p>
       )}
@@ -341,11 +340,7 @@ function SplitList({ splits }: { splits: Split[] }) {
               <span className="h-2 flex-1 overflow-hidden rounded-full bg-ink-soft">
                 <span
                   className={`block h-full rounded-full ${
-                    s.partial
-                      ? 'bg-ink-line'
-                      : s.sec === fastest
-                        ? 'bg-volt'
-                        : 'bg-white/45'
+                    s.partial ? 'bg-ink-line' : s.sec === fastest ? 'bg-volt' : 'bg-white/45'
                   }`}
                   style={{ width: `${Math.max(width, 4)}%` }}
                 />
