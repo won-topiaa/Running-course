@@ -6,6 +6,7 @@
 // 실패하면 합성 고도로 폴백해 UI 가 깨지지 않게 한다.
 // ---------------------------------------------------------------------------
 
+import { fetchWithTimeout } from './fetchTimeout';
 import { haversineMeters } from './geo';
 import type { LatLng } from './types';
 
@@ -20,7 +21,7 @@ async function fetchElevations(points: LatLng[]): Promise<number[]> {
     const chunk = points.slice(i, i + MAX_PER_REQUEST);
     const lat = chunk.map((p) => p[0].toFixed(5)).join(',');
     const lng = chunk.map((p) => p[1].toFixed(5)).join(',');
-    const res = await fetch(`${ENDPOINT}?latitude=${lat}&longitude=${lng}`);
+    const res = await fetchWithTimeout(`${ENDPOINT}?latitude=${lat}&longitude=${lng}`);
     if (!res.ok) throw new Error(`elevation ${res.status}`);
     const json = await res.json();
     if (!Array.isArray(json?.elevation)) throw new Error('elevation malformed');

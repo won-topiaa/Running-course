@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from './fetchTimeout';
 // ---------------------------------------------------------------------------
 // Strava 연동 (앱 측)
 //
@@ -62,7 +63,7 @@ export async function ensureFresh(
 ): Promise<StravaToken> {
   const now = Math.floor(Date.now() / 1000);
   if (token.expiresAt > now + 60) return token;
-  const res = await fetch(`${trim(workerUrl)}/refresh`, {
+  const res = await fetchWithTimeout(`${trim(workerUrl)}/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: token.refresh }),
@@ -92,7 +93,7 @@ export async function uploadGpx(opts: {
   form.append('filename', `${opts.name}.gpx`);
   form.append('name', opts.name);
 
-  const res = await fetch(`${trim(opts.workerUrl)}/upload`, {
+  const res = await fetchWithTimeout(`${trim(opts.workerUrl)}/upload`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token.access}` },
     body: form,

@@ -39,8 +39,22 @@ export function remainingMeters(planned: LatLng[], idx: number): number {
   return m;
 }
 
-/** 진행률 0~1 */
+/**
+ * 진행률 0~1 — 점 개수가 아니라 실제 거리 기준.
+ *
+ * 경로 좌표는 균등 간격이 아니다(굽은 길은 촘촘, 직선은 성김). 인덱스 비율을
+ * 쓰면 같은 화면의 '남은 N km'(거리 기준)와 어긋난다 — 실측: 한강 횡단 경로에서
+ * 최대 11%p 차이.
+ */
 export function progressRatio(planned: LatLng[], idx: number): number {
   if (planned.length < 2) return 0;
-  return Math.max(0, Math.min(1, idx / (planned.length - 1)));
+  const i = Math.max(0, Math.min(idx, planned.length - 1));
+  let done = 0;
+  let total = 0;
+  for (let k = 1; k < planned.length; k++) {
+    const seg = haversineMeters(planned[k - 1], planned[k]);
+    total += seg;
+    if (k <= i) done += seg;
+  }
+  return total > 0 ? Math.max(0, Math.min(1, done / total)) : 0;
 }

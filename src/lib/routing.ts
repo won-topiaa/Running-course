@@ -12,6 +12,7 @@
 
 import type { LatLng } from './types';
 import { elevationsForPath } from './elevation';
+import { fetchWithTimeout } from './fetchTimeout';
 import {
   densifyPath,
   destinationPoint,
@@ -218,7 +219,7 @@ export class OrsProvider implements RoutingProvider {
   private async rawPost(body: Record<string, unknown>): Promise<any> {
     let res: Response;
     try {
-      res = await fetch(ORS_BASE, {
+      res = await fetchWithTimeout(ORS_BASE, {
         method: 'POST',
         headers: {
           Authorization: this.apiKey,
@@ -311,7 +312,7 @@ export class OsrmProvider implements RoutingProvider {
     const url = `${OSRM_FOOT}/${coordStr}?overview=full&geometries=geojson&continue_straight=false`;
     let res: Response;
     try {
-      res = await fetch(url);
+      res = await fetchWithTimeout(url);
     } catch {
       throw new RoutingError('network', '경로 서버에 연결할 수 없습니다.');
     }

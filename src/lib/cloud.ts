@@ -10,8 +10,12 @@
 // ---------------------------------------------------------------------------
 
 import { applyBackup, collectBackup } from './backup';
+import { fetchWithTimeout } from './fetchTimeout';
 
 const SESSION_KEY = 'run-app-cloud-session-v1';
+// 사용자가 버튼을 누르고 기다리는 흐름이라 경로 API 보다 넉넉히 준다.
+// 그래도 상한이 있어야 자동 백업(변경 4초 뒤)이 멈춘 요청을 쌓지 않는다.
+const CLOUD_TIMEOUT_MS = 15_000;
 // 이 기기가 "계정 데이터와 기기 데이터 중 무엇을 남길지" 한 번 정리했는지 표시한다.
 // 값은 정리를 마친 userId. 이게 없으면 자동 백업은 멈춰 있는다 — 새 기기에서
 // 로그인하자마자 빈 상태가 계정 백업을 덮어쓰는 사고를 막는 잠금장치다.
@@ -129,11 +133,11 @@ export async function signUp(
   email: string,
   password: string,
 ): Promise<{ session: CloudSession | null; needsConfirm: boolean }> {
-  const res = await fetch(`${trim(cfg.url)}/auth/v1/signup`, {
-    method: 'POST',
-    headers: authHeaders(cfg),
-    body: JSON.stringify({ email, password }),
-  });
+  const res = await fetchWithTimeout(
+    `${trim(cfg.url)}/auth/v1/signup`,
+    { method: 'POST', headers: authHeaders(cfg), body: JSON.stringify({ email, password }) },
+    CLOUD_TIMEOUT_MS,
+  );
   if (!res.ok) throw new Error(await authError(res));
   const body = await res.json();
   if (body?.access_token) {
@@ -149,11 +153,11 @@ export async function signIn(
   email: string,
   password: string,
 ): Promise<CloudSession> {
-  const res = await fetch(`${trim(cfg.url)}/auth/v1/token?grant_type=password`, {
-    method: 'POST',
-    headers: authHeaders(cfg),
-    body: JSON.stringify({ email, password }),
-  });
+  const res = await fetchWithTimeout(
+    `${trim(cfg.url)}/auth/v1/token?grant_type=password`,
+    { method: 'POST', headers: authHeaders(cfg), body: JSON.stringify({ email, password }) },
+    CLOUD_TIMEOUT_MS,
+  );
   if (!res.ok) throw new Error(await authError(res));
   const s = toSession(await res.json());
   saveCloudSession(s);
@@ -170,11 +174,11 @@ export async function ensureCloudFresh(cfg: CloudConfig): Promise<CloudSession |
   const s = loadCloudSession();
   if (!s) return null;
   if (s.expiresAt > Math.floor(Date.now() / 1000) + 60) return s;
-  const res = await fetch(`${trim(cfg.url)}/auth/v1/token?grant_type=refresh_token`, {
-    method: 'POST',
-    headers: authHeaders(cfg),
-    body: JSON.stringify({ refresh_token: s.refresh }),
-  });
+  const res = await fetchWithTimeout(
+    `${trim(cfg.url)}/auth/v1/token?grant_type=refresh_token`,
+    { method: 'POST', headers: authHeaders(cfg), body: JSON.stringify({ refresh_token: s.refresh }) },
+    CLOUD_TIMEOUT_MS,
+  );
   if (!res.ok) {
     saveCloudSession(null);
     return null;
@@ -213,17 +217,21 @@ export async function pushCloud(cfg: CloudConfig, opts?: { force?: boolean }): P
   if (!opts?.force && !isReconciled(s.userId)) {
     throw new Error('계정 기록과 이 기기 기록 중 무엇을 남길지 먼저 골라 주세요.');
   }
-  const res = await fetch(`${trim(cfg.url)}/rest/v1/backups`, {
-    method: 'POST',
-    headers: {
-      ...authHeaders(cfg),
-      Authorization: `Bearer ${s.access}`,
-      Prefer: 'resolution=merge-duplicates,return=minimal',
+  const res = await fetchWithTimeout(
+    `${trim(cfg.url)}/rest/v1/backups`,
+    {
+      method: 'POST',
+      headers: {
+        ...authHeaders(cfg),
+        Authorization: `Bearer ${s.access}`,
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify([
+        { user_id: s.userId, data: collectBackup(), updated_at: new Date().toISOString() },
+      ]),
     },
-    body: JSON.stringify([
-      { user_id: s.userId, data: collectBackup(), updated_at: new Date().toISOString() },
-    ]),
-  });
+    CLOUD_TIMEOUT_MS,
+  );
   if (!res.ok) throw new Error(await restError(res, '백업 실패'));
   markReconciled(s.userId);
 }
@@ -235,9 +243,10 @@ export interface CloudBackupMeta {
 export async function cloudBackupMeta(cfg: CloudConfig): Promise<CloudBackupMeta> {
   const s = await ensureCloudFresh(cfg);
   if (!s) throw new Error('로그인이 필요해요.');
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${trim(cfg.url)}/rest/v1/backups?select=updated_at&user_id=eq.${s.userId}`,
     { headers: { ...authHeaders(cfg), Authorization: `Bearer ${s.access}` } },
+    CLOUD_TIMEOUT_MS,
   );
   if (!res.ok) throw new Error(await restError(res, '조회 실패'));
   const rows = await res.json();
@@ -248,9 +257,10 @@ export async function cloudBackupMeta(cfg: CloudConfig): Promise<CloudBackupMeta
 export async function pullCloud(cfg: CloudConfig): Promise<number> {
   const s = await ensureCloudFresh(cfg);
   if (!s) throw new Error('로그인이 필요해요.');
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${trim(cfg.url)}/rest/v1/backups?select=data&user_id=eq.${s.userId}`,
     { headers: { ...authHeaders(cfg), Authorization: `Bearer ${s.access}` } },
+    CLOUD_TIMEOUT_MS,
   );
   if (!res.ok) throw new Error(await restError(res, '가져오기 실패'));
   const rows = await res.json();
