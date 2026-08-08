@@ -284,6 +284,13 @@ export default function RouteSheet({
               {uploading ? '업로드 중…' : 'Strava에 올리기'}
             </ActionBtn>
           </div>
+
+          {/* 워치 연동 안내 — GPX 가 손목시계 내비게이션으로 가는 표준 입구다 */}
+          <p className="mt-2.5 rounded-2xl bg-tint/50 px-3 py-2 text-[11.5px] leading-relaxed text-espresso-muted">
+            ⌚ 손목시계로 경로를 보며 뛰려면 — <b className="text-espresso">GPX 내보내기</b> 후
+            애플워치는 <b className="text-espresso">WorkOutDoors</b> 앱, 가민·코로스·순토는
+            각사 앱(Garmin Connect 등)으로 가져오면 워치 내비게이션이 켜져요.
+          </p>
           {savedId && (
             <p className="mt-2 inline-flex items-center gap-1 text-[12px] text-sage-600">
               <Check size={13} /> 내 코스에 저장됨
