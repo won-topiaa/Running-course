@@ -5,7 +5,6 @@ import {
   Crosshair,
   Loader2,
   Play,
-  Route as RouteIcon,
   Sparkles,
   Undo2,
 } from 'lucide-react';
@@ -140,12 +139,13 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   // 결과가 있으면 '실제로 무엇으로 그렸는지', 없으면 '무엇으로 그릴 예정인지'
   const sourceBadge = (() => {
     const src = selected?.route.source;
-    if (src === 'ors') return { text: '🛰 실경로 · ORS', demo: false };
-    if (src === 'osrm') return { text: '🚶 실보행로 · OSM', demo: false };
-    if (src === 'offline') return { text: '⚠️ 직선 데모', demo: true };
+    // short 는 좁은 화면용 — 컨디션 줄이 두 줄로 깨지지 않게 한다
+    if (src === 'ors') return { text: '🛰 실경로 · ORS', short: '🛰 ORS', demo: false };
+    if (src === 'osrm') return { text: '🚶 실보행로 · OSM', short: '🚶 OSM', demo: false };
+    if (src === 'offline') return { text: '⚠️ 직선 데모', short: '⚠️ 데모', demo: true };
     return api.settings.orsKey
-      ? { text: '🛰 실경로 · ORS', demo: false }
-      : { text: '🚶 실보행로 · OSM', demo: false };
+      ? { text: '🛰 실경로 · ORS', short: '🛰 ORS', demo: false }
+      : { text: '🚶 실보행로 · OSM', short: '🚶 OSM', demo: false };
   })();
 
   return (
@@ -179,12 +179,12 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           위에서 자란 카드와 아래에서 올라온 시트가 만나 왕복/편도 줄이 가려졌다.
           같은 flex 컬럼에 두면 공간이 모자랄 때 각자 내부 스크롤로 줄어들 뿐
           서로 겹칠 수가 없다. 컬럼 자체는 클릭을 통과시켜 지도를 가리지 않는다. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-[100px] top-0 z-[500] flex flex-col px-3 pt-3 sm:inset-x-auto sm:left-0 sm:w-[420px]">
+      <div className="pointer-events-none absolute inset-x-0 bottom-[100px] top-0 z-[500] flex flex-col px-3 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] sm:inset-x-auto sm:left-0 sm:w-[420px]">
         <div className="pointer-events-auto mx-auto w-full max-w-md shrink-0 rounded-3xl border border-line/70 bg-paper/95 shadow-card backdrop-blur-md sm:mx-0">
           {/* 오늘의 러닝 컨디션 — 한 줄 요약 (뛸지 말지 바로 판단) */}
           {api.conditions && (
             <div
-              className={`flex items-center gap-2 px-4 py-2 text-[11.5px] ${
+              className={`flex items-center gap-1.5 whitespace-nowrap px-3.5 py-2 text-[11.5px] ${
                 api.conditions.runScore >= 75
                   ? 'bg-sage-50 text-sage-600'
                   : api.conditions.runScore >= 55
@@ -195,37 +195,26 @@ export default function BuildScreen({ api }: { api: AppApi }) {
               <span>{api.conditions.emoji}</span>
               <span className="font-bold">{api.conditions.tempC}°</span>
               <span className="opacity-70">·</span>
-              <span>미세먼지 {api.conditions.aqiLabel}</span>
-              <span className="ml-auto font-semibold">
+              <span className="min-w-0 truncate">미세먼지 {api.conditions.aqiLabel}</span>
+              <span className="ml-auto shrink-0 font-semibold">
                 {/* 실측이 아닌 폴백 값이면 숨기지 말고 정직하게 표시 */}
                 {api.conditions.source === 'sample' && (
-                  <span className="mr-1.5 font-normal opacity-60">예시 ·</span>
+                  <span className="mr-1 font-normal opacity-60">예시</span>
                 )}
-                러닝 적합도 {api.conditions.runScore}
+                {api.conditions.runScore}점
+              </span>
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                  sourceBadge.demo ? 'bg-coral-100 text-coral-600' : 'bg-sage-100 text-sage-600'
+                }`}
+              >
+                <span className="sm:hidden">{sourceBadge.short}</span>
+                <span className="hidden sm:inline">{sourceBadge.text}</span>
               </span>
             </div>
           )}
 
-          {/* 헤더 */}
-          <div className="flex items-center gap-2 px-4 pt-3.5">
-            <span className="grid h-7 w-7 place-items-center rounded-lg bg-coral">
-              <RouteIcon size={16} className="text-white" strokeWidth={2.4} />
-            </span>
-            <h1 className="text-[16px] font-extrabold tracking-tightish text-espresso">
-              코스 만들기
-            </h1>
-            <span
-              className={`ml-auto rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                sourceBadge.demo
-                  ? 'bg-coral-100 text-coral-600'
-                  : 'bg-sage-100 text-sage-600'
-              }`}
-            >
-              {sourceBadge.text}
-            </span>
-          </div>
-
-          {/* 모드 세그먼트 */}
+          {/* 모드 세그먼트 — 화면 제목은 하단 네비가 이미 알려주므로 두지 않는다 */}
           <div className="mx-4 mt-3 flex rounded-full bg-tint p-1">
             <SegBtn
               active={mode === 'distance'}
@@ -263,12 +252,6 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                       내 위치
                     </button>
                   }
-                />
-                <div className="my-1 h-px bg-line" />
-                <InputRow
-                  dot={VOLT}
-                  label="목표"
-                  value={`${targetKm}km ${returnToStart ? '왕복' : '편도'} 코스`}
                 />
               </>
             ) : (
@@ -501,9 +484,9 @@ export default function BuildScreen({ api }: { api: AppApi }) {
               </>
             ) : (
               <>
-                {/* 스타일 선택 */}
-                <p className="text-[13px] font-bold text-espresso">어떻게 뛰고 싶으세요?</p>
-                <div className="mt-2 grid grid-cols-2 gap-2">
+                {/* 스타일 선택 — 가로 한 줄 칩. 2×2 카드(설명 포함)는 세로로 너무 커서
+                    지도를 다 덮었다. 선택한 것의 설명만 아래 한 줄로 보여준다. */}
+                <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
                   {RUN_STYLES.map((s) => (
                     <button
                       key={s.id}
@@ -511,22 +494,20 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                         setStyle(s.id);
                         reset();
                       }}
-                      className={`flex items-center gap-2 rounded-2xl border p-2.5 text-left transition active:scale-[0.98] ${
-                        style === s.id ? 'border-coral bg-coral-50' : 'border-line bg-paper'
+                      className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-[12.5px] font-bold transition active:scale-95 ${
+                        style === s.id
+                          ? 'border-coral bg-coral-50 text-coral-600'
+                          : 'border-line bg-paper text-espresso-muted'
                       }`}
                     >
-                      <span className="text-lg">{s.emoji}</span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-[12.5px] font-bold text-espresso">
-                          {s.label}
-                        </span>
-                        <span className="block truncate text-[10.5px] text-espresso-soft">
-                          {s.desc}
-                        </span>
-                      </span>
+                      <span className="text-[14px]">{s.emoji}</span>
+                      {s.label}
                     </button>
                   ))}
                 </div>
+                <p className="mt-1.5 text-[11.5px] text-espresso-soft">
+                  {RUN_STYLES.find((s) => s.id === style)?.desc}
+                </p>
 
                 <button
                   onClick={generate}
