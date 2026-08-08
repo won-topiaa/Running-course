@@ -202,6 +202,15 @@ export default function RecordScreen({
               </div>
             </div>
 
+            {rec.gapSec > 0 && (
+              <p className="mt-4 rounded-2xl border border-coral/50 bg-coral-50 px-3 py-2.5 text-[11.5px] leading-relaxed text-espresso">
+                <b className="text-coral-600">
+                  화면이 꺼진 사이 약 {formatClock(rec.gapSec)} 동안 위치가 기록되지 않았어요.
+                </b>{' '}
+                그 구간 거리는 빠져 있어요 — 정확히 재려면 화면을 켜 둔 채로 뛰어 주세요.
+              </p>
+            )}
+
             <SplitList splits={splits} />
 
             {/* 컨트롤 — 볼트는 '계속 간다', 흰 테두리는 '멈춘다' */}
@@ -280,6 +289,13 @@ function StartPanel({
       >
         <span className="text-[19px] font-black uppercase tracking-[0.06em]">START</span>
       </button>
+
+      {/* 뛰기 전에 알려준다 — 다 뛰고 나서 기록이 비었다는 걸 아는 것보다 낫다 */}
+      <p className="mt-5 max-w-[19rem] text-[11.5px] leading-relaxed text-ink-muted">
+        {wakeLockSupported()
+          ? '뛰는 동안 화면이 자동으로 켜져 있어요. 직접 화면을 끄거나 다른 앱으로 가면 위치 기록이 멈출 수 있어요.'
+          : '이 브라우저는 화면 자동 유지가 안 돼요. 화면이 꺼지면 위치 기록이 멈추니 켜 둔 채로 뛰어 주세요.'}
+      </p>
 
       <button
         onClick={rec.startDemo}

@@ -26,6 +26,12 @@ export interface RecorderState {
   avgPaceSec: number | null;
   demo: boolean;
   error: string | null;
+  /**
+   * 화면을 끄거나 다른 앱으로 갔다가 돌아온 사이, GPS 가 실제로 멈춰 있던
+   * 시간(초). 0 이면 정상. 모바일 브라우저는 백그라운드에서 watchPosition 을
+   * 중단시키는 경우가 많은데, 그러면 그 구간이 통째로 기록에서 빠진다.
+   */
+  gapSec: number;
 }
 
 export interface Recorder extends RecorderState {
@@ -67,6 +73,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     avgPaceSec: null,
     demo: false,
     error: null,
+    gapSec: 0,
   });
 
   const coordsRef = useRef<LatLng[]>([]);
@@ -74,6 +81,8 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
   const timesRef = useRef<number[]>([]);
   const activeTimesRef = useRef<number[]>([]);
   const lastRef = useRef<LatLng | null>(null);
+  const lastFixAtRef = useRef(0); //   마지막 GPS 수신 시각
+  const gapMsRef = useRef(0); //       백그라운드에서 놓친 누적 시간
   const distMRef = useRef(0);
   const activeMsRef = useRef(0); // 누적 활성 시간
   const segStartRef = useRef(0); // 현재 구간 시작 시각
@@ -111,6 +120,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
             : syntheticElevation(lat, lng);
       elevRef.current.push(elevation);
       const now = Date.now();
+      lastFixAtRef.current = now;
       timesRef.current.push(now);
       activeTimesRef.current.push(activeMsRef.current + (now - segStartRef.current));
       sync({
@@ -146,6 +156,8 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       distMRef.current = 0;
       activeMsRef.current = 0;
       segStartRef.current = Date.now();
+      lastFixAtRef.current = Date.now();
+      gapMsRef.current = 0;
       statusRef.current = 'recording';
       sync({
         status: 'recording',
@@ -159,6 +171,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         elapsedSec: 0,
         currentPaceSec: null,
         avgPaceSec: null,
+        gapSec: 0,
       });
       startTick();
       void wakeRef.current?.enable(); // 뛰는 동안 화면 유지
@@ -240,6 +253,25 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     sync({ status: 'recording' });
   }, [sync]);
 
+  // 화면을 껐다 켜거나 앱을 전환하고 돌아왔을 때, 그 사이 GPS 가 멈춰 있었는지
+  // 확인한다. 브라우저는 백그라운드 탭의 watchPosition 을 중단시키는 일이 잦은데
+  // 그러면 사용자는 계속 뛰었는데 기록만 비어 있게 된다 — 조용히 넘기면 안 된다.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (statusRef.current !== 'recording' || demoRef.current) return;
+      const since = Date.now() - lastFixAtRef.current;
+      // GPS 는 원래 몇 초씩 끊긴다. 20초 넘게 비어 있었으면 실제 공백으로 본다.
+      if (since > 20_000) {
+        gapMsRef.current += since;
+        sync({ gapSec: Math.round(gapMsRef.current / 1000) });
+      }
+      lastFixAtRef.current = Date.now();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [sync]);
+
   const cleanup = useCallback(() => {
     if (watchRef.current != null) {
       navigator.geolocation.clearWatch(watchRef.current);
@@ -291,6 +323,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       avgPaceSec: null,
       demo: false,
       error: null,
+      gapSec: 0,
     });
   }, [cleanup]);
 

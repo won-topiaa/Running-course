@@ -4,8 +4,11 @@
 
 /** 초 → "m'ss\"" (페이스 표기) */
 export function formatPace(secPerKm: number): string {
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
+  // 먼저 초 단위로 반올림한 뒤 분/초로 나눈다. 나눈 다음에 반올림하면
+  // 179.6초가 2'60" 처럼 나온다 (60초는 표기상 존재할 수 없다).
+  const total = Math.round(secPerKm);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
   return `${m}'${s.toString().padStart(2, '0')}"`;
 }
 
