@@ -42,7 +42,22 @@ interface Shoe {
 function loadShoes(): Shoe[] {
   try {
     const raw = localStorage.getItem(SHOES_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      // 형태를 확인하고 넣는다. 깨진 값이 그대로 들어오면 목록을 그리다
+      // 터지고, 그 값은 남아 있으니 새로고침해도 계속 같은 자리에서 터진다.
+      const v = JSON.parse(raw);
+      if (Array.isArray(v)) {
+        return v.filter(
+          (x): x is Shoe =>
+            !!x &&
+            typeof x === 'object' &&
+            typeof x.id === 'string' &&
+            typeof x.name === 'string' &&
+            typeof x.km === 'number' &&
+            Number.isFinite(x.km),
+        );
+      }
+    }
   } catch {
     /* 무시 */
   }
@@ -163,7 +178,9 @@ export default function MyScreen({ api }: { api: AppApi }) {
           <div className="mt-4 grid grid-cols-3 gap-3">
             <StatTile
               icon={<Footprints size={16} className="text-coral" />}
-              value={stats.totalKm >= 100 ? String(Math.round(stats.totalKm)) : stats.totalKm.toFixed(1)}
+              value={
+                stats.totalKm >= 100 ? String(Math.round(stats.totalKm)) : stats.totalKm.toFixed(1)
+              }
               unit="km"
               label="누적 거리"
             />
@@ -292,9 +309,7 @@ export default function MyScreen({ api }: { api: AppApi }) {
           ].map((d) => (
             <div key={d.label} className="rounded-2xl bg-tint/70 py-2.5">
               <p className="text-[11px] text-espresso-soft">{d.label}</p>
-              <p className="text-[14px] font-bold text-espresso">
-                {estimateTimeLabel(d.km, pace)}
-              </p>
+              <p className="text-[14px] font-bold text-espresso">{estimateTimeLabel(d.km, pace)}</p>
             </div>
           ))}
         </div>
@@ -308,7 +323,6 @@ export default function MyScreen({ api }: { api: AppApi }) {
 
       {/* 파일 백업 — 로그인 없이 쓰는 안전망 */}
       <SyncSection />
-
     </div>
   );
 }
@@ -327,9 +341,7 @@ function CloudSection({ api }: { api: AppApi }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [remoteAt, setRemoteAt] = useState<string | null | undefined>(undefined);
   // 계정 기록과 기기 기록이 둘 다 있어 방향을 못 정한 상태. 정할 때까지 자동 백업은 멈춘다.
-  const [conflict, setConflict] = useState(
-    () => !!session && !isReconciled(session.userId),
-  );
+  const [conflict, setConflict] = useState(() => !!session && !isReconciled(session.userId));
 
   const flash = (m: string) => {
     setMsg(m);
@@ -425,9 +437,9 @@ function CloudSection({ api }: { api: AppApi }) {
 
       {!cfg ? (
         <p className="mt-1 text-[12px] leading-relaxed text-espresso-muted">
-          이메일 로그인은 Supabase 프로젝트 연결 후 켜져요
-          (<code className="text-[10.5px]">server/supabase/README.md</code> 참고 · 5분).
-          그 전에는 아래 <b className="text-espresso">데이터 이동</b>으로 옮길 수 있어요.
+          이메일 로그인은 Supabase 프로젝트 연결 후 켜져요 (
+          <code className="text-[10.5px]">server/supabase/README.md</code> 참고 · 5분). 그 전에는
+          아래 <b className="text-espresso">데이터 이동</b>으로 옮길 수 있어요.
         </p>
       ) : session ? (
         <>
@@ -437,8 +449,11 @@ function CloudSection({ api }: { api: AppApi }) {
                 {session.email}
               </span>
               <span className="text-[11px] text-espresso-muted">
-                {conflict ? '자동 백업 멈춤 — 아래에서 방향을 골라 주세요' : '기록이 계정에 자동 백업되고 있어요'}
-                {remoteAt && ` · 마지막 ${new Date(remoteAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' })}`}
+                {conflict
+                  ? '자동 백업 멈춤 — 아래에서 방향을 골라 주세요'
+                  : '기록이 계정에 자동 백업되고 있어요'}
+                {remoteAt &&
+                  ` · 마지막 ${new Date(remoteAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' })}`}
               </span>
             </span>
             <button
@@ -454,9 +469,9 @@ function CloudSection({ api }: { api: AppApi }) {
           </div>
           {conflict && (
             <p className="mt-2 rounded-2xl border border-coral/40 bg-coral-50 px-3 py-2.5 text-[11.5px] leading-relaxed text-espresso">
-              계정과 이 기기에 <b>둘 다 기록이 있어요.</b> 한쪽이 다른 쪽을 덮어쓰기 때문에,
-              고르기 전까지 자동 백업을 멈춰 뒀어요. 이 기기 기록이 최신이면{' '}
-              <b>이 기기 걸로 덮어쓰기</b>, 계정 쪽이 최신이면 <b>계정에서 가져오기</b>.
+              계정과 이 기기에 <b>둘 다 기록이 있어요.</b> 한쪽이 다른 쪽을 덮어쓰기 때문에, 고르기
+              전까지 자동 백업을 멈춰 뒀어요. 이 기기 기록이 최신이면 <b>이 기기 걸로 덮어쓰기</b>,
+              계정 쪽이 최신이면 <b>계정에서 가져오기</b>.
             </p>
           )}
           <div className="mt-2 grid grid-cols-2 gap-2">
@@ -492,8 +507,8 @@ function CloudSection({ api }: { api: AppApi }) {
       ) : (
         <>
           <p className="mt-1 text-[12px] leading-relaxed text-espresso-muted">
-            로그인하면 기록·설정이 계정에 자동 백업돼요. 기기를 바꿔도, 브라우저를 지워도
-            로그인만 하면 그대로예요.
+            로그인하면 기록·설정이 계정에 자동 백업돼요. 기기를 바꿔도, 브라우저를 지워도 로그인만
+            하면 그대로예요.
           </p>
           <div className="mt-2.5 space-y-2">
             <input
@@ -566,8 +581,8 @@ function SyncSection() {
         <Cloud size={16} className="text-coral" /> 파일 백업
       </h2>
       <p className="mt-1 text-[12px] leading-relaxed text-espresso-muted">
-        로그인 없이 쓰는 안전망이에요. 기록·설정을 파일로 내려받아 두거나, 다른
-        기기에서 가져올 수 있어요.
+        로그인 없이 쓰는 안전망이에요. 기록·설정을 파일로 내려받아 두거나, 다른 기기에서 가져올 수
+        있어요.
       </p>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <button

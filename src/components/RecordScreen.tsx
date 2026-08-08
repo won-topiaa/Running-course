@@ -78,9 +78,19 @@ export default function RecordScreen({
     [rec.coords, rec.activeTimes],
   );
 
+  /**
+   * 기록 좌표로 RouteResult 를 만들되 거리는 기록기 값을 쓴다.
+   * 좌표를 다시 합산하면 GPS 필터가 걸러낸 구간(정지 중 지터, 일시정지하고
+   * 이동한 거리)이 되살아나서, 뛰는 동안 본 거리와 저장된 거리가 달라진다.
+   */
+  const buildRecorded = (): RouteResult => {
+    const r = buildResult(rec.coords, rec.elevations, 'offline', [rec.coords[0]]);
+    return rec.distanceKm > 0 ? { ...r, distanceKm: rec.distanceKm } : r;
+  };
+
   // 기록 종료 → 요약 시트
   if (rec.status === 'finished' && rec.coords.length > 1) {
-    const route = buildResult(rec.coords, rec.elevations, 'offline', [rec.coords[0]]);
+    const route = buildRecorded();
     const view: RouteView = {
       name,
       route,
@@ -104,13 +114,47 @@ export default function RecordScreen({
     );
   }
 
+  /**
+   * 좌표가 2개도 안 쌓인 채 끝난 경우.
+   * 예전엔 이 조건에서 아무 안내 없이 START 화면으로 되돌아갔다 — 사용자는
+   * 종료를 눌렀는데 기록이 사라진 것처럼 보인다. GPS 가 자리를 잡기 전이거나
+   * 실제로 거의 안 움직인 것이므로, 그렇다고 말해준다.
+   */
+  if (rec.status === 'finished' && rec.coords.length <= 1) {
+    return (
+      <div className="fixed inset-0 z-[2000] flex flex-col items-center justify-center bg-ink px-8 text-center text-white">
+        <p className="text-[12px] font-bold uppercase tracking-[0.16em] text-ink-muted">No data</p>
+        <h2 className="mt-2 text-[21px] font-black">기록할 만큼 뛰지 않았어요</h2>
+        <p className="mt-2.5 max-w-[19rem] text-[12.5px] leading-relaxed text-ink-muted">
+          움직인 거리가 GPS 오차보다 작아서 저장하지 않았어요. 하늘이 보이는 곳에서 잠시 기다렸다가
+          시작하면 더 잘 잡혀요.
+        </p>
+        <button
+          onClick={() => rec.reset()}
+          className="mt-7 w-full max-w-[15rem] rounded-full bg-volt py-3.5 text-[14px] font-black text-ink active:scale-[0.98]"
+        >
+          다시 시작
+        </button>
+        <button
+          onClick={() => {
+            rec.reset();
+            onClose();
+          }}
+          className="mt-2.5 w-full max-w-[15rem] rounded-full border border-ink-line py-3.5 text-[13px] font-semibold text-ink-muted active:scale-[0.98]"
+        >
+          닫기
+        </button>
+      </div>
+    );
+  }
+
   const keepAwake = wakeLockSupported();
   const live = rec.status === 'recording' || rec.status === 'paused';
 
   const finish = () => {
     // 데모가 아니면 자동으로 내 코스에 저장 — 마이 통계가 여기서 나온다
     if (!rec.demo && rec.coords.length > 1 && !autoSaved.current) {
-      const route = buildResult(rec.coords, rec.elevations, 'offline', [rec.coords[0]]);
+      const route = buildRecorded();
       const saved = savedFromView({
         name,
         route,

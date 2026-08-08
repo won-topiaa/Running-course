@@ -79,12 +79,33 @@ export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const saved = JSON.parse(raw) as Partial<Settings>;
+      const parsed = JSON.parse(raw);
+      // 객체가 아니면(깨진 값·다른 버전) 통째로 무시한다. 문자열을 그대로
+      // 펼치면 인덱스 키가 섞여 들어오고, 숫자여야 할 자리에 이상한 값이
+      // 들어가면 지도·페이스 계산이 렌더 중에 터진다.
+      const saved: Partial<Settings> =
+        parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
       // 옛 기본 키가 저장돼 있으면 무시하고 새 기본 키를 쓴다
       const savedKakao = saved.kakaoJsKey === KAKAO_LEGACY ? null : saved.kakaoJsKey;
+      // 좌표·페이스는 형태까지 확인한다 — 여기가 깨지면 지도가 못 뜬다
+      const home =
+        Array.isArray(saved.homeLocation) &&
+        saved.homeLocation.length === 2 &&
+        saved.homeLocation.every((n) => typeof n === 'number' && Number.isFinite(n))
+          ? (saved.homeLocation as Settings['homeLocation'])
+          : base.homeLocation;
+      const pace =
+        typeof saved.paceSecPerKm === 'number' &&
+        Number.isFinite(saved.paceSecPerKm) &&
+        saved.paceSecPerKm > 60
+          ? saved.paceSecPerKm
+          : base.paceSecPerKm;
+
       return {
         ...base,
         ...saved,
+        homeLocation: home,
+        paceSecPerKm: pace,
         // env 값이 있으면 항상 우선 (배포 환경 주입값)
         kakaoJsKey: ENV_KAKAO ?? savedKakao ?? KAKAO_DEFAULT,
         orsKey: ENV_ORS ?? saved.orsKey ?? ORS_DEFAULT,

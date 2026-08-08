@@ -4,6 +4,7 @@ import GradeElevationChart from './GradeElevationChart';
 import KakaoLinkRow from './KakaoLinkRow';
 import PathMap from './PathMap';
 import ScenePhoto from './ScenePhoto';
+import { COURSES } from '../data/courses';
 import { sceneForCourse } from '../lib/scene';
 import { estimateTimeLabel, formatDistance } from '../lib/format';
 import {
@@ -32,15 +33,25 @@ const AMENITIES: { key: keyof Course['amenities']; label: string; icon: string }
 // 코스별 실제 보행 경로 캐시 — 시트를 다시 열어도 재요청하지 않는다
 const realRouteCache = new Map<string, RouteResult>();
 
+/**
+ * courseId 를 받아 여기서 찾는다. App 이 COURSES 를 직접 쓰면 큐레이션
+ * 데이터셋이 첫 로딩 번들에 통째로 들어간다 — 정작 첫 화면에는 안 쓰는데.
+ */
 export default function CourseDetailSheet({
-  course,
+  courseId,
   api,
   onClose,
 }: {
-  course: Course;
+  courseId: string;
   api: AppApi;
   onClose: () => void;
 }) {
+  const course = COURSES.find((c) => c.id === courseId);
+  if (!course) return null;
+  return <Sheet course={course} api={api} onClose={onClose} />;
+}
+
+function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose: () => void }) {
   // 큐레이션 데이터의 path 는 손으로 딴 대략 폴리곤이라 지도에 그대로 그리면
   // 도로와 무관한 다각형이 나온다. 열 때마다 실제 보행 경로로 스냅해 보여주고,
   // 실패하면 지도를 아예 숨긴다 — 가짜 도형을 보여주는 것보다 없는 게 낫다.

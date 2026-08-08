@@ -1,21 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import BottomNav, { type Screen } from './components/BottomNav';
-import CourseDetailSheet from './components/CourseDetailSheet';
 import InstallPrompt from './components/InstallPrompt';
-import RecordScreen from './components/RecordScreen';
-import RouteSheet from './components/RouteSheet';
-import ExploreScreen from './screens/ExploreScreen';
 import BuildScreen from './screens/BuildScreen';
-import SavedScreen from './screens/SavedScreen';
-import MyScreen from './screens/MyScreen';
-import { COURSES } from './data/courses';
+
+// 첫 화면(만들기)만 즉시 받고 나머지는 눌렀을 때 받는다. 첫 로딩에 필요 없는
+// 화면·시트가 같이 묶여 있으면 그만큼 첫 그림이 늦어진다.
+// 오프라인에서 처음 눌러도 되도록, 뜬 직후 한가할 때 미리 받아 캐시에 넣는다
+// (아래 prefetch effect). 서비스워커가 그때 받은 청크를 캐시한다.
+const ExploreScreen = lazy(() => import('./screens/ExploreScreen'));
+const SavedScreen = lazy(() => import('./screens/SavedScreen'));
+const MyScreen = lazy(() => import('./screens/MyScreen'));
+const RecordScreen = lazy(() => import('./components/RecordScreen'));
+const RouteSheet = lazy(() => import('./components/RouteSheet'));
+const CourseDetailSheet = lazy(() => import('./components/CourseDetailSheet'));
 import { loadSettings, saveSettings, type Settings } from './lib/config';
-import {
-  loadRoutes,
-  parseSharedFromHash,
-  persistRoutes,
-  type SavedRoute,
-} from './lib/savedRoutes';
+import { loadRoutes, parseSharedFromHash, persistRoutes, type SavedRoute } from './lib/savedRoutes';
 import { loadCloudSession, pushCloud } from './lib/cloud';
 import { captureTokenFromHash } from './lib/strava';
 import type { RouteResult } from './lib/routing';
@@ -27,7 +26,12 @@ const SAVED_KEY = 'run-app-saved-v1';
 function loadSaved(): string[] {
   try {
     const raw = localStorage.getItem(SAVED_KEY);
-    if (raw) return JSON.parse(raw);
+    // 배열·문자열인지 확인한다. 깨진 값이 들어오면 렌더 중에 터지는데,
+    // 그 값은 localStorage 에 그대로 남아 새로고침해도 계속 같은 자리에서 터진다.
+    if (raw) {
+      const v = JSON.parse(raw);
+      if (Array.isArray(v)) return v.filter((x): x is string => typeof x === 'string');
+    }
   } catch {
     /* 무시 */
   }
@@ -74,6 +78,30 @@ export default function App() {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [settings.homeLocation]);
+
+  // 한가할 때 나머지 화면을 미리 받아 둔다 — 오프라인에서 처음 눌러도 열리고,
+  // 온라인에서도 탭 전환이 즉시 끝난다. 첫 그림에는 영향을 주지 않는다.
+  useEffect(() => {
+    const load = () => {
+      void import('./screens/ExploreScreen');
+      void import('./screens/SavedScreen');
+      void import('./screens/MyScreen');
+      void import('./components/RecordScreen');
+      void import('./components/RouteSheet');
+      void import('./components/CourseDetailSheet');
+    };
+    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => number })
+      .requestIdleCallback;
+    if (ric) {
+      const id = ric(load);
+      return () =>
+        (window as unknown as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(
+          id,
+        );
+    }
+    const t = setTimeout(load, 2000);
+    return () => clearTimeout(t);
+  }, []);
 
   // Strava OAuth 복귀 — 해시에 담겨온 토큰 저장
   useEffect(() => {
@@ -163,21 +191,20 @@ export default function App() {
     [settings, conditions, savedIds, savedRoutes, toggleSaved, addSavedRoute, removeSavedRoute],
   );
 
-  const detailCourse = detailId ? COURSES.find((c) => c.id === detailId) ?? null : null;
-
   return (
     <div className="min-h-full bg-cream">
-      {screen === 'explore' && <ExploreScreen api={api} />}
       {screen === 'build' && <BuildScreen api={api} />}
-      {screen === 'saved' && <SavedScreen api={api} />}
-      {screen === 'my' && <MyScreen api={api} />}
+      <Suspense fallback={<ScreenSkeleton />}>
+        {screen === 'explore' && <ExploreScreen api={api} />}
+        {screen === 'saved' && <SavedScreen api={api} />}
+        {screen === 'my' && <MyScreen api={api} />}
+      </Suspense>
 
       {storageFull && (
-        <div className="fixed inset-x-0 bottom-[86px] z-[1100] px-3">
+        <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+86px)] z-[1100] px-3">
           <div className="mx-auto max-w-md rounded-2xl border border-coral/50 bg-coral-50 px-3.5 py-2.5 text-[12px] leading-relaxed text-espresso shadow-card">
-            <b className="text-coral-600">저장 공간이 가득 찼어요.</b> 새 기록이 이 기기에
-            저장되지 않고 있어요. 마이 → 내 코스에서 오래된 기록을 지우거나,
-            계정에 백업한 뒤 정리해 주세요.
+            <b className="text-coral-600">저장 공간이 가득 찼어요.</b> 새 기록이 이 기기에 저장되지
+            않고 있어요. 마이 → 내 코스에서 오래된 기록을 지우거나, 계정에 백업한 뒤 정리해 주세요.
           </div>
         </div>
       )}
@@ -189,27 +216,35 @@ export default function App() {
         savedCount={savedIds.length}
       />
       {/* 설치 배너는 목록형 화면에서만 — 만들기 화면의 바텀시트 버튼을 가리지 않게 */}
-      {(screen === 'explore' || screen === 'my') &&
-        !recordOpen &&
-        !detailCourse &&
-        !routeView && <InstallPrompt />}
+      {(screen === 'explore' || screen === 'my') && !recordOpen && !detailId && !routeView && (
+        <InstallPrompt />
+      )}
 
-      {detailCourse && (
-        <CourseDetailSheet course={detailCourse} api={api} onClose={() => setDetailId(null)} />
-      )}
-      {routeView && (
-        <RouteSheet view={routeView} api={api} onClose={() => setRouteView(null)} />
-      )}
-      {recordOpen && (
-        <RecordScreen
-          api={api}
-          planned={plannedRun}
-          onClose={() => {
-            setRecordOpen(false);
-            setPlannedRun(null);
-          }}
-        />
-      )}
+      <Suspense fallback={null}>
+        {detailId && (
+          <CourseDetailSheet courseId={detailId} api={api} onClose={() => setDetailId(null)} />
+        )}
+        {routeView && <RouteSheet view={routeView} api={api} onClose={() => setRouteView(null)} />}
+        {recordOpen && (
+          <RecordScreen
+            api={api}
+            planned={plannedRun}
+            onClose={() => {
+              setRecordOpen(false);
+              setPlannedRun(null);
+            }}
+          />
+        )}
+      </Suspense>
+    </div>
+  );
+}
+
+/** 화면 청크를 받는 동안의 자리 표시 — 하단 네비까지 사라지지 않게 높이만 채운다 */
+function ScreenSkeleton() {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center">
+      <span className="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-coral" />
     </div>
   );
 }

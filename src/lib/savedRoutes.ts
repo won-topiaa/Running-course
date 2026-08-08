@@ -51,10 +51,57 @@ export function compactRoute(r: SavedRoute): SavedRoute {
   return { ...r, coords, elevations };
 }
 
+/**
+ * 저장된 값이 정말 SavedRoute 인지 확인한다.
+ *
+ * 이게 없으면 localStorage 가 한 번 깨졌을 때(다른 탭의 옛 버전, 백업 복원 실패,
+ * 용량 초과로 잘린 문자열) 앱이 렌더 중에 터지고, 그 값은 계속 남아 있으므로
+ * 새로고침해도 매번 같은 자리에서 터진다 — 사용자는 앱에서 손쓸 방법이 없다.
+ * 이상한 항목만 조용히 버리면 나머지 기록은 살아남는다.
+ */
+function isRoute(v: unknown): v is SavedRoute {
+  if (!v || typeof v !== 'object') return false;
+  const r = v as Record<string, unknown>;
+  return (
+    typeof r.id === 'string' &&
+    typeof r.name === 'string' &&
+    typeof r.createdAt === 'number' &&
+    Number.isFinite(r.createdAt) &&
+    (r.kind === 'built' || r.kind === 'recorded') &&
+    typeof r.distanceKm === 'number' &&
+    Number.isFinite(r.distanceKm) &&
+    Array.isArray(r.coords) &&
+    Array.isArray(r.elevations) &&
+    r.coords.every(
+      (c) =>
+        Array.isArray(c) &&
+        c.length === 2 &&
+        typeof c[0] === 'number' &&
+        typeof c[1] === 'number' &&
+        Number.isFinite(c[0]) &&
+        Number.isFinite(c[1]),
+    )
+  );
+}
+
+/** 손상된 항목을 걸러낸 목록. 통계·지도가 이 배열을 그대로 믿고 쓴다. */
+export function sanitizeRoutes(v: unknown): SavedRoute[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter(isRoute).map((r) => ({
+    ...r,
+    ascentM: Number.isFinite(r.ascentM) ? r.ascentM : 0,
+    maxGradePct: Number.isFinite(r.maxGradePct) ? r.maxGradePct : 0,
+    durationSec:
+      typeof r.durationSec === 'number' && Number.isFinite(r.durationSec)
+        ? r.durationSec
+        : undefined,
+  }));
+}
+
 export function loadRoutes(): SavedRoute[] {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw) as SavedRoute[];
+    if (raw) return sanitizeRoutes(JSON.parse(raw));
   } catch {
     /* 무시 */
   }
@@ -114,8 +161,7 @@ export function savedFromView(v: {
   source: string;
   durationSec?: number;
 }): SavedRoute {
-  const src: SavedRoute['source'] =
-    v.source === 'ors' || v.source === 'gps' ? v.source : 'offline';
+  const src: SavedRoute['source'] = v.source === 'ors' || v.source === 'gps' ? v.source : 'offline';
   return compactRoute({
     id: rid(),
     name: v.name,
@@ -184,12 +230,23 @@ export interface SharedRoute {
 export function parseSharedFromHash(hash: string): SharedRoute | null {
   const m = /[#&]course=([^&]+)/.exec(hash);
   if (!m) return null;
-  const payload = decodeShare(decodeURIComponent(m[1]));
-  if (!payload) return null;
+  // 여기 들어오는 문자열은 남이 보낸 링크다 — 잘리거나 손대진 값이 올 수 있다.
+  // decodeURIComponent 는 '%' 하나만 어긋나도 던지고, payload 필드가 비면
+  // 아래 계산이 터진다. 앱을 열자마자 오류 화면이 뜨느니 조용히 무시한다.
+  let payload;
+  try {
+    payload = decodeShare(decodeURIComponent(m[1]));
+  } catch {
+    return null;
+  }
+  if (!payload || !Array.isArray(payload.e)) return null;
   const coords = decodePolyline(payload.p);
   if (coords.length < 2) return null;
   // 고도 배열 길이를 좌표 수에 맞춰 선형 보간
-  const elev = resample(payload.e, coords.length);
+  const elev = resample(
+    payload.e.filter((n) => typeof n === 'number' && Number.isFinite(n)),
+    coords.length,
+  );
   return {
     name: payload.n,
     style: payload.s,

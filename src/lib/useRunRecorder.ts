@@ -183,8 +183,29 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     }, 1000);
   }, [sync]);
 
+  /**
+   * 이전 세션의 watch/타이머를 확실히 끊는다.
+   * 안 끊고 새 watchPosition 을 걸면 옛 watch 가 살아남아 같은 좌표를 두 번
+   * 넣는다 — 거리가 정확히 두 배가 되는데 원인을 찾기 아주 어렵다.
+   */
+  const stopSources = useCallback(() => {
+    if (watchRef.current != null) {
+      navigator.geolocation.clearWatch(watchRef.current);
+      watchRef.current = null;
+    }
+    if (demoRef.current) {
+      clearInterval(demoRef.current);
+      demoRef.current = null;
+    }
+    if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
+  }, []);
+
   const beginSession = useCallback(
     (demo: boolean) => {
+      stopSources();
       coordsRef.current = [];
       elevRef.current = [];
       timesRef.current = [];
@@ -215,7 +236,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       startTick();
       void wakeRef.current?.enable(); // 뛰는 동안 화면 유지
     },
-    [sync, startTick],
+    [sync, startTick, stopSources],
   );
 
   const start = useCallback(() => {
@@ -319,20 +340,9 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
   }, [sync]);
 
   const cleanup = useCallback(() => {
-    if (watchRef.current != null) {
-      navigator.geolocation.clearWatch(watchRef.current);
-      watchRef.current = null;
-    }
-    if (demoRef.current) {
-      clearInterval(demoRef.current);
-      demoRef.current = null;
-    }
-    if (tickRef.current) {
-      clearInterval(tickRef.current);
-      tickRef.current = null;
-    }
+    stopSources();
     void wakeRef.current?.disable();
-  }, []);
+  }, [stopSources]);
 
   const stop = useCallback(() => {
     if (statusRef.current === 'recording') {
