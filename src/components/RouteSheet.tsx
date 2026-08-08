@@ -18,6 +18,7 @@ import KakaoLinkRow from './KakaoLinkRow';
 import RouteMap from './RouteMap';
 import { GRADE_COLORS, GRADE_LEGEND, RUN_STYLES } from '../lib/routeStyle';
 import { buildGpx, downloadGpx } from '../lib/gpx';
+import { kmSplits } from '../lib/splits';
 import { loadToken, STRAVA_UPLOAD_PAGE, uploadGpx } from '../lib/strava';
 import { buildShareToken, savedFromView, shareUrl } from '../lib/savedRoutes';
 import { estimateTimeLabel, formatDuration, formatPace } from '../lib/format';
@@ -240,6 +241,41 @@ export default function RouteSheet({
               ascentM={route.ascentM}
             />
           </div>
+
+          {/* 구간 기록 — 방금 뛴 러닝의 km 별 페이스 (활성 시간 기준) */}
+          {mode === 'summary' && view.activeTimes && view.activeTimes.length > 1 && (() => {
+            const splits = kmSplits(route.coords, view.activeTimes, false);
+            if (!splits.length) return null;
+            const fastest = Math.min(...splits.map((x) => x.sec));
+            const slowest = Math.max(...splits.map((x) => x.sec));
+            return (
+              <div className="mt-3 rounded-3xl border border-line bg-paper p-4 shadow-soft">
+                <p className="mb-2 text-[13px] font-bold text-espresso">구간 기록</p>
+                <ul className="space-y-1.5">
+                  {splits.map((x) => (
+                    <li key={x.km} className="flex items-center gap-2.5">
+                      <span className="w-7 shrink-0 text-[11.5px] font-bold tabular-nums text-espresso-muted">
+                        {x.km}km
+                      </span>
+                      <span className="h-2 flex-1 overflow-hidden rounded-full bg-tint">
+                        <span
+                          className={`block h-full rounded-full ${x.sec === fastest ? 'bg-coral' : 'bg-espresso-soft/40'}`}
+                          style={{ width: `${Math.max(8, Math.round((x.sec / slowest) * 100))}%` }}
+                        />
+                      </span>
+                      <span
+                        className={`w-14 shrink-0 text-right text-[12.5px] font-bold tabular-nums ${
+                          x.sec === fastest ? 'text-coral-600' : 'text-espresso'
+                        }`}
+                      >
+                        {formatPace(x.sec)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
 
           {/* 이 경로 따라 뛰기 — 기록 요약에서는 이미 뛴 것이라 숨긴다 */}
           {mode !== 'summary' && (

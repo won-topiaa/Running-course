@@ -72,10 +72,10 @@ export default function RecordScreen({
     };
   }, [planned, idx]);
 
-  // km 구간 기록 — 큰 숫자 아래 남는 공간을 러너가 실제로 보고 싶어하는 것으로 채운다
+  // km 구간 기록 — 활성 시간 기준이라 신호 대기로 멈춘 시간이 섞이지 않는다
   const splits = useMemo(
-    () => kmSplits(rec.coords, rec.times, true),
-    [rec.coords, rec.times],
+    () => kmSplits(rec.coords, rec.activeTimes, true),
+    [rec.coords, rec.activeTimes],
   );
 
   // 기록 종료 → 요약 시트
@@ -88,6 +88,7 @@ export default function RecordScreen({
       source: 'gps',
       durationSec: rec.elapsedSec,
       times: rec.times,
+      activeTimes: rec.activeTimes,
       savedId: autoSaved.current ?? undefined,
     };
     return (

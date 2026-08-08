@@ -15,6 +15,8 @@ export interface RouteView {
   durationSec?: number;
   /** 기록한 러닝의 좌표별 시각(epoch ms) — GPX 시각용 */
   times?: number[];
+  /** 좌표별 누적 활성 ms(일시정지 제외) — 구간 기록용 */
+  activeTimes?: number[];
   /** 이미 저장된 항목이면 id */
   savedId?: string;
 }

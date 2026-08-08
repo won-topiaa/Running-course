@@ -16,7 +16,10 @@ export interface RecorderState {
   status: RecStatus;
   coords: LatLng[];
   elevations: number[];
+  /** 좌표별 벽시계 epoch ms — GPX 의 <time> 에 쓴다 */
   times: number[];
+  /** 좌표별 누적 '활성' ms — 일시정지 시간이 빠져 있다. 페이스·구간 기록용 */
+  activeTimes: number[];
   distanceKm: number;
   elapsedSec: number;
   currentPaceSec: number | null;
@@ -36,8 +39,9 @@ export interface Recorder extends RecorderState {
 
 const MIN_MOVE_M = 4; // GPS 지터 무시 임계
 
-function currentPace(coords: LatLng[], times: number[]): number | null {
-  // 최근 ~150m 구간의 페이스(초/km)
+function currentPace(coords: LatLng[], activeTimes: number[]): number | null {
+  // 최근 ~150m 구간의 페이스(초/km). 활성 시간 기준이라 일시정지를 걸치면
+  // 멈춘 시간이 페이스를 부풀리지 않는다.
   let dist = 0;
   let i = coords.length - 1;
   while (i > 0 && dist < 150) {
@@ -45,7 +49,7 @@ function currentPace(coords: LatLng[], times: number[]): number | null {
     i--;
   }
   if (dist < 30) return null;
-  const dt = (times[coords.length - 1] - times[i]) / 1000;
+  const dt = (activeTimes[coords.length - 1] - activeTimes[i]) / 1000;
   const km = dist / 1000;
   return km > 0 ? dt / km : null;
 }
@@ -56,6 +60,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     coords: [],
     elevations: [],
     times: [],
+    activeTimes: [],
     distanceKm: 0,
     elapsedSec: 0,
     currentPaceSec: null,
@@ -67,6 +72,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
   const coordsRef = useRef<LatLng[]>([]);
   const elevRef = useRef<number[]>([]);
   const timesRef = useRef<number[]>([]);
+  const activeTimesRef = useRef<number[]>([]);
   const lastRef = useRef<LatLng | null>(null);
   const distMRef = useRef(0);
   const activeMsRef = useRef(0); // 누적 활성 시간
@@ -104,13 +110,16 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
             ? elevRef.current[elevRef.current.length - 1]
             : syntheticElevation(lat, lng);
       elevRef.current.push(elevation);
-      timesRef.current.push(Date.now());
+      const now = Date.now();
+      timesRef.current.push(now);
+      activeTimesRef.current.push(activeMsRef.current + (now - segStartRef.current));
       sync({
         coords: coordsRef.current.slice(),
         elevations: elevRef.current.slice(),
         times: timesRef.current.slice(),
+        activeTimes: activeTimesRef.current.slice(),
         distanceKm: distMRef.current / 1000,
-        currentPaceSec: currentPace(coordsRef.current, timesRef.current),
+        currentPaceSec: currentPace(coordsRef.current, activeTimesRef.current),
       });
     },
     [sync],
@@ -132,6 +141,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       coordsRef.current = [];
       elevRef.current = [];
       timesRef.current = [];
+      activeTimesRef.current = [];
       lastRef.current = null;
       distMRef.current = 0;
       activeMsRef.current = 0;
@@ -144,6 +154,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         coords: [],
         elevations: [],
         times: [],
+        activeTimes: [],
         distanceKm: 0,
         elapsedSec: 0,
         currentPaceSec: null,
@@ -264,6 +275,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     coordsRef.current = [];
     elevRef.current = [];
     timesRef.current = [];
+    activeTimesRef.current = [];
     lastRef.current = null;
     distMRef.current = 0;
     activeMsRef.current = 0;
@@ -272,6 +284,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       coords: [],
       elevations: [],
       times: [],
+      activeTimes: [],
       distanceKm: 0,
       elapsedSec: 0,
       currentPaceSec: null,
