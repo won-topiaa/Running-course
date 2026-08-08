@@ -7,7 +7,7 @@
 // 후보들은 서로 독립이므로 병렬로 생성한다.
 // ---------------------------------------------------------------------------
 
-import { destinationPoint, nearestNeighborOrder } from './geo';
+import { destinationPoint, haversineMeters, nearestNeighborOrder } from './geo';
 import {
   RoutingError,
   type RouteResult,
@@ -32,6 +32,22 @@ function distanceScore(distanceKm: number, targetKm: number | null): number {
   return Math.max(0, 1 - Math.abs(distanceKm - targetKm) / tol);
 }
 
+/**
+ * 인접 좌표 사이 최대 간격(m). 정상 경로는 도로망을 따라 점이 촘촘하고,
+ * 다리 위 직선 구간도 서울에서는 한 구간 500m 대가 최대다(동작대교 실측 522m).
+ * 그 이상 점프하는 구간은 강 위에 잘못 그려진 OSM 길(수역 위 자전거도로 등)을
+ * 탔을 가능성이 높다 — 실측: 여의도 북서쪽 수역에서 659m 직선.
+ */
+function maxAdjacentGapM(coords: LatLng[]): number {
+  let m = 0;
+  for (let i = 1; i < coords.length; i++) {
+    m = Math.max(m, haversineMeters(coords[i - 1], coords[i]));
+  }
+  return m;
+}
+
+const SUSPECT_GAP_M = 600;
+
 function toBuilt(
   route: RouteResult,
   style: RunStyle,
@@ -40,10 +56,15 @@ function toBuilt(
 ): BuiltRoute {
   const styleEval = evaluateStyle(route, style);
   const dScore = distanceScore(route.distanceKm, targetKm);
-  const matchScore =
+  let matchScore =
     targetKm == null
       ? Math.round(styleEval.score * 100)
       : Math.round((0.7 * styleEval.score + 0.3 * dScore) * 100);
+  // 수역 위 의심 구간이 있는 후보는 순위를 크게 내린다.
+  // 확신이 아니라 의심이므로 배제하진 않는다 — 깨끗한 후보가 있으면 그쪽이 이긴다.
+  if (maxAdjacentGapM(route.coords) > SUSPECT_GAP_M) {
+    matchScore = Math.round(matchScore * 0.45);
+  }
   return { route, styleEval, distanceScore: dScore, matchScore, label };
 }
 

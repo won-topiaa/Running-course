@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Heart,
   Lightbulb,
@@ -22,6 +22,7 @@ import {
   LOOP_TYPE_LABEL,
   type Course,
 } from '../lib/types';
+import { fallbackProvider, makeProvider, type RouteResult, type RoutingProvider } from '../lib/routing';
 import type { AppApi } from '../ui/appApi';
 
 const AMENITIES: { key: keyof Course['amenities']; label: string; icon: string }[] = [
@@ -32,6 +33,9 @@ const AMENITIES: { key: keyof Course['amenities']; label: string; icon: string }
   { key: 'subwayAccess', label: '지하철', icon: '🚇' },
 ];
 
+// 코스별 실제 보행 경로 캐시 — 시트를 다시 열어도 재요청하지 않는다
+const realRouteCache = new Map<string, RouteResult>();
+
 export default function CourseDetailSheet({
   course,
   api,
@@ -41,6 +45,42 @@ export default function CourseDetailSheet({
   api: AppApi;
   onClose: () => void;
 }) {
+  // 큐레이션 데이터의 path 는 손으로 딴 대략 폴리곤이라 지도에 그대로 그리면
+  // 도로와 무관한 다각형이 나온다. 열 때마다 실제 보행 경로로 스냅해 보여주고,
+  // 실패하면 지도를 아예 숨긴다 — 가짜 도형을 보여주는 것보다 없는 게 낫다.
+  const [real, setReal] = useState<RouteResult | null>(
+    () => realRouteCache.get(course.id) ?? null,
+  );
+  const [mapFailed, setMapFailed] = useState(false);
+
+  useEffect(() => {
+    if (realRouteCache.has(course.id)) {
+      setReal(realRouteCache.get(course.id)!);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      const pts = course.loopType === 'loop' ? [...course.path, course.path[0]] : course.path;
+      let provider: RoutingProvider | null = makeProvider(api.settings.orsKey);
+      while (provider && provider.realRoads) {
+        try {
+          const r = await provider.route(pts);
+          if (!alive) return;
+          realRouteCache.set(course.id, r);
+          setReal(r);
+          return;
+        } catch {
+          provider = fallbackProvider(provider); // ORS → OSRM. 직선 데모는 안 쓴다.
+        }
+      }
+      if (alive) setMapFailed(true);
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [course.id]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -97,14 +137,19 @@ export default function CourseDetailSheet({
             {course.summary}
           </p>
 
-          {/* 지도 */}
-          <div className="mt-4 h-52 overflow-hidden rounded-3xl border border-line">
-            <PathMap
-              path={course.path}
-              kakaoKey={api.settings.kakaoJsKey}
-              mapboxToken={api.settings.mapboxToken}
-            />
-          </div>
+          {/* 지도 — 실제 보행 경로를 받아왔을 때만 보여준다 */}
+          {!mapFailed &&
+            (real ? (
+              <div className="mt-4 h-52 overflow-hidden rounded-3xl border border-line">
+                <PathMap
+                  path={real.coords}
+                  kakaoKey={api.settings.kakaoJsKey}
+                  mapboxToken={api.settings.mapboxToken}
+                />
+              </div>
+            ) : (
+              <div className="mt-4 h-52 animate-pulse rounded-3xl border border-line bg-tint/60" />
+            ))}
 
           {/* 고도 */}
           <div className="mt-4 rounded-3xl border border-line bg-paper p-4 shadow-soft">
@@ -180,8 +225,16 @@ export default function CourseDetailSheet({
             >
               <Heart size={16} fill={saved ? 'currentColor' : 'none'} /> {saved ? '저장됨' : '저장'}
             </button>
-            <button className="flex flex-[1.4] items-center justify-center gap-1.5 rounded-full bg-coral py-3 text-[13.5px] font-semibold text-ink shadow-warm active:scale-[0.98]">
-              이 코스로 뛰기
+            <button
+              onClick={() => {
+                // 실제 경로가 있으면 따라 뛰기, 아직/실패면 그 자리 자유 러닝으로 시작
+                if (real) api.startRecord({ name: course.name, route: real });
+                else api.startRecord();
+                onClose();
+              }}
+              className="flex flex-[1.4] items-center justify-center gap-1.5 rounded-full bg-coral py-3 text-[13.5px] font-semibold text-ink shadow-warm active:scale-[0.98]"
+            >
+              {real ? '이 코스 따라 뛰기' : '이 코스로 뛰기'}
             </button>
           </div>
         </div>

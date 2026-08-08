@@ -215,7 +215,7 @@ export class OrsProvider implements RoutingProvider {
   }
 
   /** 실제 fetch 후 GeoJSON 반환 (에러는 RoutingError 로 정규화) */
-  private async rawPost(body: unknown): Promise<any> {
+  private async rawPost(body: Record<string, unknown>): Promise<any> {
     let res: Response;
     try {
       res = await fetch(ORS_BASE, {
@@ -225,7 +225,9 @@ export class OrsProvider implements RoutingProvider {
           'Content-Type': 'application/json',
           Accept: 'application/geo+json',
         },
-        body: JSON.stringify(body),
+        // 페리 회피: 한강 유람선 항로 같은 뱃길이 OSM 에 페리로 등록돼 있으면
+        // 도보 프로파일이 태워버린다. 뛸 수 없는 경로이므로 전 요청에서 막는다.
+        body: JSON.stringify({ ...body, options: { avoid_features: ['ferries'] } }),
       });
     } catch {
       throw new RoutingError('network', '네트워크에 연결할 수 없습니다.');

@@ -393,6 +393,15 @@ export default function BuildScreen({ api }: { api: AppApi }) {
             {/* 결과 */}
             {results && headline ? (
               <>
+                {/* 되돌리기 — 결과를 보다가 '다른 스타일로 뛰고 싶다'로 생각이
+                    바뀌면 취향 선택으로 돌아간다. 입력(출발점·거리)은 유지된다. */}
+                <button
+                  onClick={reset}
+                  aria-label="취향 다시 고르기"
+                  className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-[12px] font-semibold text-espresso-muted active:scale-95"
+                >
+                  <Undo2 size={13} /> 취향 다시 고르기
+                </button>
                 <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[15.5px] font-extrabold leading-snug tracking-tightish text-espresso">
                   <span>{headline.lead}</span>
                   {headline.from && (
