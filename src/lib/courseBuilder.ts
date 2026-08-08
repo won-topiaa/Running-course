@@ -68,6 +68,17 @@ function toBuilt(
   return { route, styleEval, distanceScore: dScore, matchScore, label };
 }
 
+/**
+ * 후보 정렬. 매칭 점수가 같으면 목표 거리에 더 가까운 쪽을 앞에 둔다.
+ * 점수는 정수로 반올림돼 있어 동점이 자주 나는데, 그때 순서가 사실상
+ * 무작위였다 — 실측에서 15km 요청에 15.0km 후보를 두고 15.6km 가 1위로
+ * 올라오는 일이 있었다. 사용자가 고른 거리는 지켜주는 편이 낫다.
+ */
+function byMatchThenDistance(a: BuiltRoute, b: BuiltRoute): number {
+  if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+  return b.distanceScore - a.distanceScore;
+}
+
 /** 중복(거의 같은 거리/상승) 후보 제거 */
 function dedupe(routes: BuiltRoute[]): BuiltRoute[] {
   const seen: BuiltRoute[] = [];
@@ -137,7 +148,7 @@ export async function buildFromPins(
     null,
     orders.map((o) => o.label),
   );
-  return dedupe(built).sort((a, b) => b.matchScore - a.matchScore);
+  return dedupe(built).sort(byMatchThenDistance);
 }
 
 export interface DistanceBuildOptions {
@@ -210,9 +221,7 @@ export async function buildFromDistance(
       targetKm,
       bearings.map(directionLabel),
     );
-    return dedupe(built)
-      .sort((a, b) => b.matchScore - a.matchScore)
-      .slice(0, 3);
+    return dedupe(built).sort(byMatchThenDistance).slice(0, 3);
   }
 
   // 굴곡/경사 스타일은 경유 지점을 늘려 더 다양한 기복을 유도
@@ -226,7 +235,5 @@ export async function buildFromDistance(
     targetKm,
     seeds.map((_, i) => `코스 ${i + 1}`),
   );
-  return dedupe(built)
-    .sort((a, b) => b.matchScore - a.matchScore)
-    .slice(0, 3);
+  return dedupe(built).sort(byMatchThenDistance).slice(0, 3);
 }

@@ -99,8 +99,12 @@ export default function App() {
 
   // 저장 실패(용량 초과)는 조용히 넘기지 않는다. 방금 뛴 기록이 사라지는데
   // 아무 표시가 없으면 사용자는 한참 뒤에야 알게 된다.
+  // 꽉 차면 persistRoutes 가 오래된 기록의 지도 해상도를 낮춰 자리를 만들고,
+  // 그렇게 줄인 결과를 돌려주면 화면 상태도 같은 값으로 맞춘다.
   useEffect(() => {
-    setStorageFull(!persistRoutes(savedRoutes));
+    const r = persistRoutes(savedRoutes);
+    setStorageFull(!r.ok);
+    if (r.compacted) setSavedRoutes(r.compacted);
   }, [savedRoutes]);
   useEffect(() => {
     try {

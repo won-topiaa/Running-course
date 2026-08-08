@@ -61,17 +61,46 @@ export function loadRoutes(): SavedRoute[] {
   return [];
 }
 
+/** 오래된 기록을 더 거칠게 다시 압축한다 (지도 선만 성겨질 뿐 수치는 그대로) */
+function shrinkOldest(routes: SavedRoute[], maxPoints: number): SavedRoute[] {
+  // 오래된 것부터 절반만 손대 최근 기록의 화질은 지킨다
+  const order = [...routes].sort((a, b) => a.createdAt - b.createdAt);
+  const targets = new Set(order.slice(0, Math.ceil(order.length / 2)).map((r) => r.id));
+  return routes.map((r) =>
+    targets.has(r.id) && r.coords.length > maxPoints
+      ? {
+          ...r,
+          coords: downsample(r.coords, maxPoints),
+          elevations: downsample(r.elevations, maxPoints),
+        }
+      : r,
+  );
+}
+
 /**
- * 저장. 용량이 꽉 차면 false 를 돌려준다 — 조용히 삼키면 사용자는 방금 뛴
- * 기록이 저장된 줄 알고 앱을 닫았다가 사라진 걸 나중에 발견하게 된다.
+ * 저장. 용량이 꽉 차면 오래된 기록의 지도 해상도를 단계적으로 낮춰 자리를
+ * 만들어 본다 — 거리·시간·고도 같은 수치는 별도 필드라 통계는 그대로다.
+ * 그래도 안 되면 false. 조용히 삼키면 방금 뛴 기록이 사라진 걸 나중에야 안다.
+ *
+ * 반환: 저장 성공 여부와, 정리 과정에서 실제로 바뀐 배열(있으면 호출측이 반영)
  */
-export function persistRoutes(routes: SavedRoute[]): boolean {
+export function persistRoutes(routes: SavedRoute[]): { ok: boolean; compacted?: SavedRoute[] } {
   try {
     localStorage.setItem(KEY, JSON.stringify(routes));
-    return true;
+    return { ok: true };
   } catch {
-    return false;
+    /* 아래에서 단계적으로 줄여 재시도 */
   }
+  for (const maxPoints of [600, 250, 100]) {
+    const shrunk = shrinkOldest(routes, maxPoints);
+    try {
+      localStorage.setItem(KEY, JSON.stringify(shrunk));
+      return { ok: true, compacted: shrunk };
+    } catch {
+      routes = shrunk; // 다음 단계는 이미 줄인 것에서 더 줄인다
+    }
+  }
+  return { ok: false };
 }
 
 const rid = () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
