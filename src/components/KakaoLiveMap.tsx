@@ -90,14 +90,16 @@ export default function KakaoLiveMap({
         if (!dotRef.current) {
           dotRef.current = new kakao.maps.CustomOverlay({
             position: pos,
-            content:
-              `<div style="width:18px;height:18px;border-radius:50%;background:${VOLT};border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35)"></div>`,
+            content: `<div style="width:18px;height:18px;border-radius:50%;background:${VOLT};border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35)"></div>`,
           });
           dotRef.current.setMap(map);
         } else {
           dotRef.current.setPosition(pos);
         }
-        map.panTo(pos);
+        // Leaflet 쪽과 같은 이유로 (1) 애니메이션 없이 (2) 가운데 근처면
+        // 아예 안 옮긴다. panTo 는 매 좌표마다 애니메이션을 새로 시작해
+        // 서로 겹치고, 지도가 쉴 새 없이 흔들린다.
+        if (!nearCenter(map, cur)) map.setCenter(pos);
       }
     } catch {
       /* 무시 */
@@ -105,4 +107,23 @@ export default function KakaoLiveMap({
   }, [kakao, coords, plannedPath, traveled]);
 
   return <div ref={boxRef} className="kakao-soft h-full w-full" />;
+}
+
+/** 현재 위치가 화면 가운데 50% 안에 있는지 (밖이면 지도를 옮긴다) */
+function nearCenter(map: any, at: LatLng): boolean {
+  try {
+    const b = map.getBounds();
+    const sw = b.getSouthWest();
+    const ne = b.getNorthEast();
+    const padLat = (ne.getLat() - sw.getLat()) * 0.25;
+    const padLng = (ne.getLng() - sw.getLng()) * 0.25;
+    return (
+      at[0] > sw.getLat() + padLat &&
+      at[0] < ne.getLat() - padLat &&
+      at[1] > sw.getLng() + padLng &&
+      at[1] < ne.getLng() - padLng
+    );
+  } catch {
+    return false; // 판단 못 하면 따라간다
+  }
 }

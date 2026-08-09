@@ -10,10 +10,26 @@ import type { LatLng } from '../lib/types';
 function Follow({ pos }: { pos: LatLng | null }) {
   const map = useMap();
   useEffect(() => {
+    if (!pos) return;
     // 애니메이션 없이 따라간다. GPS 틱(±1초)마다 0.5초짜리 pan 애니메이션을
     // 새로 시작하면 서로 겹치고, 화면을 닫는 순간 진행 중이던 애니메이션이
     // 제거된 DOM 을 만져 Leaflet 내부(_leaflet_pos)가 터진다.
-    if (pos) map.panTo(pos as [number, number], { animate: false });
+    //
+    // 그리고 가운데 근처에 있으면 아예 안 옮긴다. 좌표가 들어올 때마다
+    // 중앙으로 끌어당기면 지도가 계속 미세하게 흔들려서, 뛰면서 앞쪽 길을
+    // 보려고 살짝 밀어 놓는 것도 안 된다. 화면 가장자리로 밀려날 때만 옮긴다.
+    try {
+      if (
+        map
+          .getBounds()
+          .pad(-0.25)
+          .contains(pos as [number, number])
+      )
+        return;
+    } catch {
+      /* 아직 크기가 안 잡힌 지도 — 그냥 옮긴다 */
+    }
+    map.panTo(pos as [number, number], { animate: false });
   }, [pos, map]);
   useEffect(() => {
     // 언마운트 시 남은 pan/zoom 애니메이션 정리
@@ -54,7 +70,13 @@ export default function LeafletLiveMap({
       {plannedPath && plannedPath.length > 1 && (
         <Polyline
           positions={plannedPath as [number, number][]}
-          pathOptions={{ color: MUTED, weight: 6, opacity: 0.45, dashArray: '2 14', lineCap: 'round' }}
+          pathOptions={{
+            color: MUTED,
+            weight: 6,
+            opacity: 0.45,
+            dashArray: '2 14',
+            lineCap: 'round',
+          }}
         />
       )}
       {/* 지나온 계획 구간 — 경사 색상으로 채워진다 */}
@@ -75,8 +97,14 @@ export default function LeafletLiveMap({
 
       {!plannedPath && coords.length > 1 && (
         <>
-          <Polyline positions={coords as [number, number][]} pathOptions={{ color: '#fff', weight: 8, opacity: 0.9 }} />
-          <Polyline positions={coords as [number, number][]} pathOptions={{ color: VOLT, weight: 5, opacity: 1 }} />
+          <Polyline
+            positions={coords as [number, number][]}
+            pathOptions={{ color: '#fff', weight: 8, opacity: 0.9 }}
+          />
+          <Polyline
+            positions={coords as [number, number][]}
+            pathOptions={{ color: VOLT, weight: 5, opacity: 1 }}
+          />
         </>
       )}
       {cur && (

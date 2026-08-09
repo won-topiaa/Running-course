@@ -11,7 +11,9 @@
     "typecheck": "tsc -b --noEmit",
     "check:gps": "node scripts/gps-filter-check.mjs",
     "check:local": "node scripts/local-features-check.mjs",
-    "check:live": "node scripts/live-check.mjs"
+    "check:live": "node scripts/live-check.mjs",
+    "check:output": "node scripts/output-check.mjs",
+    "check": "npm run check:gps && npm run check:local && npm run check:output"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
