@@ -10,7 +10,7 @@
 //   - 어두운 바탕은 야간 러닝에 눈부심이 없고 OLED 배터리도 덜 쓴다
 // ---------------------------------------------------------------------------
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pause, Play, Square, X, Zap } from 'lucide-react';
 import LiveMap from './LiveMap';
 import RouteSheet from './RouteSheet';
@@ -48,13 +48,15 @@ export default function RecordScreen({
   // 종료 시 자동 저장된 기록 id — 마이 통계의 데이터 원천이 된다
   const autoSaved = useRef<string | null>(null);
 
-  // 계획 경로를 어디까지 지났는지 (뒤로 가지 않는 인덱스)
-  const progIdx = useRef(0);
+  // 계획 경로를 어디까지 지났는지 (뒤로 가지 않는 인덱스).
+  // 렌더 도중에 ref 를 고치면 StrictMode 의 이중 호출·중단된 렌더에서 값이
+  // 어긋날 수 있어, 좌표가 새로 들어왔을 때 effect 에서만 옮긴다.
+  const [idx, setIdx] = useState(0);
   const cur = rec.coords.length ? rec.coords[rec.coords.length - 1] : null;
-  if (planned && cur) {
-    progIdx.current = advanceProgress(planned.route.coords, cur, progIdx.current);
-  }
-  const idx = progIdx.current;
+  useEffect(() => {
+    if (!planned || !cur) return;
+    setIdx((prev) => advanceProgress(planned.route.coords, cur, prev));
+  }, [planned, cur]);
 
   // 지나온 구간은 경사 색상, 남은 구간은 눈금(점선)
   const { traveled, remainPath, remainM, ratio } = useMemo(() => {
@@ -352,7 +354,7 @@ function StartPanel({
       </p>
 
       <button
-        onClick={rec.startDemo}
+        onClick={() => rec.startDemo(planned?.route.coords)}
         className="mt-6 inline-flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-muted active:scale-95"
       >
         <Zap size={13} /> GPS 없이 데모

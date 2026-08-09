@@ -41,7 +41,7 @@ export interface RecorderState {
 
 export interface Recorder extends RecorderState {
   start: () => void;
-  startDemo: () => void;
+  startDemo: (path?: LatLng[]) => void;
   pause: () => void;
   resume: () => void;
   stop: () => void;
@@ -267,33 +267,45 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     );
   }, [beginSession, ingest, sync]);
 
-  const startDemo = useCallback(() => {
-    // 시작점 주변 약 2.4km 루프를 미리 만들어 순차 재생
-    const ring: LatLng[] = [];
-    const R = 380;
-    const center = destinationPoint(startLoc, 20, R);
-    for (let k = 0; k < 7; k++) {
-      ring.push(destinationPoint(center, 180 + (360 / 7) * k, R));
-    }
-    ring.push(ring[0]);
-    demoPathRef.current = densifyPath(ring, 22);
-    demoIdxRef.current = 0;
-    beginSession(true);
-    demoRef.current = setInterval(() => {
-      if (statusRef.current !== 'recording') return;
-      const path = demoPathRef.current;
-      if (demoIdxRef.current >= path.length) {
-        // 경로를 다 돌았으면 타이머를 정리한다 (계속 두면 빈 틱이 무한히 돈다)
-        if (demoRef.current) {
-          clearInterval(demoRef.current);
-          demoRef.current = null;
+  const startDemo = useCallback(
+    (path?: LatLng[]) => {
+      // 따라 뛸 경로가 있으면 그 경로를 재생한다. 예전엔 늘 시작점 주변의
+      // 임의 링을 돌아서, 코스를 따라 뛰는 데모인데도 진행률이 0% 에서 멈춰
+      // 있었다 — 데모가 보여줘야 할 것을 정작 안 보여줬다.
+      let source: LatLng[];
+      if (path && path.length > 1) {
+        source = path;
+      } else {
+        // 자유 러닝 데모 — 시작점 주변 약 2.4km 루프
+        const ring: LatLng[] = [];
+        const R = 380;
+        const center = destinationPoint(startLoc, 20, R);
+        for (let k = 0; k < 7; k++) {
+          ring.push(destinationPoint(center, 180 + (360 / 7) * k, R));
         }
-        return;
+        ring.push(ring[0]);
+        source = ring;
       }
-      const [lat, lng] = path[demoIdxRef.current++];
-      ingest(lat, lng, syntheticElevation(lat, lng), 5, null);
-    }, 500);
-  }, [beginSession, ingest, startLoc]);
+      demoPathRef.current = densifyPath(source, 22);
+      demoIdxRef.current = 0;
+      beginSession(true);
+      demoRef.current = setInterval(() => {
+        if (statusRef.current !== 'recording') return;
+        const path = demoPathRef.current;
+        if (demoIdxRef.current >= path.length) {
+          // 경로를 다 돌았으면 타이머를 정리한다 (계속 두면 빈 틱이 무한히 돈다)
+          if (demoRef.current) {
+            clearInterval(demoRef.current);
+            demoRef.current = null;
+          }
+          return;
+        }
+        const [lat, lng] = path[demoIdxRef.current++];
+        ingest(lat, lng, syntheticElevation(lat, lng), 5, null);
+      }, 500);
+    },
+    [beginSession, ingest, startLoc],
+  );
 
   // start 안에서 pause 를 부르는데 선언 순서상 직접 참조할 수 없어 ref 로 우회
   const pauseRef = useRef<(() => void) | null>(null);

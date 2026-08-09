@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, Moon, SlidersHorizontal } from 'lucide-react';
 import ScenePhoto from '../components/ScenePhoto';
 import { COURSES } from '../data/courses';
@@ -21,11 +21,27 @@ import type { AppApi } from '../ui/appApi';
 
 const TYPES: CourseType[] = ['city', 'uninterrupted', 'green', 'waterfront', 'trail', 'track'];
 const GRADS: GradientPreference[] = ['flat', 'any', 'hilly'];
-const FACTORS: FactorKey[] = ['gradient', 'preference', 'safety', 'amenities', 'scenery', 'distance'];
+const FACTORS: FactorKey[] = [
+  'gradient',
+  'preference',
+  'safety',
+  'amenities',
+  'scenery',
+  'distance',
+];
+
+/**
+ * 취향 설정도 탭을 옮기면 사라졌다 — 코스를 하나 열어보고 돌아오면 슬라이더를
+ * 처음부터 다시 맞춰야 했다. BuildScreen 과 같은 이유로 세션 동안만 기억한다.
+ */
+let session: { prefs: Preferences; showWeights: boolean } | null = null;
 
 export default function ExploreScreen({ api }: { api: AppApi }) {
-  const [prefs, setPrefs] = useState<Preferences>(defaultPreferences);
-  const [showWeights, setShowWeights] = useState(false);
+  const [prefs, setPrefs] = useState<Preferences>(session?.prefs ?? defaultPreferences);
+  const [showWeights, setShowWeights] = useState(session?.showWeights ?? false);
+  useEffect(() => {
+    session = { prefs, showWeights };
+  }, [prefs, showWeights]);
 
   const recs = useMemo(() => recommend(COURSES, prefs), [prefs]);
   const set = (patch: Partial<Preferences>) => setPrefs({ ...prefs, ...patch });
@@ -39,12 +55,10 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
   return (
     <div className="mx-auto w-full max-w-md px-4 pb-28 pt-5">
       <header className="mb-4">
-        <h1 className="text-[22px] font-extrabold tracking-tightish text-espresso">
-          추천 코스
-        </h1>
+        <h1 className="text-[22px] font-extrabold tracking-tightish text-espresso">추천 코스</h1>
         <p className="mt-1 text-[13px] leading-relaxed text-espresso-muted">
-          어디서 뛸지 모르겠다면 — 서울에서 러너들이 실제로 많이 뛰는 코스 중에
-          취향에 맞는 곳을 골라드려요.
+          어디서 뛸지 모르겠다면 — 서울에서 러너들이 실제로 많이 뛰는 코스 중에 취향에 맞는 곳을
+          골라드려요.
         </p>
       </header>
 
@@ -76,7 +90,9 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
                 key={g}
                 onClick={() => set({ gradientPref: g })}
                 className={`flex-1 rounded-full py-2 text-[12.5px] font-semibold transition ${
-                  prefs.gradientPref === g ? 'bg-paper text-espresso shadow-soft' : 'text-espresso-muted'
+                  prefs.gradientPref === g
+                    ? 'bg-paper text-espresso shadow-soft'
+                    : 'text-espresso-muted'
                 }`}
               >
                 {GRADIENT_PREF_LABEL[g]}
@@ -147,7 +163,9 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
                   max={5}
                   step={1}
                   value={prefs.weights[k]}
-                  onChange={(e) => set({ weights: { ...prefs.weights, [k]: Number(e.target.value) } })}
+                  onChange={(e) =>
+                    set({ weights: { ...prefs.weights, [k]: Number(e.target.value) } })
+                  }
                   className="coral w-full"
                 />
               </div>
@@ -172,7 +190,8 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
 
 function RecoCard({ rec, rank, api }: { rec: Recommendation; rank: number; api: AppApi }) {
   const { course, matchScore, reasons } = rec;
-  const scoreColor = matchScore >= 80 ? 'text-sage-600' : matchScore >= 60 ? 'text-coral-600' : 'text-espresso-soft';
+  const scoreColor =
+    matchScore >= 80 ? 'text-sage-600' : matchScore >= 60 ? 'text-coral-600' : 'text-espresso-soft';
   return (
     <button
       onClick={() => api.openCourse(course.id)}
@@ -202,7 +221,9 @@ function RecoCard({ rec, rank, api }: { rec: Recommendation; rank: number; api: 
           ))}
         </div>
         {reasons[0] && (
-          <p className="mt-2.5 text-[12.5px] leading-relaxed text-espresso-muted">✅ {reasons[0]}</p>
+          <p className="mt-2.5 text-[12.5px] leading-relaxed text-espresso-muted">
+            ✅ {reasons[0]}
+          </p>
         )}
       </div>
     </button>

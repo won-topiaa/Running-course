@@ -22,29 +22,49 @@ import { HALO, VOLT } from '../ui/theme';
 type Mode = 'pins' | 'distance';
 
 /**
+ * 탭을 옮겼다 돌아와도 만들던 코스가 남아 있게 하는 세션 캐시.
+ *
+ * 화면 컴포넌트는 탭을 바꿀 때마다 언마운트되므로 useState 만으로는 찾아둔
+ * 후보가 통째로 사라진다 — 코스를 고르다 '추천'을 잠깐 열어보고 돌아오면
+ * 처음부터 다시 찾아야 했다(라우팅 서버 호출도 다시 나간다).
+ * 새로고침하면 사라지는 건 그대로 둔다. 그때는 새로 시작하는 게 자연스럽다.
+ */
+let session: {
+  mode: Mode;
+  waypoints: LatLng[];
+  start: LatLng;
+  targetKm: number;
+  style: RunStyle;
+  returnToStart: boolean;
+  results: BuiltRoute[] | null;
+  selIdx: number;
+  sheetOpen: boolean;
+} | null = null;
+
+/**
  * 코스 만들기 — 지도 우선(map-first) 화면.
  * 지도가 배경 전체를 차지하고, 입력·결과는 그 위에 떠 있는 카드/바텀시트로 올린다.
  */
 export default function BuildScreen({ api }: { api: AppApi }) {
-  const [mode, setMode] = useState<Mode>('distance');
-  const [waypoints, setWaypoints] = useState<LatLng[]>([]);
-  const [start, setStart] = useState<LatLng>(api.settings.homeLocation);
-  const [targetKm, setTargetKm] = useState(5);
-  const [style, setStyle] = useState<RunStyle>('flat');
+  const [mode, setMode] = useState<Mode>(session?.mode ?? 'distance');
+  const [waypoints, setWaypoints] = useState<LatLng[]>(session?.waypoints ?? []);
+  const [start, setStart] = useState<LatLng>(session?.start ?? api.settings.homeLocation);
+  const [targetKm, setTargetKm] = useState(session?.targetKm ?? 5);
+  const [style, setStyle] = useState<RunStyle>(session?.style ?? 'flat');
 
-  const [results, setResults] = useState<BuiltRoute[] | null>(null);
-  const [selIdx, setSelIdx] = useState(0);
+  const [results, setResults] = useState<BuiltRoute[] | null>(session?.results ?? null);
+  const [selIdx, setSelIdx] = useState(session?.selIdx ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(true);
+  const [sheetOpen, setSheetOpen] = useState(session?.sheetOpen ?? true);
   // 고도·경사 상세는 기본으로 접는다. 한 줄 요약만 두고, 궁금한 사람만 편다.
   const [gradeOpen, setGradeOpen] = useState(false);
   // 지도를 만지는 동안에는 오버레이를 비켜준다. 반투명·블러는 실측해보니
   // 뒤가 거의 안 비쳐서 대비만 잃었다 — 잠깐 치우는 쪽이 실제로 지도를 보여준다.
   const [peek, setPeek] = useState(false);
   const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [returnToStart, setReturnToStart] = useState(true);
+  const [returnToStart, setReturnToStart] = useState(session?.returnToStart ?? true);
   const attemptRef = useRef(0);
 
   const selected = results?.[selIdx] ?? null;
@@ -123,9 +143,41 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     };
   }, []);
 
-  // 새 결과가 오면 첫 카드로 되돌린다(같은 DOM 노드가 재사용되면 스크롤이 남는다)
+  // 탭 전환으로 언마운트돼도 남도록 매 변경마다 세션 캐시에 반영한다
   useEffect(() => {
-    stripRef.current?.scrollTo({ left: 0 });
+    session = {
+      mode,
+      waypoints,
+      start,
+      targetKm,
+      style,
+      returnToStart,
+      results,
+      selIdx,
+      sheetOpen,
+    };
+  }, [mode, waypoints, start, targetKm, style, returnToStart, results, selIdx, sheetOpen]);
+
+  // 새 결과가 오면 첫 카드로, 탭에서 돌아온 거면 보고 있던 카드로 맞춘다.
+  // 무조건 0 으로 되돌리면 복귀 직후 onScroll 이 선택을 1번 카드로 되돌려버린다.
+  const selIdxRef = useRef(selIdx);
+  selIdxRef.current = selIdx;
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    const child = el.children[selIdxRef.current] as HTMLElement | undefined;
+    stripLock.current = Date.now() + 400;
+    if (!child) {
+      el.scrollTo({ left: 0 });
+      return;
+    }
+    el.scrollTo({
+      left:
+        child.getBoundingClientRect().left -
+        el.getBoundingClientRect().left +
+        el.scrollLeft -
+        (el.clientWidth - child.offsetWidth) / 2,
+    });
   }, [results]);
 
   useEffect(
