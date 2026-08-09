@@ -98,7 +98,7 @@ export default function MyScreen({ api }: { api: AppApi }) {
     recordedRuns.filter((r) => r.createdAt >= s.sinceMs).reduce((sum, r) => sum + r.distanceKm, 0);
 
   return (
-    <div className="mx-auto w-full max-w-md px-4 pb-28 pt-5">
+    <div className="mx-auto w-full max-w-md px-4 pb-28 pt-[calc(env(safe-area-inset-top,0px)+1.25rem)]">
       {/* 프로필 — 실제 기록 기반 */}
       <div className="flex items-center gap-4 rounded-3xl border border-line bg-paper p-4 shadow-soft">
         <span className="grid h-16 w-16 place-items-center rounded-full bg-coral-50 text-3xl">

@@ -26,7 +26,7 @@ export default function SavedScreen({ api }: { api: AppApi }) {
   const empty = savedCourses.length === 0 && myRoutes.length === 0;
 
   return (
-    <div className="mx-auto w-full max-w-md px-4 pb-28 pt-5">
+    <div className="mx-auto w-full max-w-md px-4 pb-28 pt-[calc(env(safe-area-inset-top,0px)+1.25rem)]">
       <header className="mb-4">
         <h1 className="text-[22px] font-extrabold tracking-tightish text-espresso">저장한 코스</h1>
         <p className="mt-1 text-[13px] text-espresso-muted">
