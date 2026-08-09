@@ -163,10 +163,13 @@ check(
     tz.betterHour?.hour === expectHour,
     `추천 시각을 지역 시각으로 표시 (${tz.betterHour?.hour}시 = ${expectHour}시)`,
   );
-  // 오프셋을 안 빼면 5+9=14시간 뒤가 되어 12시간 창을 벗어난다 — 여기서 걸린다
+  // 오프셋을 안 빼면 5+9=14시간 뒤가 되어 12시간 창을 벗어나 betterHour 가
+  // 통째로 사라진다 — 그게 이 검사의 핵심이다. 정각으로 자른 시각이라
+  // 지금이 몇 분이냐에 따라 4~5시간 뒤로 나오는 건 정상이다.
+  check(tz.betterHour != null, '기기 시간대(UTC)와 지역(KST)이 달라도 추천 시각을 찾는다');
   check(
-    tz.betterHour?.inHours === 5,
-    `기기 시간대(UTC)와 지역(KST)이 달라도 '5시간 뒤'로 정확 (${tz.betterHour?.inHours})`,
+    tz.betterHour != null && tz.betterHour.inHours >= 4 && tz.betterHour.inHours <= 6,
+    `'몇 시간 뒤'가 지역 시각 기준으로 계산됨 (${tz.betterHour?.inHours}시간 뒤)`,
   );
   check(tz.betterHour?.feelsC === 28, '후보 중 가장 시원한 시각을 고른다');
   check(/지금은 무리예요/.test(tz.advice ?? ''), '위험 문구 + 추천 시각이 한 줄로');

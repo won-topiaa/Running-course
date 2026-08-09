@@ -18,7 +18,10 @@ import { haversineMeters } from './geo';
 import type { LatLng } from './types';
 
 const ENDPOINT = 'https://overpass-api.de/api/interpreter';
-const TIMEOUT_MS = 8_000;
+// Overpass 는 무료 공용 서버라 붐빌 때가 있다. 한가할 때 실측 2.6~2.9초인데,
+// 서버가 밀리면 8~12초까지 늘어난다(연달아 부르면 슬롯 대기까지 붙는다).
+// 화면을 막지 않는 부가 정보라 넉넉히 기다렸다가, 그래도 안 오면 포기한다.
+const TIMEOUT_MS = 15_000;
 /** 경로 주변 여유 (bbox 를 이만큼 넓혀 가장자리 공원도 잡는다) */
 const MARGIN_DEG = 0.004; // 약 400m
 /** 이보다 넓은 영역은 조회하지 않는다 — Overpass 가 오래 걸리고 예의도 아니다 */
@@ -26,17 +29,23 @@ const MAX_SPAN_DEG = 0.25; // 약 25km
 /** 경로를 이 간격으로 찍어 판정한다 */
 const SAMPLE_M = 40;
 const MAX_SAMPLES = 250;
+/** Overpass 응답 요소 상한 — 최악의 경우 응답 크기를 묶어 둔다 */
+const MAX_ELEMENTS = 400;
 
-/** 그늘이 있다고 볼 만한 OSM 면(面) 태그 */
-const AREA_FILTERS = [
-  'leisure=park',
-  'leisure=garden',
-  'leisure=nature_reserve',
-  'landuse=forest',
-  'landuse=grass',
-  'landuse=recreation_ground',
-  'natural=wood',
-  'natural=scrub',
+/**
+ * 그늘이 있다고 볼 만한 OSM 면(面) 태그. 키별로 묶어 정규식 한 번에 묻는다.
+ *
+ * 처음엔 태그 8개를 각각 way/relation 으로 물어 16절짜리 쿼리였는데, 실측
+ * (여의도 6.2km 코스 bbox) 7.8초 / 168KB 가 걸렸다. landuse=grass 와
+ * natural=scrub 을 빼고 키별 정규식으로 묶으니 2.6초 / 72KB 로 줄었고
+ * 숲길 비율은 31% 로 **완전히 동일**했다 — 서울에서 하천변 잔디밭은 대개
+ * leisure=park 로도 잡혀 있어서 중복이었다.
+ * (nwr + 정규식으로 더 줄이려 했더니 node 까지 훑느라 504 가 났다)
+ */
+const AREA_GROUPS: [key: string, valuePattern: string][] = [
+  ['leisure', '^(park|garden|nature_reserve)$'],
+  ['landuse', '^(forest|recreation_ground)$'],
+  ['natural', '^(wood)$'],
 ];
 
 interface Poly {
@@ -70,12 +79,15 @@ function bboxOf(routes: LatLng[][]): [number, number, number, number] | null {
 
 function buildQuery(bbox: [number, number, number, number]): string {
   const b = bbox.map((v) => v.toFixed(5)).join(',');
-  const parts = AREA_FILTERS.map((f) => {
-    const [k, v] = f.split('=');
+  const parts = AREA_GROUPS.map(
     // way 와 relation 을 모두 본다 — 남산·서울숲 같은 큰 공원은 relation 이다
-    return `way["${k}"="${v}"](${b});relation["${k}"="${v}"](${b});`;
-  }).join('');
-  return `[out:json][timeout:20];(${parts});out geom;`;
+    ([k, v]) => `way["${k}"~"${v}"](${b});relation["${k}"~"${v}"](${b});`,
+  ).join('');
+  // out 에 개수 상한을 둔다. 공원이 수천 개인 지역을 만나도 응답이 폭주하지
+  // 않는다 — 실측(여의도 6.2km bbox)에서 상한 없는 쿼리는 504 로 죽고,
+  // 400 상한을 건 같은 쿼리는 200/74KB 로 돌아왔다. 실제 요소는 30개뿐이라
+  // 결과는 같다.
+  return `[out:json][timeout:20];(${parts});out geom ${MAX_ELEMENTS};`;
 }
 
 function toPoly(pts: LatLng[]): Poly | null {
@@ -194,12 +206,14 @@ export async function fetchGreenShares(routes: LatLng[][]): Promise<(number | nu
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
     try {
-      const res = await fetch(ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `data=${encodeURIComponent(buildQuery(bbox))}`,
-        signal: ac.signal,
-      });
+      // 서버가 '지금 밀린다'(504/429)고 답하면 딱 한 번만 다시 묻는다.
+      // 실측에서 3번 중 1번은 504 가 났는데, 그때마다 줄이 통째로 사라지면
+      // 기능이 있으나 마나다. 두 번까지가 공용 서버에 대한 예의의 한계다.
+      let res = await postQuery(bbox, ac.signal);
+      if (res.status === 504 || res.status === 429) {
+        await new Promise((r) => setTimeout(r, 2000));
+        res = await postQuery(bbox, ac.signal);
+      }
       if (!res.ok) return empty;
       polys = parseGreenPolys(await res.json());
       cache.set(key, { at: Date.now(), polys });
@@ -211,4 +225,20 @@ export async function fetchGreenShares(routes: LatLng[][]): Promise<(number | nu
   }
   if (polys.length === 0) return routes.map(() => 0);
   return routes.map((r) => greenShareOf(r, polys));
+}
+
+function postQuery(bbox: [number, number, number, number], signal: AbortSignal): Promise<Response> {
+  return fetch(ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      // Overpass 는 정체불명의 User-Agent 를 406 으로 거절한다. 실측: 이 줄이
+      // 없으면 node 기본 UA 로 100% 406 이 떨어졌다. 브라우저에서는 금지
+      // 헤더라 조용히 무시되고 브라우저 UA 가 나가므로 해가 없다.
+      // Overpass 이용 정책도 신원을 밝히라고 요구한다.
+      'User-Agent': 'runcourse/1.0 (https://won-topiaa.github.io/Running-course/)',
+    },
+    body: `data=${encodeURIComponent(buildQuery(bbox))}`,
+    signal,
+  });
 }

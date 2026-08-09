@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "check:gps": "node scripts/gps-filter-check.mjs",
-    "check:local": "node scripts/local-features-check.mjs"
+    "check:local": "node scripts/local-features-check.mjs",
+    "check:live": "node scripts/live-check.mjs"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
