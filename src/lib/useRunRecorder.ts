@@ -259,12 +259,16 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
           pos.coords.speed,
         ),
       (err) => {
-        // 권한 거부는 회복 불가 — 계속 '기록 중'으로 두면 아무것도 안 쌓이는데
-        // 사용자는 뛰고 있다고 믿게 된다. 즉시 멈추고 알린다.
-        // 그 외(일시적 신호 없음)는 다음 콜백에서 회복될 수 있으니 유지한다.
+        // 권한 거부는 회복 불가. 예전엔 pause 로 넘겨 '일시정지된 기록' 화면에
+        // 세워뒀는데, 그러면 정작 대안인 '데모' 버튼이 있는 시작 화면이
+        // 사라져 사용자가 오도 가도 못했다. 시작 상태로 되돌려 거부 안내와
+        // 데모 버튼을 다시 보여준다. 그 외(일시적 신호 없음)는 회복될 수
+        // 있으니 그대로 둔다.
         if (err.code === err.PERMISSION_DENIED) {
-          sync({ error: 'denied' });
-          pauseRef.current?.();
+          stopSources();
+          statusRef.current = 'idle';
+          void wakeRef.current?.disable();
+          sync({ status: 'idle', error: 'denied' });
         }
       },
       // maximumAge 는 반드시 0. 1000 으로 두면 브라우저가 최대 1초 묵은 좌표를
@@ -273,7 +277,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       // 실시간 기록에서는 항상 새 측위만 받는다.
       { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 },
     );
-  }, [beginSession, ingest, sync]);
+  }, [beginSession, ingest, sync, stopSources]);
 
   const startDemo = useCallback(
     (path?: LatLng[]) => {

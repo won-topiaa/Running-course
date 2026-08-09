@@ -14,7 +14,8 @@
     "check:live": "node scripts/live-check.mjs",
     "check:output": "node scripts/output-check.mjs",
     "check": "npm run check:gps && npm run check:local && npm run check:output",
-    "check:smoke": "node scripts/smoke-check.mjs"
+    "check:smoke": "node scripts/smoke-check.mjs",
+    "check:scenario": "node scripts/scenario-check.mjs"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

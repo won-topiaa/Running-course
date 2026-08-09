@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pause, Play, Square, X, Zap } from 'lucide-react';
+import { Loader2, Pause, Play, Square, X, Zap } from 'lucide-react';
 import LiveMap from './LiveMap';
 import RouteSheet from './RouteSheet';
 import { savedFromView } from '../lib/savedRoutes';
@@ -179,6 +179,11 @@ export default function RecordScreen({
 
   const keepAwake = wakeLockSupported();
   const live = rec.status === 'recording' || rec.status === 'paused';
+  // START 를 눌렀지만 아직 쓸 만한 위치를 한 번도 못 잡은 상태.
+  // 권한 거부·실내·GPS 지연 어느 쪽이든 여기로 모인다. 이때 라이브 화면으로
+  // 넘겨 0.00km 에 세워두면 데모로 빠져나갈 길이 사라지므로, 시작 화면을
+  // 유지하며 '잡는 중'을 보여주고 데모 대안을 계속 노출한다.
+  const acquiring = rec.status === 'recording' && rec.coords.length === 0;
 
   const finish = async () => {
     if (saving) return;
@@ -253,8 +258,8 @@ export default function RecordScreen({
 
       {/* 지표 · 컨트롤 */}
       <div className="flex flex-1 flex-col px-6 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] pt-2">
-        {!live ? (
-          <StartPanel rec={rec} planned={planned} />
+        {!live || acquiring ? (
+          <StartPanel rec={rec} planned={planned} acquiring={acquiring} />
         ) : (
           <>
             {/* 거리 — 이 화면의 주인공 */}
@@ -363,9 +368,12 @@ export default function RecordScreen({
 function StartPanel({
   rec,
   planned,
+  acquiring = false,
 }: {
   rec: ReturnType<typeof useRunRecorder>;
   planned?: { name: string; route: RouteResult } | null;
+  /** START 를 눌렀지만 아직 위치를 못 잡은 중 — 스피너 + 취소로 바꾼다 */
+  acquiring?: boolean;
 }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center text-center">
@@ -379,19 +387,37 @@ function StartPanel({
           : '위치를 추적해 거리·시간·페이스를 실시간으로 기록해요.'}
       </p>
 
-      {(rec.error === 'no-geo' || rec.error === 'denied') && (
+      {!acquiring && (rec.error === 'no-geo' || rec.error === 'denied') && (
         <p className="mt-3 max-w-[19rem] rounded-2xl bg-ink-soft px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-muted">
           {rec.error === 'no-geo' ? '이 기기에서 위치를 쓸 수 없어요.' : '위치 권한이 거부됐어요.'}{' '}
           아래 데모로 체험해보세요.
         </p>
       )}
 
-      <button
-        onClick={rec.start}
-        className="mt-7 grid h-[132px] w-[132px] place-items-center rounded-full bg-volt text-ink shadow-[0_0_50px_rgba(216,255,62,0.3)] active:scale-95"
-      >
-        <span className="text-[19px] font-black uppercase tracking-[0.06em]">START</span>
-      </button>
+      {acquiring ? (
+        <>
+          <div className="mt-7 grid h-[132px] w-[132px] place-items-center rounded-full border-2 border-volt/40 text-volt">
+            <Loader2 size={34} className="animate-spin" />
+          </div>
+          <p className="mt-5 max-w-[19rem] text-[12.5px] leading-relaxed text-ink-muted">
+            위치를 잡는 중이에요. 위치 권한을 허용해야 기록돼요 — 하늘이 보이는 곳이면 몇 초면
+            잡혀요. 안 잡히면 아래 데모로 체험할 수 있어요.
+          </p>
+          <button
+            onClick={rec.reset}
+            className="mt-4 text-[12px] font-bold uppercase tracking-[0.12em] text-ink-muted underline underline-offset-4 active:scale-95"
+          >
+            취소
+          </button>
+        </>
+      ) : (
+        <button
+          onClick={rec.start}
+          className="mt-7 grid h-[132px] w-[132px] place-items-center rounded-full bg-volt text-ink shadow-[0_0_50px_rgba(216,255,62,0.3)] active:scale-95"
+        >
+          <span className="text-[19px] font-black uppercase tracking-[0.06em]">START</span>
+        </button>
+      )}
 
       {/* 뛰기 전에 알려준다 — 다 뛰고 나서 기록이 비었다는 걸 아는 것보다 낫다 */}
       <p className="mt-5 max-w-[19rem] text-[11.5px] leading-relaxed text-ink-muted">

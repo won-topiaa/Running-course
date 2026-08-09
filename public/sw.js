@@ -10,17 +10,34 @@
 // 빌드마다 CACHE 버전을 올리지 않아도 해시 파일명 덕분에 안전하다.
 // ---------------------------------------------------------------------------
 
-const CACHE = 'runcourse-v1';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png'];
+const CACHE = 'runcourse-v2';
+const SHELL = ['./manifest.webmanifest', './icon-192.png'];
+
+// 설치 시점에 index.html 이 참조하는 해시 자산(js·css)까지 함께 캐시한다.
+// 이게 없으면 첫 방문 때 메인 청크가 서비스워커의 통제가 시작되기 전에
+// 로드돼 캐시에 안 담기고, 그 상태로 오프라인이 되면 재로드 시 그 청크를
+// 못 찾아 앱이 아예 안 뜬다(빈 화면). index.html 을 한 번 받아 자산 경로를
+// 뽑아 미리 담아 두면, 첫 방문 직후부터 오프라인이 가능해진다.
+async function precache() {
+  const cache = await caches.open(CACHE);
+  let assets = [];
+  try {
+    const res = await fetch('./index.html', { cache: 'no-cache' });
+    if (res.ok) {
+      await cache.put('./index.html', res.clone());
+      await cache.put('./', res.clone());
+      const html = await res.text();
+      assets = [...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css))"/g)].map((m) => m[1]);
+    }
+  } catch {
+    /* 오프라인 설치 등 — 아래에서 담을 수 있는 것만 담는다 */
+  }
+  // 개별 실패가 설치 전체를 막지 않도록 하나씩 담는다
+  await Promise.all([...SHELL, ...assets].map((u) => cache.add(u).catch(() => undefined)));
+}
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches
-      .open(CACHE)
-      .then((c) => c.addAll(SHELL))
-      .catch(() => undefined) // 일부 실패해도 설치는 진행
-      .then(() => self.skipWaiting()),
-  );
+  event.waitUntil(precache().then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
