@@ -27,6 +27,16 @@ const SNAP_RADIUS_M = 1_500;
 // FOSSGIS 가 운영하는 공개 OSRM (도보 프로파일). 키가 필요 없다.
 const OSRM_FOOT = 'https://routing.openstreetmap.de/routed-foot/route/v1/foot';
 
+// ── ORS 분당 한도 냉각 ────────────────────────────────────────────────────
+// ORS 무료 키는 일일 한도(2000)와 별개로 '분당 40회' 제한이 있다.
+// 추천받기 한 번에 링 보정까지 최대 9회를 부르므로, 연달아 몇 번 누르면
+// 429 가 난다. 문제는 429 가 난 뒤에도 다음 누름이 최대 9회를 또 때려
+// 한도가 영영 회복되지 않는 것 — 429 를 한 번 맞으면 이 시간 동안 ORS 를
+// 아예 건너뛰고(즉시 rate_limit) OSRM 폴백으로 직행하게 한다.
+// 창이 지나면 조용히 원래대로 돌아온다.
+const ORS_COOLDOWN_MS = 65_000;
+let orsBlockedUntil = 0;
+
 /** 경로를 무엇으로 만들었는지 — UI 뱃지/문구에 그대로 쓰인다 */
 export type RouteSource = 'ors' | 'osrm' | 'offline';
 
@@ -108,7 +118,19 @@ export function buildResult(
   source: RouteResult['source'],
   waypoints: LatLng[],
 ): RouteResult {
-  const elevations = smooth(rawElev);
+  // 고도 배열을 좌표 수에 정확히 맞춘다. 고도는 별도 API 에서 오므로 배열이
+  // 짧거나 구멍(NaN·undefined)이 있을 수 있는데, 그대로 빼기 연산에 들어가면
+  // NaN 이 상승·최대경사를 타고 화면까지 올라간다 — 실측에서 카드에
+  // '최대 NaN%', '고도 NaN~NaNm' 가 그대로 찍혔다. 구멍은 이웃 값으로 메운다.
+  const norm: number[] = new Array(coords.length);
+  for (let i = 0; i < coords.length; i++) {
+    const v = rawElev[i];
+    norm[i] = typeof v === 'number' && Number.isFinite(v) ? v : NaN;
+  }
+  for (let i = 1; i < norm.length; i++) if (Number.isNaN(norm[i])) norm[i] = norm[i - 1];
+  for (let i = norm.length - 2; i >= 0; i--) if (Number.isNaN(norm[i])) norm[i] = norm[i + 1];
+  // 전부 구멍이면(고도를 아예 못 받음) 0 평지로 — 경사 없음으로 그려진다
+  const elevations = smooth(norm.map((v) => (Number.isNaN(v) ? 0 : v)));
   let distance = 0;
   let ascent = 0;
   let descent = 0;
@@ -228,6 +250,9 @@ export class OrsProvider implements RoutingProvider {
     // 실측: 여의도·강남 루프 요청의 25% 가 이걸로 실패했다. 반경을 넉넉히 주면
     // 가까운 실제 도로로 붙고, 목표 거리는 어차피 뒤에서 보정한다.
     const coords = (body.coordinates as number[][] | undefined) ?? [];
+    if (Date.now() < orsBlockedUntil) {
+      throw new RoutingError('rate_limit', '무료 요청 한도를 초과했습니다.');
+    }
     let res: Response;
     try {
       res = await fetchWithTimeout(
@@ -258,6 +283,7 @@ export class OrsProvider implements RoutingProvider {
       throw new RoutingError('invalid_key', 'API 키가 유효하지 않거나 권한이 없습니다.');
     }
     if (res.status === 429) {
+      orsBlockedUntil = Date.now() + ORS_COOLDOWN_MS;
       throw new RoutingError('rate_limit', '무료 요청 한도를 초과했습니다.');
     }
     if (!res.ok) {

@@ -298,7 +298,13 @@ export default function BuildScreen({ api }: { api: AppApi }) {
               '실제 경로 서버에 연결할 수 없어 직선 데모로 그렸어요. 이 경로는 실제 도로가 아닙니다.',
             );
           } else if (provider.id === 'osrm' && api.settings.orsKey) {
-            setNotice('ORS 대신 OSM 도보 경로로 만들었어요.');
+            // 왜 대체됐는지 말해준다. 분당 한도는 1분이면 풀리는 일시적 상황이라
+            // '오류'가 아니라 '잠깐 대체'로 읽혀야 한다.
+            setNotice(
+              lastErr instanceof RoutingError && lastErr.code === 'rate_limit'
+                ? '경로 서버 무료 한도가 잠깐 가득 찼어요 — OSM 도보 경로로 만들었어요. 1분쯤 뒤 다시 찾기를 누르면 원래대로 돌아와요.'
+                : 'ORS 대신 OSM 도보 경로로 만들었어요.',
+            );
           }
           return;
         } catch (e) {

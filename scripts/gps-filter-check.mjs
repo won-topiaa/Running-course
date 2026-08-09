@@ -55,6 +55,8 @@ function scenario({
   turnEvery = 0,
   circleR = 0,
   zeroSpeed = false,
+  dropEvery = 0, //  이 주기(초)마다
+  dropLen = 0, //    이만큼 도플러가 0 으로 끊긴다 (도시 협곡)
 }) {
   const rnd = seeded(12345);
   const gauss = gaussFrom(rnd);
@@ -64,6 +66,7 @@ function scenario({
   let heading = 0;
   let dist = 0;
   let accepted = 0;
+  let flickers = 0;
   const t0 = Date.now();
 
   for (let k = 1; k <= secs; k++) {
@@ -73,15 +76,22 @@ function scenario({
     east += speedMs * Math.sin(heading);
     const dn = north + gauss() * sigma;
     const de = east + gauss() * sigma;
+    let dop = zeroSpeed ? 0 : withDoppler ? Math.max(0, speedMs + gauss() * 0.3) : null;
+    if (dropEvery && k % dropEvery < dropLen) dop = 0;
     const v = f.push({
       lat: LAT0 + dn / MPD_LAT,
       lng: LNG0 + de / MPD_LNG,
       accuracy: acc,
-      speed: zeroSpeed ? 0 : withDoppler ? Math.max(0, speedMs + gauss() * 0.3) : null,
+      speed: dop,
       t: t0 + k * 1000,
     });
     dist += v.addM;
     if (v.accept) accepted++;
+    // 화면의 '지금 페이스'가 끊김 중에 널뛰지 않는지 — 진짜로 뛰는 중에
+    // 표시 속도가 반 이하로 무너지면 페이스가 두 배로 튄 것이다
+    if (speedMs > 0 && withDoppler && !zeroSpeed && v.speed != null && k > 5) {
+      if (v.speed < speedMs * 0.5) flickers++;
+    }
   }
   const truth = speedMs * secs;
   const err = truth === 0 ? dist : ((dist - truth) / truth) * 100;
@@ -92,7 +102,7 @@ function scenario({
       `${pace ? ` · ${Math.floor(pace / 60)}'${String(Math.round(pace % 60)).padStart(2, '0')}"/km` : ''}` +
       `  점 ${accepted}개`,
   );
-  return { dist, truth, err };
+  return { dist, truth, err, flickers };
 }
 
 console.log('\n1Hz 측위 · 시나리오별 거리 정확도\n');
@@ -145,4 +155,24 @@ scenario({
   acc: 10,
   zeroSpeed: true,
 });
+
+console.log('\n [도플러 끊김] 실측에서 거리 -11.8%·페이스 널뛰기를 만든 조건');
+const failures = [];
+const drop = scenario({
+  name: '15초마다 3틱 끊김 · 30분',
+  secs: 1800,
+  speedMs: 3.0,
+  sigma: 5,
+  acc: 10,
+  turnEvery: 90,
+  dropEvery: 15,
+  dropLen: 3,
+});
+if (Math.abs(drop.err) > 6) failures.push(`끊김 시 거리 오차 ${drop.err.toFixed(1)}% (한도 ±6%)`);
+if (drop.flickers > 0) failures.push(`끊김 중 표시 페이스가 ${drop.flickers}틱 널뛰었다`);
+else console.log('  ✅ 끊김 중에도 표시 페이스가 안 널뛴다 (0틱)');
+if (failures.length) {
+  failures.forEach((f) => console.log('  ❌ ' + f));
+  process.exit(1);
+}
 console.log('');

@@ -134,6 +134,29 @@ check(
   '진행 중 구간을 표시(러닝 화면용)',
 );
 
+// ── 경로 결과 방어 ──────────────────────────────────────────────────────────
+console.log('\n[경로 결과] 고도 배열 구멍 방어');
+const { buildResult } = await bundle('src/lib/routing.ts', 'rt.mjs');
+const path5 = [
+  [37.5, 127.0],
+  [37.501, 127.0],
+  [37.502, 127.0],
+  [37.503, 127.0],
+  [37.504, 127.0],
+];
+const isClean = (r) =>
+  Number.isFinite(r.ascentM) &&
+  Number.isFinite(r.maxGradePct) &&
+  r.elevations.length === path5.length &&
+  r.elevations.every(Number.isFinite);
+check(isClean(buildResult(path5, [30, 31, 32], 'osrm', [])), '고도가 좌표보다 짧아도 NaN 없음');
+check(isClean(buildResult(path5, [30, NaN, undefined, 33, 34], 'osrm', [])), '중간 구멍은 이웃으로 메움');
+check(isClean(buildResult(path5, [], 'osrm', [])), '고도가 아예 없으면 0 평지');
+check(
+  buildResult(path5, [NaN, NaN, 50, NaN, NaN], 'osrm', []).elevations.every((v) => v === 50),
+  '앞뒤 구멍은 유일한 정상값으로',
+);
+
 // ── 통계 ────────────────────────────────────────────────────────────────────
 console.log('\n[통계] 마이 페이지 숫자');
 const day = 86400_000;

@@ -60,8 +60,16 @@ const MIN_GATE_M = 12;
 const GATE_FACTOR = 1.6;
 /** 임계 상한 — 너무 크면 짧은 코스에서 진짜 이동을 놓친다 */
 const MAX_GATE_M = 30;
-/** 이 속도 미만이면 '서 있다'로 보고 거리를 안 더한다 (2.5km/h, 걷기보다 느림) */
+/** 이 속도 미만이면 '서 있다' 후보로 본다 (2.5km/h, 걷기보다 느림) */
 const STILL_MS = 0.7;
+/**
+ * '서 있다'로 확정하기까지 필요한 연속 저속 틱 수.
+ * 도시 협곡에서는 뛰는 중에도 도플러가 1~3틱씩 0 으로 끊긴다. 한 틱만 보고
+ * 정지로 판정해 기준점을 옮기면 그 사이의 실제 이동이 통째로 버려진다 —
+ * 실측(30분 러닝, 15초마다 3틱 끊김)에서 거리가 -11.8% 깎여 페이스가
+ * 5'33" → 6'18" 로 왜곡됐다. 신호등 정지는 수십 초라 4틱이면 충분히 잡는다.
+ */
+const STILL_TICKS = 4;
 /** 사람이 낼 수 없는 속도 — 위성 순간 오류로 본다 (36km/h) */
 const MAX_SPEED_MS = 10;
 /** 순간이동을 이만큼 연속으로 만나면 진짜 이동으로 받아들인다 */
@@ -76,6 +84,7 @@ export function createGpsFilter() {
   let spd: number | null = null; // 평활된 도플러 속도
   let rejected = 0;
   let jumps = 0;
+  let stillTicks = 0; // 연속 저속(원시값) 틱 수
   // 이 기기가 '진짜 속도'를 주는지 확인되기 전에는 정지 판정을 쓰지 않는다.
   // 일부 안드로이드 브라우저는 speed 를 항상 0 으로 준다 — 그걸 믿으면
   // 아무리 뛰어도 거리가 0 으로 남는다.
@@ -89,6 +98,7 @@ export function createGpsFilter() {
       spd = null;
       rejected = 0;
       jumps = 0;
+      stillTicks = 0;
       sawMotion = false;
     },
 
@@ -98,10 +108,20 @@ export function createGpsFilter() {
       smooth = null;
       spd = null;
       jumps = 0;
+      stillTicks = 0;
     },
 
     get speed() {
       return spd;
+    },
+
+    /**
+     * 도플러 속도를 페이스 표시에 써도 되는지.
+     * 일부 기기는 speed 를 항상 0 으로 준다 — 그 0 을 믿으면 페이스가 영영
+     * '--' 다. 진짜 움직임이 한 번이라도 관측된 뒤에만 믿는다.
+     */
+    get speedTrusted() {
+      return sawMotion;
     },
 
     push(fix: GpsFix): GpsVerdict {
@@ -109,7 +129,17 @@ export function createGpsFilter() {
 
       // 도플러 속도는 위치 필터와 무관하게 항상 갱신한다
       if (fix.speed != null && fix.speed >= 0 && Number.isFinite(fix.speed)) {
-        spd = spd == null ? fix.speed : spd * 0.6 + fix.speed * 0.4;
+        // 평활값이 아니라 원시값으로 센다 — EMA 는 끊김이 몇 틱 지나야
+        // 임계 아래로 내려와서, '몇 틱째 낮은가'를 정확히 셀 수 없다.
+        stillTicks = fix.speed < STILL_MS ? stillTicks + 1 : 0;
+        // 순간 끊김(0 이 1~3틱)은 EMA 에 넣지 않고 직전 속도를 유지한다.
+        // 넣으면 화면의 '지금 페이스'가 3.0 → 1.8 → 1.08 m/s 로 무너지며
+        // 9' → 15' → 25'/km 로 널뛴다. 정지가 확정되면 그때부터 반영해
+        // 페이스가 자연스럽게 '--' 로 넘어간다.
+        const transientDrop = sawMotion && fix.speed < STILL_MS && stillTicks < STILL_TICKS;
+        if (!transientDrop) {
+          spd = spd == null ? fix.speed : spd * 0.6 + fix.speed * 0.4;
+        }
         if (fix.speed > 1.5) sawMotion = true;
       }
 
@@ -148,9 +178,10 @@ export function createGpsFilter() {
         return { accept: false, point: smooth, addM: 0, reason: 'gate', weak: false, speed: spd };
       }
 
-      // 도플러가 '거의 안 움직인다'고 하면 그건 잡음이다. 거리를 더하지 않되
-      // 기준점은 옮겨서, 다음 판정이 오래된 위치와 비교되지 않게 한다.
-      if (sawMotion && spd != null && spd < STILL_MS) {
+      // 저속이 STILL_TICKS 만큼 이어졌을 때만 정지로 확정한다. 정지면 거리를
+      // 더하지 않고 기준점을 옮겨 잡음 누적을 막는다. 1~3틱짜리 순간 끊김은
+      // 여기 안 걸리고 아래 일반 경로로 내려가 실제 이동이 보존된다.
+      if (sawMotion && stillTicks >= STILL_TICKS) {
         anchor = smooth;
         anchorT = fix.t;
         return { accept: false, point: smooth, addM: 0, reason: 'still', weak: false, speed: spd };

@@ -107,12 +107,16 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     setState((s) => ({ ...s, ...patch }));
   }, []);
 
-  /** 지금 페이스 — 도플러 속도 우선, 없으면 좌표 차분 */
+  /** 지금 페이스 — 믿을 만한 도플러 속도 우선, 아니면 좌표 차분 */
   const livePace = useCallback((coords: LatLng[], activeTimes: number[]): number | null => {
-    const v = filterRef.current?.speed ?? null;
-    // 0.5 m/s 미만은 사실상 멈춘 것 — 33'/km 같은 숫자를 보여주느니 '--' 가 낫다
-    if (v != null && v >= 0.5) return 1000 / v;
-    if (v != null) return null;
+    const f = filterRef.current;
+    const v = f?.speed ?? null;
+    // speedTrusted: 진짜 움직임이 관측된 기기만. speed 를 항상 0 으로 주는
+    // 기기에서 그 0 을 믿으면 페이스가 영영 '--' 가 된다 — 그땐 좌표 차분으로.
+    if (f?.speedTrusted && v != null) {
+      // 0.5 m/s 미만은 사실상 멈춘 것 — 33'/km 같은 숫자보다 '--' 가 낫다
+      return v >= 0.5 ? 1000 / v : null;
+    }
     return paceFromPath(coords, activeTimes);
   }, []);
 
