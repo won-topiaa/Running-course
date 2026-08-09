@@ -191,6 +191,35 @@ check(
   '차트 고도도 실현 가능한 구간 변화만 담는다',
 );
 
+// ── 저장 기록 검역 ──────────────────────────────────────────────────────────
+// 저장소는 언제든 깨질 수 있다(백업 복원, 옛 버전, 용량 초과로 잘린 문자열).
+// 이상한 항목이 목록에 남으면 열었을 때 화면이 통째로 터지고, 그 값은 계속
+// 남아 있어 새로고침해도 매번 같은 자리에서 터진다 — 사용자가 손쓸 방법이 없다.
+console.log('\n[저장 기록] 깨진 항목 검역');
+const { sanitizeRoutes } = await bundle('src/lib/savedRoutes.ts', 'sr.mjs');
+const okRoute = {
+  id: 'a', name: '정상', createdAt: Date.now(), kind: 'recorded', distanceKm: 3,
+  ascentM: 10, maxGradePct: 3, source: 'gps',
+  coords: [[37.5, 127.0], [37.51, 127.0]], elevations: [10, 12],
+};
+const junk = [
+  okRoute,
+  { ...okRoute, id: 'b', name: '좌표 없음', coords: [] },
+  { ...okRoute, id: 'c', name: '점 하나', coords: [[37.5, 127.0]] },
+  { ...okRoute, id: 'd', name: '좌표에 NaN', coords: [[NaN, 127.0], [37.5, 127.0]] },
+  { ...okRoute, id: 'e', name: '거리가 문자열', distanceKm: '삼킬로' },
+  { ...okRoute, id: 'f', name: '종류가 이상', kind: 'teleport' },
+  null, 'string', 42, [],
+];
+const kept = sanitizeRoutes(junk);
+console.log(`    ${junk.length}개 중 ${kept.length}개 통과: ${kept.map((r) => r.name).join(', ')}`);
+check(kept.length === 1 && kept[0].id === 'a', `정상 항목만 남는다 (${kept.length}개)`);
+check(
+  kept.every((r) => Array.isArray(r.coords) && r.coords.length >= 2),
+  '남은 항목은 지도에 그릴 수 있는 좌표를 가진다 (center 가 undefined 일 수 없다)',
+);
+check(sanitizeRoutes(null).length === 0 && sanitizeRoutes('x').length === 0, '배열이 아니면 빈 목록');
+
 // ── 통계 ────────────────────────────────────────────────────────────────────
 console.log('\n[통계] 마이 페이지 숫자');
 const day = 86400_000;

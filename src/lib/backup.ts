@@ -56,13 +56,32 @@ export function applyBackup(obj: unknown): number {
     throw new Error('런코스 백업 파일이 아니에요.');
   }
   let applied = 0;
+  const failed: string[] = [];
   for (const k of KEYS) {
-    if (k in b.data) {
+    if (!(k in b.data)) continue;
+    try {
       localStorage.setItem(k, JSON.stringify((b.data as Record<string, unknown>)[k]));
       applied++;
+    } catch {
+      // 저장 공간이 가득 차면 setItem 이 던진다. 그대로 두면 브라우저 원문
+      // 오류(QuotaExceededError)가 사용자에게 그대로 뜨고, 무엇이 들어오고
+      // 무엇이 빠졌는지 알 수 없다. 나머지 키는 계속 시도하고 마지막에
+      // 무엇이 실패했는지 우리말로 알려준다.
+      failed.push(k);
     }
   }
-  if (applied === 0) throw new Error('가져올 데이터가 비어 있어요.');
+  if (applied === 0) {
+    throw new Error(
+      failed.length
+        ? '저장 공간이 부족해 복원하지 못했어요. 마이 → 내 코스에서 오래된 기록을 지운 뒤 다시 시도해 주세요.'
+        : '가져올 데이터가 비어 있어요.',
+    );
+  }
+  if (failed.length) {
+    throw new Error(
+      `저장 공간이 부족해 일부(${failed.length}개)를 복원하지 못했어요. 오래된 기록을 지운 뒤 다시 시도해 주세요.`,
+    );
+  }
   return applied;
 }
 

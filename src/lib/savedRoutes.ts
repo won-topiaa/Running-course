@@ -71,6 +71,11 @@ function isRoute(v: unknown): v is SavedRoute {
     typeof r.distanceKm === 'number' &&
     Number.isFinite(r.distanceKm) &&
     Array.isArray(r.coords) &&
+    // 점이 2개는 있어야 '경로'다. 빈 배열도 Array.isArray 는 통과하는데,
+    // 그런 항목이 목록에 남으면 열었을 때 지도 center 가 undefined 가 되어
+    // center[0] 을 읽는 순간 시트가 통째로 터진다(백업 복원·저장소 손상으로
+    // 실제로 들어올 수 있는 모양이다). 통계에도 의미가 없으니 여기서 버린다.
+    r.coords.length >= 2 &&
     Array.isArray(r.elevations) &&
     r.coords.every(
       (c) =>
