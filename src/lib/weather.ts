@@ -3,6 +3,7 @@
 // Open-Meteo (키 불필요) 사용, 실패 시 샘플로 폴백.
 // ---------------------------------------------------------------------------
 
+import { fetchWithTimeout } from './fetchTimeout';
 import type { LatLng } from './types';
 
 export type AqiLevel = 'good' | 'moderate' | 'bad' | 'verybad';
@@ -282,18 +283,21 @@ export async function getConditions(loc: LatLng): Promise<RunConditions> {
       `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}` +
       `&current=pm2_5,pm10`;
 
-    // 응답이 오래 걸리면 기다리지 말고 샘플로 넘어간다 (첫 화면이 비어 보이지 않도록)
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), 2500);
-    const [wxRes, aqRes] = await Promise.all([
-      fetch(wxUrl, { signal: ac.signal }),
-      fetch(aqUrl, { signal: ac.signal }),
-    ]).finally(() => clearTimeout(timer));
+    // 날씨(필수)와 대기질(선택)을 따로 받는다. 예전엔 하나의 AbortController 로
+    // 묶어 Promise.all 로 기다렸는데, 대기질 서버(다른 호스트)가 느리거나 죽으면
+    // 멀쩡히 받아온 날씨까지 통째로 '예시'로 떨어졌다 — 화면의 기온·미세먼지가
+    // 전부 가짜가 됐다. 대기질은 미리 띄워 병렬로 받되 실패하면 그 항목만 비운다.
+    // (응답이 오래 걸리면 샘플로 넘어가 첫 화면이 비어 보이지 않게 한다)
+    const COND_TIMEOUT_MS = 2500;
+    const aqP = fetchWithTimeout(aqUrl, {}, COND_TIMEOUT_MS)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    const wxRes = await fetchWithTimeout(wxUrl, {}, COND_TIMEOUT_MS);
     if (!wxRes.ok) throw new Error('weather fetch failed');
     const wx = await wxRes.json();
-    const aq = aqRes.ok ? await aqRes.json() : { current: {} };
+    const aq = await aqP;
     const cw = wx.current ?? {};
-    const ca = aq.current ?? {};
+    const ca = aq?.current ?? {};
     return assemble(
       {
         tempC: cw.temperature_2m ?? 13,
