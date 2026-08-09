@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
   Bookmark,
@@ -18,6 +18,7 @@ import KakaoLinkRow from './KakaoLinkRow';
 import RouteMap from './RouteMap';
 import { GRADE_COLORS, GRADE_LEGEND, RUN_STYLES } from '../lib/routeStyle';
 import { buildGpx, downloadGpx } from '../lib/gpx';
+import { lockBodyScroll } from '../lib/scrollLock';
 import { kmSplits } from '../lib/splits';
 import { loadToken, STRAVA_UPLOAD_PAGE, uploadGpx } from '../lib/strava';
 import { buildShareToken, savedFromView, shareUrl } from '../lib/savedRoutes';
@@ -44,16 +45,25 @@ export default function RouteSheet({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
+    const unlock = lockBodyScroll();
     return () => {
       window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
+      unlock();
     };
   }, [onClose]);
 
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      // 시트가 닫힌 뒤 타이머가 언마운트된 컴포넌트의 setState 를 부르지 않게
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    },
+    [],
+  );
   const flash = (m: string) => {
     setToast(m);
-    setTimeout(() => setToast(null), 2200);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
   };
 
   const { route } = view;

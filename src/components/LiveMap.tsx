@@ -1,11 +1,12 @@
-import { lazy, memo, Suspense } from 'react';
+import { memo, Suspense } from 'react';
+import { lazyWithReload } from '../lib/lazyRetry';
 import { useKakao } from '../lib/useKakao';
 import type { LiveMapProps } from './mapTypes';
 import KakaoLiveMap from './KakaoLiveMap';
 
 // Leaflet 은 카카오맵이 없을 때만 쓰는 폴백이다. 정적으로 묶으면 한국 사용자
 // 대부분이 쓰지도 않을 지도 엔진을 첫 로딩에 같이 받게 되므로 분리한다.
-const LeafletLiveMap = lazy(() => import('./LeafletLiveMap').then((m) => ({ default: m.default })));
+const LeafletLiveMap = lazyWithReload(() => import('./LeafletLiveMap'));
 
 /** 카카오맵 또는 Leaflet(폴백) 라이브 트랙 지도 */
 function LiveMap(props: LiveMapProps) {

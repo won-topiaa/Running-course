@@ -174,9 +174,28 @@ export async function ensureCloudFresh(cfg: CloudConfig): Promise<CloudSession |
   const s = loadCloudSession();
   if (!s) return null;
   if (s.expiresAt > Math.floor(Date.now() / 1000) + 60) return s;
+  // Supabase 리프레시 토큰은 1회용이다. 자동 백업과 수동 백업이 동시에
+  // 만료를 만나 각자 갱신하면 두 번째 요청이 '이미 쓴 토큰'으로 거절되고,
+  // 아래 실패 처리로 세션이 지워져 멀쩡히 로그인돼 있던 사용자가 갑자기
+  // 로그아웃된다. 진행 중인 갱신이 있으면 그 결과를 같이 쓴다.
+  if (!refreshInFlight) {
+    refreshInFlight = doRefresh(cfg, s).finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+let refreshInFlight: Promise<CloudSession | null> | null = null;
+
+async function doRefresh(cfg: CloudConfig, s: CloudSession): Promise<CloudSession | null> {
   const res = await fetchWithTimeout(
     `${trim(cfg.url)}/auth/v1/token?grant_type=refresh_token`,
-    { method: 'POST', headers: authHeaders(cfg), body: JSON.stringify({ refresh_token: s.refresh }) },
+    {
+      method: 'POST',
+      headers: authHeaders(cfg),
+      body: JSON.stringify({ refresh_token: s.refresh }),
+    },
     CLOUD_TIMEOUT_MS,
   );
   if (!res.ok) {

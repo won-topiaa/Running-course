@@ -1,18 +1,19 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import BottomNav, { type Screen } from './components/BottomNav';
 import InstallPrompt from './components/InstallPrompt';
 import BuildScreen from './screens/BuildScreen';
+import { lazyWithReload } from './lib/lazyRetry';
 
 // 첫 화면(만들기)만 즉시 받고 나머지는 눌렀을 때 받는다. 첫 로딩에 필요 없는
 // 화면·시트가 같이 묶여 있으면 그만큼 첫 그림이 늦어진다.
 // 오프라인에서 처음 눌러도 되도록, 뜬 직후 한가할 때 미리 받아 캐시에 넣는다
 // (아래 prefetch effect). 서비스워커가 그때 받은 청크를 캐시한다.
-const ExploreScreen = lazy(() => import('./screens/ExploreScreen'));
-const SavedScreen = lazy(() => import('./screens/SavedScreen'));
-const MyScreen = lazy(() => import('./screens/MyScreen'));
-const RecordScreen = lazy(() => import('./components/RecordScreen'));
-const RouteSheet = lazy(() => import('./components/RouteSheet'));
-const CourseDetailSheet = lazy(() => import('./components/CourseDetailSheet'));
+const ExploreScreen = lazyWithReload(() => import('./screens/ExploreScreen'));
+const SavedScreen = lazyWithReload(() => import('./screens/SavedScreen'));
+const MyScreen = lazyWithReload(() => import('./screens/MyScreen'));
+const RecordScreen = lazyWithReload(() => import('./components/RecordScreen'));
+const RouteSheet = lazyWithReload(() => import('./components/RouteSheet'));
+const CourseDetailSheet = lazyWithReload(() => import('./components/CourseDetailSheet'));
 import { loadSettings, saveSettings, type Settings } from './lib/config';
 import { loadRoutes, parseSharedFromHash, persistRoutes, type SavedRoute } from './lib/savedRoutes';
 import { loadCloudSession, pushCloud } from './lib/cloud';

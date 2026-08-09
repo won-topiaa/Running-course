@@ -5,6 +5,7 @@ import KakaoLinkRow from './KakaoLinkRow';
 import PathMap from './PathMap';
 import ScenePhoto from './ScenePhoto';
 import { COURSES } from '../data/courses';
+import { lockBodyScroll } from '../lib/scrollLock';
 import { sceneForCourse } from '../lib/scene';
 import { estimateTimeLabel, formatDistance } from '../lib/format';
 import {
@@ -89,10 +90,10 @@ function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose:
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
+    const unlock = lockBodyScroll();
     return () => {
       window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
+      unlock();
     };
   }, [onClose]);
 
