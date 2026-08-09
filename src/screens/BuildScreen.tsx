@@ -6,6 +6,7 @@ import {
   Crosshair,
   Loader2,
   Play,
+  Share2,
   Sparkles,
   Undo2,
 } from 'lucide-react';
@@ -786,19 +787,23 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                     </div>
                   )}
 
-                  {/* 하단 액션 — 스크롤해도 항상 보이도록 고정 */}
+                  {/* 하단 액션 — 스크롤해도 항상 보이도록 고정.
+                      보조 두 버튼은 아이콘만(정사각). 예전엔 글자까지 넣었더니
+                      좁은 폰(375·360)에서 셋이 공간을 못 나눠 '이 경로로 뛰기'가
+                      두 줄로 접혔다. 주 CTA 는 어떤 폭에서도 한 줄로 유지한다. */}
                   <div className="sticky bottom-0 -mx-4 mt-3 flex items-center gap-2 border-t border-line/60 bg-paper px-4 pb-1 pt-2.5">
                     <button
                       onClick={generate}
                       disabled={loading}
-                      className="flex shrink-0 items-center gap-1.5 rounded-full border border-line px-3.5 py-3 text-[12.5px] font-semibold text-espresso-muted transition active:scale-95 disabled:opacity-60"
+                      aria-label={loading ? '찾는 중' : '다시 찾기'}
+                      title="다시 찾기"
+                      className="grid h-12 w-12 shrink-0 place-items-center rounded-full border border-line text-espresso-muted transition active:scale-95 disabled:opacity-60"
                     >
                       {loading ? (
-                        <Loader2 size={14} className="animate-spin" />
+                        <Loader2 size={18} className="animate-spin" />
                       ) : (
-                        <Sparkles size={14} />
+                        <Sparkles size={18} />
                       )}
-                      {loading ? '찾는 중…' : '다시 찾기'}
                     </button>
                     <button
                       onClick={() =>
@@ -811,9 +816,11 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                           source: selected.route.source,
                         })
                       }
-                      className="shrink-0 rounded-full border border-line px-3.5 py-3 text-[12.5px] font-semibold text-espresso-muted active:scale-95"
+                      aria-label="저장 · 공유"
+                      title="저장 · 공유"
+                      className="grid h-12 w-12 shrink-0 place-items-center rounded-full border border-line text-espresso-muted active:scale-95"
                     >
-                      저장 · 공유
+                      <Share2 size={18} />
                     </button>
                     <button
                       onClick={() =>
@@ -823,7 +830,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                           route: selected.route,
                         })
                       }
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-espresso py-3 text-[13.5px] font-bold text-ink active:scale-[0.98]"
+                      className="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-espresso py-3.5 text-[14px] font-bold text-ink active:scale-[0.98]"
                     >
                       <Play size={15} fill="#fff" /> 이 경로로 뛰기
                     </button>
