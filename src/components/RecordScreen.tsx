@@ -183,27 +183,37 @@ export default function RecordScreen({
   const finish = async () => {
     if (saving) return;
     setSaving(true);
-    // GPS 고도 대신 실제 지형 고도로 바꿔 단다 (없으면 그대로 진행)
-    let dem: number[] | null = null;
-    if (!rec.demo && rec.coords.length > 1) {
-      dem = await realElevations(rec.coords);
-      if (dem) setDemElev(dem);
+    // 먼저 기록을 멈춰 좌표를 얼린다. 이걸 안 하면 아래 고도 조회를 기다리는
+    // 몇 초 동안 새 측위가 계속 들어와, 조회해 둔 고도 배열과 좌표 개수가
+    // 어긋나고(뒤쪽 고도가 마지막 값으로 채워진다) 화면의 거리도 계속 올라간다.
+    // pause 는 활성 시간을 여기서 확정하고, 뒤따르는 stop 이 다시 더하지 않는다.
+    rec.pause();
+    try {
+      // GPS 고도 대신 실제 지형 고도로 바꿔 단다 (못 받으면 그대로 진행)
+      let dem: number[] | null = null;
+      if (!rec.demo && rec.coords.length > 1) {
+        dem = await realElevations(rec.coords);
+        if (dem) setDemElev(dem);
+      }
+      // 데모가 아니면 자동으로 내 코스에 저장 — 마이 통계가 여기서 나온다
+      if (!rec.demo && rec.coords.length > 1 && !autoSaved.current) {
+        const route = buildRecorded(dem);
+        const saved = savedFromView({
+          name,
+          route,
+          kind: 'recorded',
+          source: 'gps',
+          durationSec: rec.elapsedSec,
+        });
+        api.addSavedRoute(saved);
+        autoSaved.current = saved.id;
+      }
+    } finally {
+      // 무슨 일이 있어도 기록은 끝내고 요약으로 넘어간다. 여기서 멈추면
+      // 방금 뛴 기록을 손에 쥔 채 화면이 굳는다.
+      rec.stop();
+      setSaving(false);
     }
-    // 데모가 아니면 자동으로 내 코스에 저장 — 마이 통계가 여기서 나온다
-    if (!rec.demo && rec.coords.length > 1 && !autoSaved.current) {
-      const route = buildRecorded(dem);
-      const saved = savedFromView({
-        name,
-        route,
-        kind: 'recorded',
-        source: 'gps',
-        durationSec: rec.elapsedSec,
-      });
-      api.addSavedRoute(saved);
-      autoSaved.current = saved.id;
-    }
-    rec.stop();
-    setSaving(false);
   };
 
   return (

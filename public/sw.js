@@ -98,7 +98,10 @@ self.addEventListener('fetch', (event) => {
           }
           return res;
         })
-        .catch(() => cached);
+        // 오프라인이고 캐시에도 없으면 돌려줄 게 없다. undefined 를 그대로
+        // respondWith 에 넘기면 '값을 Response 로 못 바꾼다'며 핸들러가 터지므로,
+        // 평범한 네트워크 오류로 응답해 호출측 catch 로 정상적으로 흘려보낸다.
+        .catch(() => cached || Response.error());
       return cached || network;
     }),
   );

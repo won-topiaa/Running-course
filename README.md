@@ -147,6 +147,10 @@ npm install
 npm run dev      # 개발 서버 (http://localhost:5173)
 npm run build    # 타입체크 + 프로덕션 빌드
 npm run preview  # 빌드 결과 미리보기
+
+npm run check       # 로직 검증 3종 (GPS 필터 · 지역 기능 · 나가는 결과물)
+npm run check:smoke # 빌드된 dist 를 실제 브라우저로 열어 전 화면 클릭 (배포 직전)
+npm run check:live  # 실제 ORS·Overpass 호출 검증 (느리고 외부 사정을 탄다)
 ```
 
 ## 프로젝트 구조
