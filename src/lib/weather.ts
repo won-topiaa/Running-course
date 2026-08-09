@@ -7,6 +7,23 @@ import type { LatLng } from './types';
 
 export type AqiLevel = 'good' | 'moderate' | 'bad' | 'verybad';
 
+/**
+ * 더위 위험도. 한국 여름은 습도가 높아 기온보다 체감이 훨씬 세다 —
+ * 체감온도(apparent_temperature)와 자외선을 같이 본다.
+ */
+export type HeatRisk = 'none' | 'caution' | 'danger';
+
+/** 앞으로 몇 시간 안에 '지금보다 확실히 나은' 시간대 */
+export interface BetterHour {
+  /** 24시간제 (로컬) */
+  hour: number;
+  feelsC: number;
+  uvIndex: number;
+  rainPct: number;
+  /** 몇 시간 뒤인지 */
+  inHours: number;
+}
+
 export interface RunConditions {
   tempC: number;
   feelsC: number;
@@ -23,6 +40,13 @@ export interface RunConditions {
   headline: string;
   outfit: string;
   source: 'live' | 'sample';
+  /** 자외선 지수 (0~11+). 폴백이면 추정치 */
+  uvIndex: number;
+  heatRisk: HeatRisk;
+  /** 더울 때 '몇 시에 뛰는 게 낫다' — 없으면 지금이 괜찮다는 뜻 */
+  betterHour: BetterHour | null;
+  /** 컨디션 한 줄 조언 (더위·자외선 중심) */
+  advice: string | null;
 }
 
 // WMO weather code → 라벨/이모지
@@ -90,8 +114,10 @@ function assemble(
     code: number;
     pm25: number;
     pm10: number;
+    uvIndex: number;
   },
   source: 'live' | 'sample',
+  hourly?: HourlyPoint[],
 ): RunConditions {
   const w = wmo(raw.code);
   const aqi = aqiFromPm25(raw.pm25);
@@ -102,6 +128,8 @@ function assemble(
     rainy: w.rainy,
     aqi: aqi.level,
   });
+  const heatRisk = heatRiskOf(raw.feelsC, raw.uvIndex);
+  const betterHour = heatRisk === 'none' ? null : findBetterHour(raw.feelsC, hourly);
   return {
     tempC: Math.round(raw.tempC),
     feelsC: Math.round(raw.feelsC),
@@ -118,7 +146,69 @@ function assemble(
     headline: headlineFor(runScore, aqi.level, w.rainy),
     outfit: outfitFor(raw.tempC, w.rainy),
     source,
+    uvIndex: Math.round(raw.uvIndex * 10) / 10,
+    heatRisk,
+    betterHour,
+    advice: adviceFor(heatRisk, raw.feelsC, raw.uvIndex, betterHour),
   };
+}
+
+// --- 더위·자외선 ------------------------------------------------------------
+
+export interface HourlyPoint {
+  hour: number; //   로컬 24시간제
+  inHours: number; // 지금부터 몇 시간 뒤
+  feelsC: number;
+  uvIndex: number;
+  rainPct: number;
+}
+
+/**
+ * 체감온도 기준. 기상청 폭염주의보(체감 33℃)·경보(35℃)를 기준선으로 잡되,
+ * 러닝은 가만히 있는 것보다 체감이 더 오르므로 한 칸 낮춰 본다.
+ * 자외선은 8 이상이면 그 자체로 주의 대상(WHO 매우 높음 8~10).
+ */
+function heatRiskOf(feelsC: number, uv: number): HeatRisk {
+  if (feelsC >= 33 || uv >= 9) return 'danger';
+  if (feelsC >= 29 || uv >= 7) return 'caution';
+  return 'none';
+}
+
+/**
+ * 지금보다 확실히 나은 시간대를 앞으로 12시간 안에서 찾는다.
+ * '확실히'의 기준은 체감 2℃ 이상 낮고 비 올 확률이 크지 않은 때 —
+ * 0.5℃ 차이로 '두 시간 뒤에 뛰세요'라고 하면 조언이 아니라 잡음이다.
+ */
+function findBetterHour(nowFeelsC: number, hourly?: HourlyPoint[]): BetterHour | null {
+  if (!hourly || hourly.length === 0) return null;
+  const candidates = hourly.filter(
+    (h) => h.inHours >= 1 && h.inHours <= 12 && h.feelsC <= nowFeelsC - 2 && h.rainPct < 50,
+  );
+  if (candidates.length === 0) return null;
+  // 가장 시원한 때, 같으면 더 이른 때
+  candidates.sort((a, b) => a.feelsC - b.feelsC || a.inHours - b.inHours);
+  const best = candidates[0];
+  return {
+    hour: best.hour,
+    feelsC: Math.round(best.feelsC),
+    uvIndex: Math.round(best.uvIndex * 10) / 10,
+    rainPct: Math.round(best.rainPct),
+    inHours: best.inHours,
+  };
+}
+
+function adviceFor(
+  risk: HeatRisk,
+  feelsC: number,
+  uv: number,
+  better: BetterHour | null,
+): string | null {
+  if (risk === 'none') return null;
+  const when = better ? ` ${better.hour}시쯤이면 체감 ${better.feelsC}°까지 내려가요.` : '';
+  if (risk === 'danger') {
+    return `체감 ${Math.round(feelsC)}°${uv >= 8 ? ` · 자외선 ${uv.toFixed(0)}` : ''} — 지금은 무리예요. 물 챙기고 그늘 있는 코스로, 짧게.${when}`;
+  }
+  return `체감 ${Math.round(feelsC)}°${uv >= 7 ? ` · 자외선 ${uv.toFixed(0)}` : ''} — 페이스를 낮추고 물을 챙기세요.${when}`;
 }
 
 /** 네트워크/키 없이도 화면이 채워지도록 하는 샘플 컨디션 (선선한 가을 저녁) */
@@ -133,9 +223,42 @@ export function sampleConditions(): RunConditions {
       code: 1,
       pm25: 12,
       pm10: 24,
+      uvIndex: 2,
     },
     'sample',
   );
+}
+
+/** Open-Meteo hourly 블록 → 지금 이후 시간대 목록 */
+function parseHourly(h: unknown): HourlyPoint[] {
+  const o = h as
+    | {
+        time?: string[];
+        apparent_temperature?: number[];
+        uv_index?: number[];
+        precipitation_probability?: number[];
+      }
+    | undefined;
+  if (!o?.time || !Array.isArray(o.time)) return [];
+  const now = Date.now();
+  const out: HourlyPoint[] = [];
+  o.time.forEach((t, i) => {
+    // 'YYYY-MM-DDTHH:mm' 은 타임존이 없어 로컬로 해석된다 — timezone=auto 로
+    // 받은 값이 사용자 로컬과 같다는 전제. 다른 지역 날씨를 볼 일은 없다.
+    const at = new Date(t).getTime();
+    if (!Number.isFinite(at)) return;
+    const inHours = Math.round((at - now) / 3_600_000);
+    const feels = o.apparent_temperature?.[i];
+    if (typeof feels !== 'number') return;
+    out.push({
+      hour: new Date(at).getHours(),
+      inHours,
+      feelsC: feels,
+      uvIndex: o.uv_index?.[i] ?? 0,
+      rainPct: o.precipitation_probability?.[i] ?? 0,
+    });
+  });
+  return out;
 }
 
 export async function getConditions(loc: LatLng): Promise<RunConditions> {
@@ -143,7 +266,10 @@ export async function getConditions(loc: LatLng): Promise<RunConditions> {
   try {
     const wxUrl =
       `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}` +
-      `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,precipitation`;
+      `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,precipitation,uv_index` +
+      // 앞으로 13시간 — '지금 말고 몇 시에 뛰는 게 나은지' 를 여기서 찾는다.
+      // timezone=auto 라 hourly.time 이 로컬 시각으로 온다.
+      `&hourly=apparent_temperature,uv_index,precipitation_probability&forecast_hours=13&timezone=auto`;
     const aqUrl =
       `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}` +
       `&current=pm2_5,pm10`;
@@ -170,8 +296,10 @@ export async function getConditions(loc: LatLng): Promise<RunConditions> {
         code: cw.weather_code ?? 1,
         pm25: ca.pm2_5 ?? 12,
         pm10: ca.pm10 ?? 24,
+        uvIndex: cw.uv_index ?? 0,
       },
       'live',
+      parseHourly(wx.hourly),
     );
   } catch {
     return sampleConditions();

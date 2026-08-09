@@ -13,12 +13,8 @@
 import type { LatLng } from './types';
 import { elevationsForPath } from './elevation';
 import { fetchWithTimeout } from './fetchTimeout';
-import {
-  densifyPath,
-  destinationPoint,
-  haversineMeters,
-  pathLengthMeters,
-} from './geo';
+import { parseWayMix, type WayMix } from './wayMix';
+import { densifyPath, destinationPoint, haversineMeters, pathLengthMeters } from './geo';
 
 const ORS_BASE = 'https://api.openrouteservice.org/v2/directions/foot-walking/geojson';
 // ORS 는 주 경로 provider 라 응답이 늦으면 빨리 포기하고 OSRM 으로 넘어가는 편이
@@ -49,6 +45,11 @@ export interface RouteResult {
   segments: RouteSegment[];
   source: RouteSource;
   waypoints: LatLng[]; //  입력 경유지/시작점
+  /**
+   * 길 성격(산책로/차도/노면). ORS 로 만든 경로에만 있다 — OSRM·오프라인
+   * 폴백은 이 정보를 안 주므로 undefined 이고, UI 는 그때 표시를 생략한다.
+   */
+  way?: WayMix;
 }
 
 export type RoutingErrorCode =
@@ -156,11 +157,7 @@ export function buildResult(
 
 // --- OpenRouteService provider ---------------------------------------------
 
-function parseOrsGeoJson(
-  gj: any,
-  source: RouteResult['source'],
-  waypoints: LatLng[],
-): RouteResult {
+function parseOrsGeoJson(gj: any, source: RouteResult['source'], waypoints: LatLng[]): RouteResult {
   const feat = gj?.features?.[0];
   const line = feat?.geometry?.coordinates;
   if (!Array.isArray(line) || line.length < 2) {
@@ -168,7 +165,10 @@ function parseOrsGeoJson(
   }
   const coords: LatLng[] = line.map((c: number[]) => [c[1], c[0]]);
   const elevations: number[] = line.map((c: number[]) => c[2] ?? 0);
-  return buildResult(coords, elevations, source, waypoints);
+  const result = buildResult(coords, elevations, source, waypoints);
+  // waytype/surface 는 같은 응답에 실려 온다 — 추가 호출도 지연도 없다
+  const way = parseWayMix(feat?.properties?.extras);
+  return way ? { ...result, way } : result;
 }
 
 export class OrsProvider implements RoutingProvider {
@@ -194,11 +194,7 @@ export class OrsProvider implements RoutingProvider {
    * 그래서 다른 provider 와 동일하게 '고리 경유지를 실제 도로로 잇고 실측 거리로
    * 반지름을 보정'하는 방식을 쓴다.
    */
-  async roundTrip(
-    start: LatLng,
-    targetKm: number,
-    opts: RouteOptions = {},
-  ): Promise<RouteResult> {
+  async roundTrip(start: LatLng, targetKm: number, opts: RouteOptions = {}): Promise<RouteResult> {
     const best = await ringRoundTrip(
       async (ring) => {
         const gj = await this.rawPost({
@@ -206,20 +202,23 @@ export class OrsProvider implements RoutingProvider {
           elevation: true,
           instructions: false,
         });
-        const line = gj?.features?.[0]?.geometry?.coordinates;
+        const feat = gj?.features?.[0];
+        const line = feat?.geometry?.coordinates;
         if (!Array.isArray(line) || line.length < 2) {
           throw new RoutingError('no_route', '경로를 만들 수 없습니다.');
         }
         return {
           coords: line.map((c: number[]) => [c[1], c[0]] as LatLng),
           elevations: line.map((c: number[]) => c[2] ?? 0),
+          way: parseWayMix(feat?.properties?.extras) ?? undefined,
         };
       },
       start,
       targetKm,
       opts,
     );
-    return buildResult(best.coords, best.elevations ?? [], 'ors', [start]);
+    const result = buildResult(best.coords, best.elevations ?? [], 'ors', [start]);
+    return best.way ? { ...result, way: best.way } : result;
   }
 
   /** 실제 fetch 후 GeoJSON 반환 (에러는 RoutingError 로 정규화) */
@@ -245,6 +244,8 @@ export class OrsProvider implements RoutingProvider {
           body: JSON.stringify({
             ...body,
             radiuses: coords.map(() => SNAP_RADIUS_M),
+            // 같은 응답으로 길 성격을 받아 온다 (wayMix.ts)
+            extra_info: ['waytype', 'surface'],
             options: { avoid_features: ['ferries'] },
           }),
         },
@@ -271,6 +272,8 @@ export class OrsProvider implements RoutingProvider {
 interface Geometry {
   coords: LatLng[];
   elevations?: number[];
+  /** ORS 만 채운다 — 보정 시도마다 다른 경로가 나오므로 채택된 시도의 것을 써야 한다 */
+  way?: WayMix;
 }
 
 /**
@@ -374,11 +377,7 @@ export class OsrmProvider implements RoutingProvider {
   }
 
   /** 목표 거리에 맞춘 왕복 루프 (공통 ringRoundTrip 전략) */
-  async roundTrip(
-    start: LatLng,
-    targetKm: number,
-    opts: RouteOptions = {},
-  ): Promise<RouteResult> {
+  async roundTrip(start: LatLng, targetKm: number, opts: RouteOptions = {}): Promise<RouteResult> {
     const best = await ringRoundTrip(
       async (ring) => ({ coords: await this.fetchGeometry(ring) }),
       start,
@@ -407,12 +406,7 @@ export function syntheticElevation(lat: number, lng: number): number {
 }
 
 /** 시작점을 지나는 대략적인 루프(다각형) 정점열을 만든다. 목표 거리에 맞춰 반지름 보정. */
-function generateLoop(
-  start: LatLng,
-  targetKm: number,
-  points: number,
-  seed: number,
-): LatLng[] {
+function generateLoop(start: LatLng, targetKm: number, points: number, seed: number): LatLng[] {
   const targetM = targetKm * 1000;
   const baseBearing = (seed * 63.7) % 360;
 
@@ -454,11 +448,7 @@ export class OfflineProvider implements RoutingProvider {
     return buildResult(dense, elev, 'offline', waypoints);
   }
 
-  async roundTrip(
-    start: LatLng,
-    targetKm: number,
-    opts: RouteOptions = {},
-  ): Promise<RouteResult> {
+  async roundTrip(start: LatLng, targetKm: number, opts: RouteOptions = {}): Promise<RouteResult> {
     const ring = generateLoop(start, targetKm, opts.points ?? 5, opts.seed ?? 0);
     const dense = densifyPath(ring, 45);
     const elev = dense.map(([lat, lng]) => syntheticElevation(lat, lng));

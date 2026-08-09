@@ -13,8 +13,16 @@ import RouteMap from '../components/RouteMap';
 import GradeElevationChart from '../components/GradeElevationChart';
 import { buildFromDistance, buildFromPins, type BuiltRoute } from '../lib/courseBuilder';
 import { fallbackProvider, makeProvider, RoutingError, type RoutingProvider } from '../lib/routing';
-import { GRADE_LEGEND, GRADE_COLORS, RUN_STYLES, type RunStyle } from '../lib/routeStyle';
+import {
+  GRADE_LEGEND,
+  GRADE_COLORS,
+  PATH_PREFS,
+  RUN_STYLES,
+  type PathPref,
+  type RunStyle,
+} from '../lib/routeStyle';
 import { estimateTimeLabel, formatDistance } from '../lib/format';
+import { wayMixLabel } from '../lib/wayMix';
 import type { LatLng } from '../lib/types';
 import type { AppApi } from '../ui/appApi';
 import { HALO, VOLT } from '../ui/theme';
@@ -35,6 +43,7 @@ let session: {
   start: LatLng;
   targetKm: number;
   style: RunStyle;
+  pathPref: PathPref;
   returnToStart: boolean;
   results: BuiltRoute[] | null;
   selIdx: number;
@@ -51,6 +60,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const [start, setStart] = useState<LatLng>(session?.start ?? api.settings.homeLocation);
   const [targetKm, setTargetKm] = useState(session?.targetKm ?? 5);
   const [style, setStyle] = useState<RunStyle>(session?.style ?? 'flat');
+  const [pathPref, setPathPref] = useState<PathPref>(session?.pathPref ?? 'any');
 
   const [results, setResults] = useState<BuiltRoute[] | null>(session?.results ?? null);
   const [selIdx, setSelIdx] = useState(session?.selIdx ?? 0);
@@ -151,12 +161,24 @@ export default function BuildScreen({ api }: { api: AppApi }) {
       start,
       targetKm,
       style,
+      pathPref,
       returnToStart,
       results,
       selIdx,
       sheetOpen,
     };
-  }, [mode, waypoints, start, targetKm, style, returnToStart, results, selIdx, sheetOpen]);
+  }, [
+    mode,
+    waypoints,
+    start,
+    targetKm,
+    style,
+    pathPref,
+    returnToStart,
+    results,
+    selIdx,
+    sheetOpen,
+  ]);
 
   // 새 결과가 오면 첫 카드로, 탭에서 돌아온 거면 보고 있던 카드로 맞춘다.
   // 무조건 0 으로 되돌리면 복귀 직후 onScroll 이 선택을 1번 카드로 되돌려버린다.
@@ -238,10 +260,11 @@ export default function BuildScreen({ api }: { api: AppApi }) {
 
     const build = (p: RoutingProvider): Promise<BuiltRoute[]> =>
       mode === 'pins'
-        ? buildFromPins(waypoints, style, p, { loop: returnToStart })
+        ? buildFromPins(waypoints, style, p, { loop: returnToStart, pathPref })
         : buildFromDistance(start, targetKm, style, p, {
             seedBase: attempt,
             oneWay: !returnToStart,
+            pathPref,
           });
 
     // ORS → OSRM(키 불필요) → 데모(직선) 순으로 내려가며 시도
@@ -383,6 +406,20 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                 <span className="hidden sm:inline">{sourceBadge.text}</span>
               </span>
             </div>
+          )}
+
+          {/* 더위·자외선 조언 — 한국 여름엔 '지금 뛸까'가 코스보다 먼저다.
+              위험할 때만 나오고 평소엔 줄 자체가 없다. */}
+          {api.conditions?.advice && (
+            <p
+              className={`px-3.5 py-2 text-[11.5px] leading-relaxed ${
+                api.conditions.heatRisk === 'danger'
+                  ? 'bg-coral-50 text-coral-600'
+                  : 'bg-amber-50 text-amber-700'
+              }`}
+            >
+              {api.conditions.advice}
+            </p>
           )}
 
           {/* 결과를 보는 동안에는 입력 컨트롤을 접는다. 코스를 고르는 단계에서
@@ -684,6 +721,11 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                       >
                         <span className="min-w-0 flex-1 text-[12px] leading-snug text-espresso-muted">
                           {selected.styleEval.reason}
+                          {selected.pathEval.reason && (
+                            <span className="mt-0.5 block text-espresso-soft">
+                              {selected.pathEval.reason}
+                            </span>
+                          )}
                         </span>
                         <span className="flex shrink-0 items-center gap-0.5 text-[11.5px] font-bold text-espresso-soft">
                           {elevRange ? `고도 ${elevRange.lo}~${elevRange.hi}m` : '고도'}
@@ -788,6 +830,32 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                   </div>
                   <p className="mt-1.5 text-[11.5px] text-espresso-soft">
                     {RUN_STYLES.find((s) => s.id === style)?.desc}
+                  </p>
+
+                  {/* 두 번째 취향 축 — 길 성격. 경사만으로는 대로변 5km 와
+                      천변 5km 를 구분하지 못한다. ORS 가 같이 주는
+                      waytype/surface 로 후보 순위를 조정한다. */}
+                  <div className="no-scrollbar -mx-1 mt-2.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
+                    {PATH_PREFS.map((pp) => (
+                      <button
+                        key={pp.id}
+                        onClick={() => {
+                          setPathPref(pp.id);
+                          reset();
+                        }}
+                        className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-[12.5px] font-bold transition active:scale-95 ${
+                          pathPref === pp.id
+                            ? 'border-coral bg-coral-50 text-coral-600'
+                            : 'border-line bg-paper text-espresso-muted'
+                        }`}
+                      >
+                        <span className="text-[14px]">{pp.emoji}</span>
+                        {pp.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-[11.5px] text-espresso-soft">
+                    {PATH_PREFS.find((pp) => pp.id === pathPref)?.desc}
                   </p>
 
                   <button
@@ -1009,6 +1077,12 @@ function CompareCard({
           {formatDistance(route.distanceKm)} · {estimateTimeLabel(route.distanceKm, paceSec)} · 최대{' '}
           {route.maxGradePct}%
         </span>
+        {/* 길 성격 — ORS 경로에만 있다. 없으면 줄 자체를 안 만든다. */}
+        {route.way && (
+          <span className="mt-0.5 block truncate text-[11px] text-espresso-soft">
+            {wayMixLabel(route.way)}
+          </span>
+        )}
       </span>
 
       <span className="shrink-0 text-right">

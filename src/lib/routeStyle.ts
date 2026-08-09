@@ -34,6 +34,68 @@ export interface StyleEval {
   reason: string;
 }
 
+// --- 두 번째 취향 축: 길 성격 -------------------------------------------------
+//
+// 경사만으로는 한국에서 "어디를 뛸까"의 절반밖에 못 고른다. 대로변 5km 와
+// 천변 산책로 5km 는 고도가 같아도 완전히 다른 러닝이다 — 신호등에 몇 번
+// 걸리는지, 여름에 가로수 그늘이 있는지, 노면이 무릎에 어떤지가 다르다.
+// ORS 가 같이 주는 waytype/surface 로 이걸 점수화한다 (wayMix.ts).
+
+export type PathPref = 'any' | 'trail' | 'soft';
+
+export const PATH_PREFS: { id: PathPref; label: string; desc: string; emoji: string }[] = [
+  { id: 'any', label: '상관없음', desc: '길 종류는 따지지 않아요', emoji: '🧭' },
+  {
+    id: 'trail',
+    label: '산책로 위주',
+    desc: '신호등에 덜 걸리고 여름엔 가로수 그늘이 있어요',
+    emoji: '🌳',
+  },
+  { id: 'soft', label: '흙길·트레일', desc: '포장 대신 흙·자갈 노면으로', emoji: '🍂' },
+];
+
+export interface PathEval {
+  pref: PathPref;
+  /** 0~1 — 정보를 모르면(OSRM·오프라인) null */
+  score: number | null;
+  reason: string | null;
+}
+
+/**
+ * 길 성격 점수. way 정보가 없으면 null 을 돌려주고, 호출측은 이 축을
+ * 아예 빼고 계산한다 — 모르는 걸 0점으로 두면 폴백 경로가 부당하게 밀린다.
+ */
+export function evaluatePath(route: RouteResult, pref: PathPref): PathEval {
+  const w = route.way;
+  if (pref === 'any') return { pref, score: null, reason: null };
+  if (!w) return { pref, score: null, reason: null };
+
+  if (pref === 'trail') {
+    // 비율을 먼저 0~1 로 누른 뒤에 계단을 깎는다. 순서를 바꾸면 보행자 길이
+    // 80% 를 넘는 순간 감점이 clamp 에 먹혀 사라진다(계단 120m 가 무시됐다).
+    const base = clamp01(w.trailPct / 80);
+    const stepPenalty = clamp01(w.stepsM / 300) * 0.35;
+    const score = clamp01(base - stepPenalty);
+    const reason =
+      w.trailPct >= 60
+        ? `보행자 길이 ${w.trailPct}% — 신호등에 거의 안 걸려요.`
+        : w.trailPct >= 30
+          ? `보행자 길 ${w.trailPct}%, 차도 옆 ${w.roadPct}% 가 섞여 있어요.`
+          : `차도 옆이 ${w.roadPct}% 라 신호등에 자주 걸릴 수 있어요.`;
+    return { pref, score, reason };
+  }
+
+  // soft: 흙·자갈 노면 비율
+  const score = clamp01(w.softPct / 45);
+  const reason =
+    w.softPct >= 30
+      ? `흙·자갈 노면이 ${w.softPct}% — 무릎에 부담이 덜해요.`
+      : w.softPct >= 10
+        ? `흙길이 ${w.softPct}% 섞여 있어요.`
+        : '거의 포장길이에요.';
+  return { pref, score, reason };
+}
+
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
 function computeMetrics(route: RouteResult): StyleMetrics {

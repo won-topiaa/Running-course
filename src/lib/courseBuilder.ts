@@ -8,17 +8,22 @@
 // ---------------------------------------------------------------------------
 
 import { destinationPoint, haversineMeters, nearestNeighborOrder } from './geo';
+import { RoutingError, type RouteResult, type RoutingProvider } from './routing';
 import {
-  RoutingError,
-  type RouteResult,
-  type RoutingProvider,
-} from './routing';
-import { evaluateStyle, type RunStyle, type StyleEval } from './routeStyle';
+  evaluateStyle,
+  type RunStyle,
+  type StyleEval,
+  evaluatePath,
+  type PathEval,
+  type PathPref,
+} from './routeStyle';
 import type { LatLng } from './types';
 
 export interface BuiltRoute {
   route: RouteResult;
   styleEval: StyleEval;
+  /** 길 성격 평가 — 취향이 '상관없음'이거나 정보가 없으면 score 가 null */
+  pathEval: PathEval;
   /** 목표 거리 대비 근접도 0~1 (핀 모드는 1) */
   distanceScore: number;
   /** 종합 매칭 점수 0~100 */
@@ -53,19 +58,30 @@ function toBuilt(
   style: RunStyle,
   targetKm: number | null,
   label: string,
+  pathPref: PathPref = 'any',
 ): BuiltRoute {
   const styleEval = evaluateStyle(route, style);
+  const pathEval = evaluatePath(route, pathPref);
   const dScore = distanceScore(route.distanceKm, targetKm);
-  let matchScore =
-    targetKm == null
-      ? Math.round(styleEval.score * 100)
-      : Math.round((0.7 * styleEval.score + 0.3 * dScore) * 100);
+
+  // 축별 가중치. 길 성격은 정보가 있을 때만 끼워 넣고, 없으면 나머지 축의
+  // 비중을 그대로 키운다 — 모르는 축을 0점으로 두면 OSRM 폴백 경로가
+  // 이유 없이 밀린다.
+  const parts: { w: number; v: number }[] = [{ w: 0.7, v: styleEval.score }];
+  if (targetKm != null) parts.push({ w: 0.3, v: dScore });
+  // 길 취향은 경사 취향과 같은 무게로 둔다. 둘 다 사용자가 직접 고른 축이고,
+  // 한쪽만 세게 주면 '산책로 위주'를 골라도 순위가 안 움직이거나(0.5) 반대로
+  // 경사 취향이 완전히 무시된다(0.9). 실측으로 0.7 이 두 축이 다 살아 있는 값이다.
+  if (pathEval.score != null) parts.push({ w: 0.7, v: pathEval.score });
+  const totalW = parts.reduce((t, p) => t + p.w, 0);
+  let matchScore = Math.round((parts.reduce((t, p) => t + p.w * p.v, 0) / totalW) * 100);
+
   // 수역 위 의심 구간이 있는 후보는 순위를 크게 내린다.
   // 확신이 아니라 의심이므로 배제하진 않는다 — 깨끗한 후보가 있으면 그쪽이 이긴다.
   if (maxAdjacentGapM(route.coords) > SUSPECT_GAP_M) {
     matchScore = Math.round(matchScore * 0.45);
   }
-  return { route, styleEval, distanceScore: dScore, matchScore, label };
+  return { route, styleEval, pathEval, distanceScore: dScore, matchScore, label };
 }
 
 /**
@@ -99,12 +115,14 @@ async function settleBuilt(
   style: RunStyle,
   targetKm: number | null,
   labels: string[],
+  pathPref: PathPref = 'any',
 ): Promise<BuiltRoute[]> {
   const settled = await Promise.allSettled(jobs);
   const built: BuiltRoute[] = [];
   let lastErr: unknown = null;
   settled.forEach((s, i) => {
-    if (s.status === 'fulfilled') built.push(toBuilt(s.value, style, targetKm, labels[i]));
+    if (s.status === 'fulfilled')
+      built.push(toBuilt(s.value, style, targetKm, labels[i], pathPref));
     else lastErr = s.reason;
   });
   if (built.length === 0) {
@@ -116,6 +134,8 @@ async function settleBuilt(
 export interface PinBuildOptions {
   /** 마지막에 시작점으로 되돌아오는 순환 코스로 만들지 */
   loop?: boolean;
+  /** 길 성격 취향 (산책로 위주 등) */
+  pathPref?: PathPref;
 }
 
 /**
@@ -134,9 +154,7 @@ export async function buildFromPins(
     throw new RoutingError('no_route', '핀을 2개 이상 찍어주세요.');
   }
 
-  const orders: { pts: LatLng[]; label: string }[] = [
-    { pts: waypoints, label: '찍은 순서' },
-  ];
+  const orders: { pts: LatLng[]; label: string }[] = [{ pts: waypoints, label: '찍은 순서' }];
   if (waypoints.length >= 3) {
     orders.push({ pts: nearestNeighborOrder(waypoints), label: '최단 연결' });
   }
@@ -147,6 +165,7 @@ export async function buildFromPins(
     style,
     null,
     orders.map((o) => o.label),
+    opts.pathPref,
   );
   return dedupe(built).sort(byMatchThenDistance);
 }
@@ -156,6 +175,8 @@ export interface DistanceBuildOptions {
   seedBase?: number;
   /** true 면 시작점으로 돌아오지 않는 편도 코스 */
   oneWay?: boolean;
+  /** 길 성격 취향 (산책로 위주 등) */
+  pathPref?: PathPref;
 }
 
 const DIRECTION_NAMES = ['북', '북동', '동', '남동', '남', '남서', '서', '북서'];
@@ -220,6 +241,7 @@ export async function buildFromDistance(
       style,
       targetKm,
       bearings.map(directionLabel),
+      opts.pathPref,
     );
     return dedupe(built).sort(byMatchThenDistance).slice(0, 3);
   }
@@ -234,6 +256,7 @@ export async function buildFromDistance(
     style,
     targetKm,
     seeds.map((_, i) => `코스 ${i + 1}`),
+    opts.pathPref,
   );
   return dedupe(built).sort(byMatchThenDistance).slice(0, 3);
 }
