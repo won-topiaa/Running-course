@@ -267,7 +267,11 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
           pauseRef.current?.();
         }
       },
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 12000 },
+      // maximumAge 는 반드시 0. 1000 으로 두면 브라우저가 최대 1초 묵은 좌표를
+      // 그대로 돌려줘도 되는데, 실제로는 같은 좌표가 여러 틱 반복되어 그 사이
+      // 이동이 통째로 사라진다(그리고 신호가 돌아오는 순간 한 번에 건너뛴다).
+      // 실시간 기록에서는 항상 새 측위만 받는다.
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 },
     );
   }, [beginSession, ingest, sync]);
 

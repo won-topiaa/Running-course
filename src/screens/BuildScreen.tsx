@@ -25,6 +25,7 @@ import {
 import { estimateTimeLabel, formatDistance } from '../lib/format';
 import { fetchGreenShares } from '../lib/greenShare';
 import { wayMixLabel } from '../lib/wayMix';
+import { haversineMeters } from '../lib/geo';
 import type { LatLng } from '../lib/types';
 import type { AppApi } from '../ui/appApi';
 import { HALO, VOLT } from '../ui/theme';
@@ -260,7 +261,16 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setStart([pos.coords.latitude, pos.coords.longitude]);
+        const here: LatLng = [pos.coords.latitude, pos.coords.longitude];
+        setStart(here);
+        // 날씨·미세먼지도 이 위치로 맞춘다. 예전엔 홈 위치가 서울시청에 박혀
+        // 있어서, 부산에서 열든 제주에서 열든 늘 '서울 날씨'가 떴다. 사용자가
+        // 이미 허락한 위치라 새 권한 팝업 없이 정확해진다.
+        // 같은 자리를 다시 누를 때 날씨를 또 부르지 않도록 500m 넘게 움직였을
+        // 때만 갱신한다(홈 위치가 바뀌면 App 이 예보를 다시 받는다).
+        if (haversineMeters(api.settings.homeLocation, here) > 500) {
+          api.setSettings({ ...api.settings, homeLocation: here });
+        }
         reset();
       },
       () => setError('위치 권한이 없어요. 지도를 눌러 시작점을 정해주세요.'),

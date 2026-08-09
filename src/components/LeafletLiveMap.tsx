@@ -66,36 +66,32 @@ export default function LeafletLiveMap({
     >
       <BaseTiles token={mapboxToken} />
 
-      {/* 아직 안 뛴 계획 구간 — 눈금(점선) */}
+      {/* 아직 안 뛴 계획 구간 — 따라갈 눈금(대시) */}
       {plannedPath && plannedPath.length > 1 && (
         <Polyline
           positions={plannedPath as [number, number][]}
           pathOptions={{
             color: MUTED,
-            weight: 6,
-            opacity: 0.45,
-            dashArray: '2 14',
-            lineCap: 'round',
+            weight: 7,
+            opacity: 0.75,
+            dashArray: '12 10',
+            lineCap: 'butt',
           }}
         />
       )}
       {/* 지나온 계획 구간 — 경사 색상으로 채워진다 */}
       {traveled?.map((g, i) => (
         <Polyline
-          key={`tv${i}`}
-          positions={g.positions as [number, number][]}
-          pathOptions={{ color: '#fff', weight: 9, opacity: 0.9 }}
-        />
-      ))}
-      {traveled?.map((g, i) => (
-        <Polyline
           key={`tvc${i}`}
           positions={g.positions as [number, number][]}
-          pathOptions={{ color: g.color, weight: 6, opacity: 1 }}
+          pathOptions={{ color: g.color, weight: 7, opacity: 0.5 }}
         />
       ))}
 
-      {!plannedPath && coords.length > 1 && (
+      {/* 내가 실제로 지나온 길 — 계획 경로가 있어도 반드시 그린다.
+          예전엔 `!plannedPath` 조건이 걸려 있어, 코스를 따라 뛰는 내내
+          '내가 실제로 어디로 갔는지'가 화면에 아예 없었다. */}
+      {coords.length > 1 && (
         <>
           <Polyline
             positions={coords as [number, number][]}

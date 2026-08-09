@@ -157,6 +157,40 @@ check(
   '앞뒤 구멍은 유일한 정상값으로',
 );
 
+// ── 고도 잡음 ───────────────────────────────────────────────────────────────
+// 휴대폰 GPS 고도는 ±수십 m 씩 튄다. 그대로 더하면 0.39km 를 뛰고 '총 오르막
+// 144m · 최대 경사 35%' 같은 서로 모순된 숫자가 나온다 — 실측 기록에 그대로
+// 찍혔다(상승은 안 자르고 경사만 잘랐기 때문).
+console.log('\n[고도] GPS 고도 잡음 방어');
+const M_PER_DEG = (2 * Math.PI * 6371008.8) / 360;
+const track = (n, stepM) =>
+  Array.from({ length: n }, (_, i) => [37.5 + (stepM * i) / M_PER_DEG, 127.0]);
+
+// 평지를 뛰었는데 고도만 ±1m 씩 떨리는 경우 — 상승으로 세면 안 된다
+const flat = track(60, 20); // 20m 간격 1180m
+const jitter = flat.map((_, i) => 50 + (i % 2 ? 1 : -1));
+const flatR = buildResult(flat, jitter, 'gps', []);
+console.log(`    평지 1.18km · 고도 ±1m 떨림 → 상승 ${flatR.ascentM}m`);
+check(flatR.ascentM <= 3, `잔떨림은 상승으로 안 센다 (${flatR.ascentM}m)`);
+
+// 상승은 언제나 '보고한 최대 경사'와 물리적으로 앞뒤가 맞아야 한다.
+// (실측 버그: 0.39km 에 상승 144m = 평균 37% 인데 최대 경사는 35% 로 표기)
+const steep = track(5, 100); // 400m
+const crazy = [52, 90, 130, 170, 196]; // 400m 에 144m 상승 = 36%
+const steepR = buildResult(steep, crazy, 'gps', []);
+const impliedPct = (steepR.ascentM / (steepR.distanceKm * 1000)) * 100;
+console.log(
+  `    400m 에 고도 52→196m 입력 → 상승 ${steepR.ascentM}m (평균 ${impliedPct.toFixed(1)}%), 최대 경사 ${steepR.maxGradePct}%`,
+);
+check(
+  impliedPct <= steepR.maxGradePct + 0.5,
+  `상승이 최대 경사와 모순되지 않는다 (평균 ${impliedPct.toFixed(1)}% ≤ 최대 ${steepR.maxGradePct}%)`,
+);
+check(
+  steepR.elevations.every((v, i, a) => i === 0 || Math.abs(v - a[i - 1]) <= 35.001),
+  '차트 고도도 실현 가능한 구간 변화만 담는다',
+);
+
 // ── 통계 ────────────────────────────────────────────────────────────────────
 console.log('\n[통계] 마이 페이지 숫자');
 const day = 86400_000;

@@ -175,4 +175,30 @@ if (failures.length) {
   failures.forEach((f) => console.log('  ❌ ' + f));
   process.exit(1);
 }
+
+// ── 약한 신호 ───────────────────────────────────────────────────────────────
+// 실측(상도동 아파트 단지, 4분 러닝)에서 오차 40~60m 가 이어지자 모든 측위가
+// 버려져 점 몇 개짜리 직선 0.39km 로 기록되고 페이스가 9'59"/km 로 나왔다.
+// 문턱을 올렸으니 (1) 그 상황에서 기록이 이어지는지, 그리고 무엇보다
+// (2) 문턱을 올려도 '서 있을 때 가짜 거리'가 안 생기는지를 같이 잰다.
+console.log("\n [약한 신호] 오차 40~50m 가 이어지는 도심 (실측에서 0.39km 로 깎인 조건)");
+const weakFails = [];
+
+const weakStand = scenario({ name: '제자리 · 오차45m 지터σ22m', secs: 180, speedMs: 0, sigma: 22, acc: 45 });
+if (weakStand.dist > 80) weakFails.push(`약한 신호로 서 있는데 가짜 거리 ${weakStand.dist.toFixed(0)}m (한도 80m)`);
+else console.log(`  ✅ 오차가 커도 서 있으면 거리가 안 쌓인다 (${weakStand.dist.toFixed(0)}m)`);
+
+const weakStand2 = scenario({ name: '제자리 · 오차45m 도플러 없음', secs: 180, speedMs: 0, sigma: 22, acc: 45, withDoppler: false });
+if (weakStand2.dist > 80) weakFails.push(`도플러 없는 기기가 약한 신호로 서 있는데 ${weakStand2.dist.toFixed(0)}m (한도 80m)`);
+else console.log(`  ✅ 도플러 없는 기기도 마찬가지 (${weakStand2.dist.toFixed(0)}m)`);
+
+// 사용자 실측과 같은 조건: 4분 가벼운 조깅(2.7m/s ≈ 6'10"/km)을 오차 45m 로
+const weakRun = scenario({ name: '가벼운 조깅 2.7m/s · 4분 · 오차45m', secs: 234, speedMs: 2.7, sigma: 22, acc: 45, turnEvery: 60 });
+if (Math.abs(weakRun.err) > 25) weakFails.push(`약한 신호 러닝 거리 오차 ${weakRun.err.toFixed(1)}% (한도 ±25%)`);
+else console.log(`  ✅ 약한 신호에서도 거리가 쌓인다 (오차 ${weakRun.err >= 0 ? '+' : ''}${weakRun.err.toFixed(1)}%)`);
+
+if (weakFails.length) {
+  weakFails.forEach((f) => console.log('  ❌ ' + f));
+  process.exit(1);
+}
 console.log('');

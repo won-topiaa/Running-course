@@ -45,7 +45,8 @@ export default function KakaoLiveMap({
     try {
       const cur = coords.length ? coords[coords.length - 1] : null;
 
-      // 계획 경로: 남은 구간(점선) + 지나온 구간(경사 색상) 매번 다시 그린다
+      // 계획 경로: 아직 안 지난 구간은 '따라갈 눈금'(대시), 지나온 구간은 경사
+      // 색상 밑칠. 그 위에 내가 실제로 뛴 트랙을 실선으로 얹는다.
       if (plannedPath || traveled) {
         planRef.current.forEach((o) => o.setMap(null));
         planRef.current = [];
@@ -53,10 +54,11 @@ export default function KakaoLiveMap({
         if (plannedPath && plannedPath.length > 1) {
           const pl = new kakao.maps.Polyline({
             path: toPath(plannedPath),
-            strokeWeight: 6,
+            strokeWeight: 7,
             strokeColor: MUTED,
-            strokeOpacity: 0.45,
-            strokeStyle: 'dot',
+            strokeOpacity: 0.75,
+            strokeStyle: 'shortdash',
+            zIndex: 1,
           });
           pl.setMap(map);
           planRef.current.push(pl);
@@ -64,22 +66,26 @@ export default function KakaoLiveMap({
         for (const g of traveled ?? []) {
           const pl = new kakao.maps.Polyline({
             path: toPath(g.positions),
-            strokeWeight: 6,
+            strokeWeight: 7,
             strokeColor: g.color,
-            strokeOpacity: 1,
+            strokeOpacity: 0.5,
+            zIndex: 2,
           });
           pl.setMap(map);
           planRef.current.push(pl);
         }
       }
 
-      if (!plannedPath && coords.length > 1) {
+      // 내가 실제로 지나온 길. 예전엔 계획 경로가 있으면 이 줄을 통째로 건너뛰어,
+      // 코스를 따라 뛰는 내내 '내가 실제로 어디로 갔는지'가 화면에 없었다.
+      if (coords.length > 1) {
         const path = coords.map((p: LatLng) => new kakao.maps.LatLng(p[0], p[1]));
         if (!lineRef.current) {
           lineRef.current = new kakao.maps.Polyline({
-            strokeWeight: 6,
+            strokeWeight: 5,
             strokeColor: VOLT,
             strokeOpacity: 1,
+            zIndex: 3,
           });
           lineRef.current.setMap(map);
         }

@@ -111,6 +111,50 @@ function smooth(values: number[]): number[] {
 const GRADE_WINDOW_M = 25;
 /** 사람이 뛸 수 있는 현실적인 경사 상한(%) — 이를 넘으면 데이터 오류로 본다 */
 const MAX_REAL_GRADE = 35;
+/**
+ * 고도 잡음 문턱(m). 이보다 작은 오르내림은 세지 않는다.
+ * 워치·러닝앱이 공통으로 쓰는 방식이다 — 없으면 평지를 뛰어도 측정 오차가
+ * 전부 '상승'으로 쌓인다(잔떨림의 양수 쪽만 더해지므로 항상 부풀려진다).
+ */
+const ELEV_NOISE_M = 3;
+
+/**
+ * 누적 상승·하강.
+ *
+ * 두 겹으로 거른다.
+ *  1) 구간 길이로 물리적으로 불가능한 고도차를 잘라낸다. 휴대폰 GPS 고도는
+ *     ±수십 m 씩 튀는데 그대로 더하면 0.39km 를 뛰고 '총 오르막 144m'
+ *     같은 숫자가 나온다 — 실측 기록에 그대로 찍혔다. 같은 화면의 '최대 경사'는
+ *     이미 35% 로 잘라 쓰고 있어서 두 숫자가 서로 모순이었다.
+ *  2) 문턱 미만의 잔떨림은 무시한다.
+ */
+function climbProfile(
+  elev: number[],
+  segments: RouteSegment[],
+): { profile: number[]; ascent: number; descent: number } {
+  if (elev.length < 2) return { profile: elev.slice(), ascent: 0, descent: 0 };
+  const profile: number[] = [elev[0]];
+  for (let i = 1; i < elev.length; i++) {
+    const segLen = segments[i - 1]?.lengthM ?? 0;
+    const maxDz = Math.max(1, (MAX_REAL_GRADE / 100) * segLen);
+    const dz = Math.max(-maxDz, Math.min(maxDz, elev[i] - elev[i - 1]));
+    profile.push(profile[i - 1] + dz);
+  }
+  let ascent = 0;
+  let descent = 0;
+  let ref = profile[0];
+  for (let i = 1; i < profile.length; i++) {
+    const d = profile[i] - ref;
+    if (d >= ELEV_NOISE_M) {
+      ascent += d;
+      ref = profile[i];
+    } else if (d <= -ELEV_NOISE_M) {
+      descent += -d;
+      ref = profile[i];
+    }
+  }
+  return { profile, ascent, descent };
+}
 
 export function buildResult(
   coords: LatLng[],
@@ -130,20 +174,19 @@ export function buildResult(
   for (let i = 1; i < norm.length; i++) if (Number.isNaN(norm[i])) norm[i] = norm[i - 1];
   for (let i = norm.length - 2; i >= 0; i--) if (Number.isNaN(norm[i])) norm[i] = norm[i + 1];
   // 전부 구멍이면(고도를 아예 못 받음) 0 평지로 — 경사 없음으로 그려진다
-  const elevations = smooth(norm.map((v) => (Number.isNaN(v) ? 0 : v)));
+  const smoothed = smooth(norm.map((v) => (Number.isNaN(v) ? 0 : v)));
   let distance = 0;
-  let ascent = 0;
-  let descent = 0;
   const segments: RouteSegment[] = [];
 
   for (let i = 1; i < coords.length; i++) {
     const segLen = haversineMeters(coords[i - 1], coords[i]);
     distance += segLen;
-    const dz = elevations[i] - elevations[i - 1];
-    if (dz > 0) ascent += dz;
-    else descent += -dz;
     segments.push({ gradePct: 0, lengthM: segLen }); // 경사는 아래에서 창(window)으로 채운다
   }
+
+  // 고도 프로파일도 잘라낸 쪽을 쓴다 — 차트·상승·최대경사가 서로 어긋나면
+  // 어느 숫자를 믿어야 할지 알 수 없다.
+  const { profile: elevations, ascent, descent } = climbProfile(smoothed, segments);
 
   // 경사는 구간 하나로 재면 짧은 구간에서 수백 %가 나온다(고도 오차 ÷ 몇 m).
   // GRADE_WINDOW_M 이상 모인 묶음의 고도차로 계산해 묶음 전체에 같은 경사를 부여한다.

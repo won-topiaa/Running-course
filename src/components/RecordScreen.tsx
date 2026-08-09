@@ -15,6 +15,7 @@ import { Pause, Play, Square, X, Zap } from 'lucide-react';
 import LiveMap from './LiveMap';
 import RouteSheet from './RouteSheet';
 import { savedFromView } from '../lib/savedRoutes';
+import { elevationsForPath } from '../lib/elevation';
 import { useRunRecorder } from '../lib/useRunRecorder';
 import { wakeLockSupported } from '../lib/wakeLock';
 import { buildResult } from '../lib/routing';
@@ -23,7 +24,29 @@ import { coloredSegments } from '../lib/routeColor';
 import { advanceProgress, progressRatio, remainingMeters } from '../lib/routeProgress';
 import { kmSplits, type Split } from '../lib/splits';
 import type { RouteResult } from '../lib/routing';
+import type { LatLng } from '../lib/types';
 import type { AppApi, RouteView } from '../ui/appApi';
+
+/**
+ * 기록한 트랙의 실제 지형 고도.
+ *
+ * 휴대폰이 주는 GPS 고도(coords.altitude)는 ±수십 m 씩 튄다. 그대로 누적하면
+ * 상승 고도가 통째로 거짓이 된다 — 실측 기록에 0.39km 를 뛰고 '총 오르막 144m,
+ * 최대 경사 35%(상한)'가 찍혔다. 계획 경로가 쓰는 것과 같은 지형 고도(DEM)로
+ * 바꿔 단다. 종료를 누른 사용자를 오래 붙잡을 수 없으니 잠깐만 기다리고,
+ * 안 오면 원래 값을 그대로 둔다(기록이 사라지는 것보다 낫다).
+ */
+async function realElevations(coords: LatLng[]): Promise<number[] | null> {
+  try {
+    const got = await Promise.race([
+      elevationsForPath(coords),
+      new Promise<null>((r) => setTimeout(() => r(null), 4000)),
+    ]);
+    return got && got.length === coords.length && got.every(Number.isFinite) ? got : null;
+  } catch {
+    return null;
+  }
+}
 
 function runName(): string {
   const d = new Date();
@@ -47,6 +70,9 @@ export default function RecordScreen({
 
   // 종료 시 자동 저장된 기록 id — 마이 통계의 데이터 원천이 된다
   const autoSaved = useRef<string | null>(null);
+  // 종료할 때 받아 온 실제 지형 고도 (GPS 고도 대신 쓴다)
+  const [demElev, setDemElev] = useState<number[] | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // 계획 경로를 어디까지 지났는지 (뒤로 가지 않는 인덱스).
   // 렌더 도중에 ref 를 고치면 StrictMode 의 이중 호출·중단된 렌더에서 값이
@@ -85,8 +111,9 @@ export default function RecordScreen({
    * 좌표를 다시 합산하면 GPS 필터가 걸러낸 구간(정지 중 지터, 일시정지하고
    * 이동한 거리)이 되살아나서, 뛰는 동안 본 거리와 저장된 거리가 달라진다.
    */
-  const buildRecorded = (): RouteResult => {
-    const r = buildResult(rec.coords, rec.elevations, 'offline', [rec.coords[0]]);
+  const buildRecorded = (elevOverride?: number[] | null): RouteResult => {
+    const elev = elevOverride ?? demElev ?? rec.elevations;
+    const r = buildResult(rec.coords, elev, 'offline', [rec.coords[0]]);
     return rec.distanceKm > 0 ? { ...r, distanceKm: rec.distanceKm } : r;
   };
 
@@ -153,10 +180,18 @@ export default function RecordScreen({
   const keepAwake = wakeLockSupported();
   const live = rec.status === 'recording' || rec.status === 'paused';
 
-  const finish = () => {
+  const finish = async () => {
+    if (saving) return;
+    setSaving(true);
+    // GPS 고도 대신 실제 지형 고도로 바꿔 단다 (없으면 그대로 진행)
+    let dem: number[] | null = null;
+    if (!rec.demo && rec.coords.length > 1) {
+      dem = await realElevations(rec.coords);
+      if (dem) setDemElev(dem);
+    }
     // 데모가 아니면 자동으로 내 코스에 저장 — 마이 통계가 여기서 나온다
     if (!rec.demo && rec.coords.length > 1 && !autoSaved.current) {
-      const route = buildRecorded();
+      const route = buildRecorded(dem);
       const saved = savedFromView({
         name,
         route,
@@ -168,6 +203,7 @@ export default function RecordScreen({
       autoSaved.current = saved.id;
     }
     rec.stop();
+    setSaving(false);
   };
 
   return (
@@ -292,9 +328,10 @@ export default function RecordScreen({
               )}
               <button
                 onClick={finish}
-                className="flex h-[68px] flex-1 items-center justify-center gap-2 rounded-full bg-white text-[15px] font-black uppercase tracking-[0.08em] text-ink active:scale-[0.98]"
+                disabled={saving}
+                className="flex h-[68px] flex-1 items-center justify-center gap-2 rounded-full bg-white text-[15px] font-black uppercase tracking-[0.08em] text-ink active:scale-[0.98] disabled:opacity-70"
               >
-                <Square size={17} fill="currentColor" /> 종료 · 저장
+                <Square size={17} fill="currentColor" /> {saving ? '저장 중…' : '종료 · 저장'}
               </button>
             </div>
 
