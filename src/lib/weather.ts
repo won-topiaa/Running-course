@@ -229,8 +229,15 @@ export function sampleConditions(): RunConditions {
   );
 }
 
-/** Open-Meteo hourly 블록 → 지금 이후 시간대 목록 */
-function parseHourly(h: unknown): HourlyPoint[] {
+/**
+ * Open-Meteo hourly 블록 → 지금 이후 시간대 목록.
+ *
+ * time 은 'YYYY-MM-DDTHH:mm' 로 타임존이 없다. 그대로 new Date 에 넣으면
+ * '기기의' 로컬 시각으로 해석되는데, timezone=auto 로 받은 값은 '그 지역의'
+ * 로컬 시각이다. 둘이 다르면(해외에서 서울 코스를 볼 때) 몇 시간이 통째로
+ * 어긋난다. 응답의 utc_offset_seconds 로 절대 시각을 복원해서 쓴다.
+ */
+function parseHourly(h: unknown, utcOffsetSec = 0): HourlyPoint[] {
   const o = h as
     | {
         time?: string[];
@@ -243,15 +250,16 @@ function parseHourly(h: unknown): HourlyPoint[] {
   const now = Date.now();
   const out: HourlyPoint[] = [];
   o.time.forEach((t, i) => {
-    // 'YYYY-MM-DDTHH:mm' 은 타임존이 없어 로컬로 해석된다 — timezone=auto 로
-    // 받은 값이 사용자 로컬과 같다는 전제. 다른 지역 날씨를 볼 일은 없다.
-    const at = new Date(t).getTime();
+    // 지역 로컬 시각 문자열 → UTC 로 읽은 뒤 오프셋만큼 되돌려 절대 시각으로
+    // 'YYYY-MM-DDTHH:mm' → 'YYYY-MM-DDTHH:mm:00Z' 로 UTC 로 못박아 읽고 오프셋을 뺀다
+    const at = Date.parse(t.length === 16 ? `${t}:00Z` : `${t}Z`) - utcOffsetSec * 1000;
     if (!Number.isFinite(at)) return;
     const inHours = Math.round((at - now) / 3_600_000);
     const feels = o.apparent_temperature?.[i];
     if (typeof feels !== 'number') return;
     out.push({
-      hour: new Date(at).getHours(),
+      // 표시용 시각은 '그 지역의' 시(時) — 문자열에서 그대로 읽는다
+      hour: Number(t.slice(11, 13)),
       inHours,
       feelsC: feels,
       uvIndex: o.uv_index?.[i] ?? 0,
@@ -299,7 +307,7 @@ export async function getConditions(loc: LatLng): Promise<RunConditions> {
         uvIndex: cw.uv_index ?? 0,
       },
       'live',
-      parseHourly(wx.hourly),
+      parseHourly(wx.hourly, wx.utc_offset_seconds ?? 0),
     );
   } catch {
     return sampleConditions();

@@ -6,17 +6,10 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// node 의 fetch 는 HTTPS_PROXY 를 스스로 보지 않는다 — 프록시 뒤에서 실호출을
-// 하려면 명시적으로 붙여야 한다(없으면 그냥 직접 연결).
+// node 의 내장 fetch 는 프록시 환경변수를 스스로 보지 않는다. 프록시 뒤에서
+// 실호출까지 확인하려면 NODE_USE_ENV_PROXY=1 을 붙여 실행한다(node 22.21+).
+//   NODE_USE_ENV_PROXY=1 npm run check:local
 const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
-if (proxy) {
-  try {
-    const { setGlobalDispatcher, ProxyAgent } = await import('undici');
-    setGlobalDispatcher(new ProxyAgent(proxy));
-  } catch {
-    /* undici 가 없으면 그대로 진행 — 실호출은 샘플 폴백으로 건너뛴다 */
-  }
-}
 
 const dir = mkdtempSync(join(tmpdir(), 'lf-'));
 const bundle = async (entry, name) => {
@@ -119,10 +112,74 @@ check(
   '샘플 폴백도 새 필드를 채운다 (선선 → 조언 없음)',
 );
 
+// 시간대 처리 — 응답의 시각 문자열은 '그 지역'의 로컬 시각이다. 기기 시간대가
+// 다르면(해외에서 서울 코스를 볼 때) 몇 시간이 통째로 어긋난다. 응답을 고정해
+// 두고, 이 컨테이너(UTC)에서도 KST 기준으로 맞게 읽는지 본다.
+{
+  const realFetch = globalThis.fetch;
+  const OFFSET = 32400; // KST +9h
+  const now = Date.now();
+  const pad = (n) => String(n).padStart(2, '0');
+  // '지역 로컬' 시각 문자열을 만든다 (UTC + 9h)
+  const localStr = (msFromNow) => {
+    const d = new Date(now + msFromNow + OFFSET * 1000);
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:00`;
+  };
+  const times = [0, 1, 2, 3, 4, 5].map((h) => localStr(h * 3_600_000));
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('air-quality'))
+      return { ok: true, json: async () => ({ current: { pm2_5: 11, pm10: 20 } }) };
+    return {
+      ok: true,
+      json: async () => ({
+        current: {
+          temperature_2m: 34,
+          apparent_temperature: 36,
+          relative_humidity_2m: 70,
+          weather_code: 0,
+          wind_speed_10m: 6,
+          precipitation: 0,
+          uv_index: 9,
+        },
+        utc_offset_seconds: OFFSET,
+        hourly: {
+          time: times,
+          apparent_temperature: [36, 35, 34, 30, 29, 28],
+          uv_index: [9, 7, 5, 2, 0, 0],
+          precipitation_probability: [10, 10, 10, 10, 10, 10],
+        },
+      }),
+    };
+  };
+  const tz = await getConditions([37.5665, 126.978]);
+  globalThis.fetch = realFetch;
+  // 가장 시원한 시각(마지막, 체감 28°)을 골라야 한다
+  const expectHour = Number(times[5].slice(11, 13));
+  console.log(
+    `    고정 응답(KST +9, 기기는 UTC): ${tz.heatRisk} · 추천 ${tz.betterHour?.hour}시 (${tz.betterHour?.inHours}시간 뒤) 체감 ${tz.betterHour?.feelsC}°`,
+  );
+  check(tz.heatRisk === 'danger', '체감 36°·UV 9 → 위험');
+  check(
+    tz.betterHour?.hour === expectHour,
+    `추천 시각을 지역 시각으로 표시 (${tz.betterHour?.hour}시 = ${expectHour}시)`,
+  );
+  // 오프셋을 안 빼면 5+9=14시간 뒤가 되어 12시간 창을 벗어난다 — 여기서 걸린다
+  check(
+    tz.betterHour?.inHours === 5,
+    `기기 시간대(UTC)와 지역(KST)이 달라도 '5시간 뒤'로 정확 (${tz.betterHour?.inHours})`,
+  );
+  check(tz.betterHour?.feelsC === 28, '후보 중 가장 시원한 시각을 고른다');
+  check(/지금은 무리예요/.test(tz.advice ?? ''), '위험 문구 + 추천 시각이 한 줄로');
+}
+
 // 실제 Open-Meteo 호출 (키 불필요). 네트워크가 막히면 건너뛴다.
 const seoul = await getConditions([37.5665, 126.978]);
 if (seoul.source === 'sample') {
-  console.log('  ⏭  네트워크 차단 — 실호출 검증 생략');
+  console.log(
+    proxy && !process.env.NODE_USE_ENV_PROXY
+      ? '  ⏭  실호출 생략 — 프록시 뒤라면 NODE_USE_ENV_PROXY=1 을 붙여 다시 실행하세요'
+      : '  ⏭  네트워크에 못 나가 실호출 검증 생략',
+  );
 } else {
   console.log(
     `    지금 체감 ${seoul.feelsC}° · 자외선 ${seoul.uvIndex} · 미세먼지 ${seoul.aqiLabel} → ${seoul.heatRisk}`,
@@ -147,6 +204,92 @@ if (seoul.source === 'sample') {
     '추천 시간대는 1~12시간 내',
   );
 }
+
+// ── 4) 숲길 비율 (그늘로가 건물 그림자로 푸는 문제의 근사) ─────────────────
+console.log('\n[숲길] Overpass 폴리곤 판정');
+const { parseGreenPolys, greenShareOf, sampleAlong } = await bundle(
+  'src/lib/greenShare.ts',
+  'g.mjs',
+);
+
+// 서울시청 근처에 한 변 ~440m 짜리 정사각 '공원'을 하나 놓는다
+const LA = 37.5665;
+const LN = 126.978;
+const D = 0.002; // 위도 0.002° ≈ 222m
+const square = (cla, cln, d) => [
+  { lat: cla - d, lon: cln - d },
+  { lat: cla - d, lon: cln + d },
+  { lat: cla + d, lon: cln + d },
+  { lat: cla + d, lon: cln - d },
+  { lat: cla - d, lon: cln - d },
+];
+const polys = parseGreenPolys({
+  elements: [{ type: 'way', tags: { leisure: 'park' }, geometry: square(LA, LN, D) }],
+});
+check(polys.length === 1, 'way 지오메트리 → 폴리곤 1개');
+
+// 공원을 완전히 가로지르는 직선(동→서). 양 끝은 공원 밖.
+const across = [
+  [LA, LN - D * 3],
+  [LA, LN + D * 3],
+];
+const acrossPct = greenShareOf(across, polys);
+console.log(`    공원 폭의 3배를 가로지름 → 숲길 ${acrossPct}% (기대 ≈33%)`);
+check(Math.abs(acrossPct - 33) <= 6, `가로지르는 비율이 기하학과 맞음 (${acrossPct}%)`);
+
+// 공원 안에만 있는 경로
+const insideRoute = [
+  [LA - D * 0.5, LN - D * 0.5],
+  [LA + D * 0.5, LN + D * 0.5],
+];
+check(greenShareOf(insideRoute, polys) === 100, '공원 안 경로는 100%');
+
+// 공원에서 멀리 떨어진 경로
+const outside = [
+  [LA + D * 5, LN + D * 5],
+  [LA + D * 6, LN + D * 6],
+];
+check(greenShareOf(outside, polys) === 0, '공원 밖 경로는 0%');
+check(greenShareOf(across, []) === 0, '폴리곤이 없으면 0%');
+
+// relation(멤버 링) 파싱 + inner(구멍) 무시
+const rel = parseGreenPolys({
+  elements: [
+    {
+      type: 'relation',
+      members: [
+        { role: 'outer', geometry: square(LA, LN, D) },
+        { role: 'inner', geometry: square(LA, LN, D * 0.2) },
+      ],
+    },
+  ],
+});
+check(rel.length === 1, 'relation 은 outer 링만 폴리곤으로 (inner 무시)');
+
+// 샘플링: 간격과 상한
+const long = [
+  [LA, LN],
+  [LA + 0.09, LN], // 약 10km
+];
+const pts = sampleAlong(long, 40);
+console.log(`    10km 경로 → 샘플 ${pts.length}개`);
+check(pts.length <= 260, `샘플 개수 상한 지킴 (${pts.length}개)`);
+check(pts.length >= 200, '10km 를 충분히 촘촘하게 찍음');
+const short = sampleAlong(
+  [
+    [LA, LN],
+    [LA + 0.0009, LN],
+  ],
+  40,
+); // 약 100m
+console.log(`    100m 경로 → 샘플 ${short.length}개 (40m 간격)`);
+check(short.length >= 3 && short.length <= 5, `짧은 경로는 40m 간격 유지 (${short.length}개)`);
+
+check(parseGreenPolys(null).length === 0, '깨진 응답은 빈 목록');
+check(
+  parseGreenPolys({ elements: [{ type: 'way', geometry: [{ lat: 1, lon: 1 }] }] }).length === 0,
+  '점 3개 미만은 폴리곤이 아님',
+);
 
 console.log(`\n통과 ${ok.length} / 실패 ${bad.length}`);
 if (bad.length) process.exit(1);

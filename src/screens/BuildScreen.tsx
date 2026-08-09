@@ -22,6 +22,7 @@ import {
   type RunStyle,
 } from '../lib/routeStyle';
 import { estimateTimeLabel, formatDistance } from '../lib/format';
+import { fetchGreenShares } from '../lib/greenShare';
 import { wayMixLabel } from '../lib/wayMix';
 import type { LatLng } from '../lib/types';
 import type { AppApi } from '../ui/appApi';
@@ -209,6 +210,22 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     },
     [],
   );
+
+  // 숲길 비율 — 코스가 나온 뒤 뒤늦게 채워지는 부가 정보(greenShare.ts).
+  // 순위에는 안 넣는다. 결과가 뜬 다음 도착하는 값이라 여기서 재정렬하면
+  // 사용자가 카드를 고르는 중에 순서가 바뀐다.
+  const [greenPct, setGreenPct] = useState<(number | null)[]>([]);
+  useEffect(() => {
+    setGreenPct([]);
+    if (!results || results.length === 0) return;
+    let alive = true;
+    void fetchGreenShares(results.map((r) => r.route.coords)).then((pcts) => {
+      if (alive) setGreenPct(pcts);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [results]);
 
   // 접힌 상태에서도 남길 한 줄용 고도 범위
   const elevRange = useMemo(() => {
@@ -676,6 +693,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                         <CompareCard
                           r={r}
                           selected={i === selIdx}
+                          greenPct={greenPct[i] ?? null}
                           paceSec={api.settings.paceSecPerKm}
                           onSelect={() => {
                             setSelIdx(i);
@@ -1034,11 +1052,14 @@ function CompareCard({
   r,
   selected,
   paceSec,
+  greenPct,
   onSelect,
 }: {
   r: BuiltRoute;
   selected: boolean;
   paceSec: number;
+  /** 숲길 비율(%) — 아직 안 왔거나 못 구했으면 null */
+  greenPct: number | null;
   onSelect: () => void;
 }) {
   const { route, matchScore } = r;
@@ -1077,10 +1098,17 @@ function CompareCard({
           {formatDistance(route.distanceKm)} · {estimateTimeLabel(route.distanceKm, paceSec)} · 최대{' '}
           {route.maxGradePct}%
         </span>
-        {/* 길 성격 — ORS 경로에만 있다. 없으면 줄 자체를 안 만든다. */}
-        {route.way && (
+        {/* 길 성격 + 숲길 비율. 둘 다 없으면 줄 자체를 안 만든다 —
+            모르는 값을 0% 로 적으면 거짓말이 된다. */}
+        {(route.way || greenPct != null) && (
           <span className="mt-0.5 block truncate text-[11px] text-espresso-soft">
-            {wayMixLabel(route.way)}
+            {route.way && wayMixLabel(route.way)}
+            {route.way && greenPct != null && ' · '}
+            {greenPct != null && (
+              <span className={greenPct >= 40 ? 'font-bold text-sage-600' : ''}>
+                🌳 숲길 {greenPct}%
+              </span>
+            )}
           </span>
         )}
       </span>
