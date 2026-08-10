@@ -16,6 +16,7 @@ import LiveMap from './LiveMap';
 import RouteSheet from './RouteSheet';
 import { savedFromView } from '../lib/savedRoutes';
 import { elevationsForPath } from '../lib/elevation';
+import { clearInProgress, loadInProgress, saveInProgress } from '../lib/runRecovery';
 import { useRunRecorder } from '../lib/useRunRecorder';
 import { wakeLockSupported } from '../lib/wakeLock';
 import { buildResult } from '../lib/routing';
@@ -73,6 +74,43 @@ export default function RecordScreen({
   // 종료할 때 받아 온 실제 지형 고도 (GPS 고도 대신 쓴다)
   const [demElev, setDemElev] = useState<number[] | null>(null);
   const [saving, setSaving] = useState(false);
+  // 지난번에 저장 못 하고 끊긴 기록 (화면 꺼짐·앱 종료 등)
+  const [recovered, setRecovered] = useState(() => loadInProgress());
+
+  // ── 진행 중 기록 안전망 ────────────────────────────────────
+  // 웹앱은 화면이 꺼지면 브라우저가 탭을 얼리고, 메모리가 부족하면 종료한다
+  // (네이티브처럼 백그라운드에서 GPS 를 계속 받을 권한이 웹에는 없다).
+  // 그 순간 기록이 통째로 사라지지 않도록 주기적으로, 그리고 화면이 가려지는
+  // 바로 그 순간에 저장해 둔다 — 탭이 죽기 직전 남길 수 있는 마지막 기회다.
+  const recRef = useRef(rec);
+  recRef.current = rec;
+  useEffect(() => {
+    if (rec.status !== 'recording' || rec.demo) return;
+    const snapshot = () => {
+      const r = recRef.current;
+      saveInProgress({
+        name,
+        coords: r.coords,
+        elevations: r.elevations,
+        times: r.times,
+        activeTimes: r.activeTimes,
+        cumDist: r.cumDist,
+        distanceKm: r.distanceKm,
+        elapsedSec: r.elapsedSec,
+      });
+    };
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') snapshot();
+    };
+    const t = setInterval(snapshot, 10_000);
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', snapshot);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', snapshot);
+    };
+  }, [rec.status, rec.demo, name]);
 
   // 계획 경로를 어디까지 지났는지 (뒤로 가지 않는 인덱스).
   // 렌더 도중에 ref 를 고치면 StrictMode 의 이중 호출·중단된 렌더에서 값이
@@ -186,6 +224,26 @@ export default function RecordScreen({
   // 유지하며 '잡는 중'을 보여주고 데모 대안을 계속 노출한다.
   const acquiring = rec.status === 'recording' && rec.coords.length === 0;
 
+  /** 끊긴 기록을 내 코스에 저장한다 (요약을 열지 않고 한 번에 — 이미 지난 일이다) */
+  const recoverRun = () => {
+    const r = recovered;
+    if (!r) return;
+    const route = buildResult(r.coords, r.elevations, 'offline', [r.coords[0]]);
+    api.addSavedRoute(
+      savedFromView({
+        name: r.name,
+        route: r.distanceKm > 0 ? { ...route, distanceKm: r.distanceKm } : route,
+        kind: 'recorded',
+        source: 'gps',
+        durationSec: r.elapsedSec,
+      }),
+    );
+    clearInProgress();
+    setRecovered(null);
+    api.nav('saved');
+    onClose();
+  };
+
   const finish = async () => {
     if (saving) return;
     setSaving(true);
@@ -217,6 +275,7 @@ export default function RecordScreen({
     } finally {
       // 무슨 일이 있어도 기록은 끝내고 요약으로 넘어간다. 여기서 멈추면
       // 방금 뛴 기록을 손에 쥔 채 화면이 굳는다.
+      clearInProgress(); // 정상 종료했으니 안전망은 비운다
       rec.stop();
       setSaving(false);
     }
@@ -260,7 +319,18 @@ export default function RecordScreen({
       {/* 지표 · 컨트롤 */}
       <div className="flex flex-1 flex-col px-6 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] pt-2">
         {!live || acquiring ? (
-          <StartPanel rec={rec} planned={planned} acquiring={acquiring} />
+          <StartPanel
+            rec={rec}
+            planned={planned}
+            acquiring={acquiring}
+            onStart={rec.start}
+            recovered={recovered}
+            onRecover={recoverRun}
+            onDiscard={() => {
+              clearInProgress();
+              setRecovered(null);
+            }}
+          />
         ) : (
           <>
             {/* 거리 — 이 화면의 주인공 */}
@@ -374,14 +444,50 @@ function StartPanel({
   rec,
   planned,
   acquiring = false,
+  onStart,
+  recovered,
+  onRecover,
+  onDiscard,
 }: {
   rec: ReturnType<typeof useRunRecorder>;
   planned?: { name: string; route: RouteResult } | null;
   /** START 를 눌렀지만 아직 위치를 못 잡은 중 — 스피너 + 취소로 바꾼다 */
   acquiring?: boolean;
+  onStart: () => void;
+  /** 지난번에 저장 못 하고 끊긴 기록 (화면 꺼짐·앱 종료) */
+  recovered: { name: string; distanceKm: number; elapsedSec: number } | null;
+  onRecover: () => void;
+  onDiscard: () => void;
 }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center text-center">
+      {/* 저장 못 하고 끊긴 기록 — 화면이 꺼진 채 앱이 종료되면 여기로 온다.
+          그냥 두면 뛴 기록이 통째로 사라지므로 되살릴 기회를 준다. */}
+      {recovered && !acquiring && (
+        <div className="mb-6 w-full max-w-[19rem] rounded-2xl border border-volt/40 bg-ink-soft p-3.5 text-left">
+          <p className="text-[12.5px] font-bold text-volt">저장 안 된 기록이 있어요</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-ink-muted">
+            {recovered.name} · {formatDistance(recovered.distanceKm)} ·{' '}
+            {formatClock(recovered.elapsedSec)}
+            <br />
+            화면이 꺼진 사이 앱이 종료된 것 같아요.
+          </p>
+          <div className="mt-2.5 flex gap-2">
+            <button
+              onClick={onRecover}
+              className="flex-1 rounded-full bg-volt py-2 text-[12.5px] font-bold text-ink active:scale-95"
+            >
+              내 코스에 저장
+            </button>
+            <button
+              onClick={onDiscard}
+              className="rounded-full border border-ink-line px-3 py-2 text-[12px] font-semibold text-ink-muted active:scale-95"
+            >
+              버리기
+            </button>
+          </div>
+        </div>
+      )}
       <Label>{planned ? 'FOLLOW COURSE' : 'FREE RUN'}</Label>
       <h2 className="mt-1.5 max-w-[19rem] text-[19px] font-black leading-snug">
         {planned ? planned.name : '지금 바로 뛰기'}
@@ -417,7 +523,10 @@ function StartPanel({
         </>
       ) : (
         <button
-          onClick={rec.start}
+          onClick={() => {
+            clearInProgress(); // 새로 시작하면 지난 복구본은 치운다
+            onStart();
+          }}
           className="mt-7 grid h-[132px] w-[132px] place-items-center rounded-full bg-volt text-ink shadow-[0_0_50px_rgba(216,255,62,0.3)] active:scale-95"
         >
           <span className="text-[19px] font-black uppercase tracking-[0.06em]">START</span>
@@ -427,8 +536,8 @@ function StartPanel({
       {/* 뛰기 전에 알려준다 — 다 뛰고 나서 기록이 비었다는 걸 아는 것보다 낫다 */}
       <p className="mt-5 max-w-[19rem] text-[11.5px] leading-relaxed text-ink-muted">
         {wakeLockSupported()
-          ? '뛰는 동안 화면이 자동으로 켜져 있어요. 직접 화면을 끄거나 다른 앱으로 가면 위치 기록이 멈출 수 있어요.'
-          : '이 브라우저는 화면 자동 유지가 안 돼요. 화면이 꺼지면 위치 기록이 멈추니 켜 둔 채로 뛰어 주세요.'}
+          ? '뛰는 동안 화면을 계속 켜 둡니다. 직접 화면을 끄면 브라우저가 위치 추적을 멈추지만, 그때까지의 기록은 자동으로 보관돼요.'
+          : '이 브라우저는 화면 자동 유지가 안 돼요. 화면이 꺼지면 위치 기록이 멈추니 켜 둔 채로 뛰어 주세요. 그때까지의 기록은 자동으로 보관됩니다.'}
       </p>
 
       <button
