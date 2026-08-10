@@ -897,12 +897,10 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                       </button>
                     ))}
                   </div>
-                  {/* 두 축의 설명을 한 줄로 합친다 — 각각 한 줄씩 두면 첫 화면에서
-                      그 높이가 그대로 지도에서 빠진다. */}
-                  <p className="mt-1.5 text-[11.5px] leading-relaxed text-espresso-soft">
-                    {RUN_STYLES.find((s) => s.id === style)?.desc} ·{' '}
-                    {PATH_PREFS.find((pp) => pp.id === pathPref)?.desc}
-                  </p>
+                  {/* 취향 설명 줄은 뺐다. 노치·홈바가 있는 실기기에서는 그 한 줄이
+                      들어가면 길 성격 칩(산책로 위주·흙길 등)이 CTA 아래로 밀려나,
+                      이 앱의 차별점인 '길 종류로 고르기'를 첫 화면에서 아예 못 보고
+                      지나쳤다. 칩 이름·이모지만으로 뜻이 통하므로 설명 없이 둔다. */}
 
                   {/* 화면이 짧으면 시트가 내부 스크롤로 줄어드는데, 그때 이 버튼이
                       접힌 아래로 밀려나면 처음 쓰는 사람은 다음에 뭘 눌러야 할지
