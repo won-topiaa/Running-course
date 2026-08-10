@@ -142,10 +142,16 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         t: now,
       });
 
-      // 버려진 측위여도 페이스·신호 상태는 갱신한다. 숫자가 멈춰 보이면
+      // 거리는 '경로에 점을 찍었는지'와 별개다. 도플러로 거리를 낼 때는
+      // 위치가 버려진 틱에도 실제로는 그만큼 달린 것이므로 먼저 더한다
+      // (여기서 안 더하면 오차가 큰 구간의 거리가 통째로 사라진다).
+      distMRef.current += v.addM;
+
+      // 버려진 측위여도 거리·페이스·신호 상태는 갱신한다. 숫자가 멈춰 보이면
       // 사용자는 앱이 죽은 줄 안다.
       if (!v.accept) {
         sync({
+          distanceKm: distMRef.current / 1000,
           accuracyM: accuracy ?? null,
           weakSignal: v.weak,
           currentPaceSec: livePace(coordsRef.current, activeTimesRef.current),
@@ -153,7 +159,6 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         return;
       }
 
-      distMRef.current += v.addM;
       coordsRef.current.push(v.point);
       const elevation =
         alt != null && !Number.isNaN(alt)

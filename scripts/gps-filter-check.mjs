@@ -53,6 +53,7 @@ function scenario({
   acc,
   withDoppler = true,
   turnEvery = 0,
+  blockM = 0, //     이 거리(m)마다 90도로 꺾는다 (도심 블록)
   circleR = 0,
   zeroSpeed = false,
   dropEvery = 0, //  이 주기(초)마다
@@ -69,8 +70,16 @@ function scenario({
   let flickers = 0;
   const t0 = Date.now();
 
+  let sinceTurn = 0;
   for (let k = 1; k <= secs; k++) {
     if (turnEvery && k % turnEvery === 0) heading += Math.PI / 2;
+    if (blockM) {
+      sinceTurn += speedMs;
+      if (sinceTurn >= blockM) {
+        heading += Math.PI / 2;
+        sinceTurn = 0;
+      }
+    }
     if (circleR) heading += speedMs / circleR; // 매 초 호를 따라 방향을 튼다
     north += speedMs * Math.cos(heading);
     east += speedMs * Math.sin(heading);
@@ -201,6 +210,33 @@ if (weakFails.length) {
   weakFails.forEach((f) => console.log('  ❌ ' + f));
   process.exit(1);
 }
+
+// ── 도심 곡선 ──────────────────────────────────────────────────────────────
+// 60m 마다 꺾는 서울 골목 규모의 러닝. 위치를 이어 붙여 거리를 재면 두 점
+// 사이를 직선으로 가로질러 코너마다 거리가 사라진다 — 임계가 오차에 비례해
+// 커지는 약한 신호에서 특히 심해서, 실측 대신 합성으로 재 보니 오차 15m 에서
+// -12.5%, 25m 에서 -27.4%, 45m 에서 -95.9% 였다(페이스 5'33" → 7'39" → 133').
+// 도플러 속도를 시간으로 적분하면 곡선을 가로지르지 않으므로 이 오차가 사라진다.
+console.log('\n [도심 곡선] 자주 꺾는 길 — 코너에서 거리가 사라지면 안 된다');
+const curveFails = [];
+for (const acc of [8, 15, 25, 45]) {
+  const r = scenario({
+    name: `60m마다 직각 · 10분 · 오차${acc}m`,
+    secs: 600,
+    speedMs: 3.0,
+    sigma: acc / 2.5,
+    acc,
+    blockM: 60,
+  });
+  if (Math.abs(r.err) > 6) {
+    curveFails.push(`오차${acc}m 도심 곡선에서 거리 오차 ${r.err.toFixed(1)}% (한도 ±6%)`);
+  }
+}
+if (curveFails.length) {
+  curveFails.forEach((f) => console.log('  ❌ ' + f));
+  process.exit(1);
+}
+console.log('  ✅ GPS 오차가 커져도 코너에서 거리가 안 사라진다');
 
 // ── 긴 공백 ────────────────────────────────────────────────────────────────
 // 화면을 끄거나 지하로 들어가면 측위가 수십 초씩 통째로 끊긴다. 돌아왔을 때

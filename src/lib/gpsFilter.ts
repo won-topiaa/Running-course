@@ -90,6 +90,11 @@ const MAX_SPEED_MS = 10;
 /** 순간이동을 이만큼 연속으로 만나면 진짜 이동으로 받아들인다 */
 const MAX_JUMP_SKIPS = 3;
 /**
+ * 도플러 속도를 시간으로 적분해도 되는 최대 간격(초).
+ * 이보다 벌어졌으면 그 사이에 무슨 일이 있었는지 모르므로 더하지 않는다.
+ */
+const MAX_INTEGRATE_SEC = 10;
+/**
  * 공백을 '길다'고 볼 간격(초).
  *
  * 이보다 오래 끊겼다가 사람이 낼 수 없는 속도로 돌아오면, 그 사이 경로를
@@ -109,6 +114,7 @@ export function createGpsFilter() {
   let rejected = 0;
   let jumps = 0;
   let stillTicks = 0; // 연속 저속(원시값) 틱 수
+  let lastT: number | null = null; // 직전 측위 시각 (속도 적분용)
   // 이 기기가 '진짜 속도'를 주는지 확인되기 전에는 정지 판정을 쓰지 않는다.
   // 일부 안드로이드 브라우저는 speed 를 항상 0 으로 준다 — 그걸 믿으면
   // 아무리 뛰어도 거리가 0 으로 남는다.
@@ -124,6 +130,7 @@ export function createGpsFilter() {
       jumps = 0;
       stillTicks = 0;
       sawMotion = false;
+      lastT = null;
     },
 
     /** 일시정지 후 재개 — 멈춰 있던 사이의 이동이 한 번에 더해지지 않게 끊는다 */
@@ -133,6 +140,7 @@ export function createGpsFilter() {
       spd = null;
       jumps = 0;
       stillTicks = 0;
+      lastT = null;
     },
 
     get speed() {
@@ -167,6 +175,35 @@ export function createGpsFilter() {
         if (fix.speed > 1.5) sawMotion = true;
       }
 
+      // ── 거리: 도플러가 믿을 만하면 '속도 × 시간'으로 적분한다 ──────────
+      //
+      // 위치를 이어 붙여 재면 두 점 사이를 직선(현, chord)으로 가로질러
+      // 재게 되어, 코너를 돌 때마다 그만큼이 사라진다. 임계(gate)가 오차에
+      // 비례해 커지는 약한 신호에서는 이게 치명적이다 — 합성 검증에서
+      // 60m 마다 꺾는 도심 러닝의 거리가 오차 15m 에서 -12.5%, 25m 에서
+      // -27.4%, 45m 에서 -95.9% 까지 깎였다. 페이스는 시간÷거리라
+      // 그대로 '5'33" 인데 7'39" 로 표시' 되는 결과가 된다.
+      //
+      // 위성 도플러로 잰 속도는 위치를 미분한 값과 달리 위치 오차의 영향을
+      // 거의 받지 않는다(러닝 워치가 거리를 이렇게 내는 이유다). 곡선을
+      // 가로지르지도 않는다 — 실제로 움직인 만큼이 매 초 그대로 쌓인다.
+      const byDoppler = sawMotion && spd != null;
+      let moved = 0;
+      if (byDoppler) {
+        const dt = lastT == null ? 0 : (fix.t - lastT) / 1000;
+        if (dt > 0 && dt <= MAX_INTEGRATE_SEC) {
+          // 정지는 저속이 STILL_TICKS 만큼 이어졌을 때만 확정한다 — 위쪽
+          // 평활값과 같은 기준이다. 도시 협곡에서는 뛰는 중에도 도플러가
+          // 1~3틱씩 0 으로 끊기는데, 그 틱을 정지로 보면 그 구간 거리가
+          // 통째로 빠진다(합성 검증에서 -19.7%). 끊김 동안에는 직전 속도를
+          // 유지한 평활값으로 적분한다.
+          const confirmedStill = stillTicks >= STILL_TICKS;
+          const v = spd as number;
+          moved = !confirmedStill && v >= STILL_MS ? Math.min(v, MAX_SPEED_MS) * dt : 0;
+        }
+      }
+      lastT = fix.t;
+
       const raw: LatLng = [fix.lat, fix.lng];
 
       if (acc != null && acc > MAX_ACCURACY_M) {
@@ -174,7 +211,7 @@ export function createGpsFilter() {
         return {
           accept: false,
           point: smooth ?? raw,
-          addM: 0,
+          addM: moved,
           reason: 'accuracy',
           weak: rejected >= WEAK_AFTER,
           speed: spd,
@@ -193,13 +230,13 @@ export function createGpsFilter() {
       if (anchor == null) {
         anchor = smooth;
         anchorT = fix.t;
-        return { accept: true, point: smooth, addM: 0, weak: false, speed: spd };
+        return { accept: true, point: smooth, addM: moved, weak: false, speed: spd };
       }
 
       const d = haversineMeters(anchor, smooth);
       const gate = Math.min(MAX_GATE_M, Math.max(MIN_GATE_M, (acc ?? 0) * GATE_FACTOR));
       if (d < gate) {
-        return { accept: false, point: smooth, addM: 0, reason: 'gate', weak: false, speed: spd };
+        return { accept: false, point: smooth, addM: moved, reason: 'gate', weak: false, speed: spd };
       }
 
       // 저속이 STILL_TICKS 만큼 이어졌을 때만 정지로 확정한다. 정지면 거리를
@@ -208,7 +245,7 @@ export function createGpsFilter() {
       if (sawMotion && stillTicks >= STILL_TICKS) {
         anchor = smooth;
         anchorT = fix.t;
-        return { accept: false, point: smooth, addM: 0, reason: 'still', weak: false, speed: spd };
+        return { accept: false, point: smooth, addM: moved, reason: 'still', weak: false, speed: spd };
       }
 
       const dtSec = (fix.t - anchorT) / 1000;
@@ -225,18 +262,18 @@ export function createGpsFilter() {
           anchor = raw;
           anchorT = fix.t;
           jumps = 0;
-          return { accept: true, point: raw, addM: 0, reason: 'stale', weak: false, speed: spd };
+          return { accept: true, point: raw, addM: moved, reason: 'stale', weak: false, speed: spd };
         }
         if (jumps < MAX_JUMP_SKIPS) {
           jumps += 1;
-          return { accept: false, point: smooth, addM: 0, reason: 'jump', weak: false, speed: spd };
+          return { accept: false, point: smooth, addM: moved, reason: 'jump', weak: false, speed: spd };
         }
       }
       jumps = 0;
 
       anchor = smooth;
       anchorT = fix.t;
-      return { accept: true, point: smooth, addM: d, weak: false, speed: spd };
+      return { accept: true, point: smooth, addM: byDoppler ? moved : d, weak: false, speed: spd };
     },
   };
 }
