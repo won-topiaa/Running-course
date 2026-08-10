@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronUp,
-  Compass,
   Crosshair,
   Loader2,
   Play,
@@ -408,7 +407,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           peek ? 'opacity-0' : 'opacity-100'
         }`}
       >
-        <div className="pointer-events-auto mx-auto w-full max-w-md shrink-0 overflow-hidden rounded-3xl border border-line/70 bg-paper/95 shadow-card backdrop-blur-md sm:mx-0">
+        <div className="pointer-events-auto mx-auto w-full max-w-md shrink-0 overflow-hidden rounded-3xl border border-line/70 bg-paper/80 shadow-card backdrop-blur-md sm:mx-0">
           {/* 오늘의 러닝 컨디션 — 한 줄 요약 (뛸지 말지 바로 판단) */}
           {api.conditions && (
             <div
@@ -528,87 +527,22 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                   />
                 )}
 
-                {/* 왕복(시작점 복귀) / 편도 — 두 모드 공통 */}
-                <div className="my-1 h-px bg-line" />
-                <div className="flex rounded-full bg-tint p-1">
-                  <SegBtn
-                    active={returnToStart}
-                    onClick={() => {
-                      setReturnToStart(true);
-                      reset();
-                    }}
-                  >
-                    🔄 왕복
-                  </SegBtn>
-                  <SegBtn
-                    active={!returnToStart}
-                    onClick={() => {
-                      setReturnToStart(false);
-                      reset();
-                    }}
-                  >
-                    ➡️ 편도
-                  </SegBtn>
-                </div>
               </div>
             </>
           )}
         </div>
 
-        {/* 거리 슬라이더 — 카드 바로 아래, 같은 컬럼 안 */}
-        {mode === 'distance' && !results && (
-          <div className="pointer-events-auto mt-2 shrink-0">
-            <div className="mx-auto flex w-full max-w-md items-center gap-3 rounded-full border border-line/70 bg-paper/95 py-2.5 pl-3 pr-4 shadow-card backdrop-blur-md sm:mx-0">
-              <span className="shrink-0 rounded-full bg-tint px-3 py-1.5 text-[12px] font-bold text-espresso">
-                거리
-              </span>
-              <div className="min-w-0 flex-1">
-                <input
-                  type="range"
-                  min={1}
-                  max={15}
-                  step={0.5}
-                  value={targetKm}
-                  onChange={(e) => {
-                    setTargetKm(Number(e.target.value));
-                    reset();
-                  }}
-                  className="coral w-full"
-                  list="km-ticks"
-                />
-                {/* 눈금 — 1·5·10·15km 위치 표시 */}
-                <div className="relative mt-1 h-3.5">
-                  {[1, 5, 10, 15].map((v) => (
-                    <span
-                      key={v}
-                      className="absolute -translate-x-1/2 text-[9.5px] font-semibold text-espresso-soft"
-                      style={{ left: `${((v - 1) / 14) * 100}%` }}
-                    >
-                      {v}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <datalist id="km-ticks">
-                {[1, 5, 10, 15].map((v) => (
-                  <option key={v} value={v} />
-                ))}
-              </datalist>
-              <span className="w-[62px] shrink-0 text-right text-[16px] font-extrabold text-espresso">
-                {targetKm}
-                <span className="text-[11px] font-bold text-espresso-muted">km</span>
-              </span>
-            </div>
-          </div>
-        )}
-
         {/* 지도가 보이는 구멍 — 남는 높이를 여기서 먹는다.
+            min-h 로 바닥을 깔아 둔다: 예전엔 min-h-2(8px)라 화면이 짧은 폰
+            (360×640)에서 시트가 지도를 60px 까지 밀어내 첫 화면이 다시
+            꽉 막혀 보였다. 지도에 최소 20vh 를 먼저 떼어 주고, 모자란 만큼은
+            시트가 내부 스크롤로 줄어든다(아래 CTA 는 고정이라 늘 보인다).
             여기 크기를 재서 화면 맞추기 여백으로 쓴다.
 
             원형 버튼도 여기에 절대배치로 얹는다. 예전엔 top-[46%] 로 화면
             비율에 고정돼 있었는데, 시트 높이가 상태에 따라 바뀌면서 시트
             위로 겹쳐 올라갔다. 구멍 바닥에 붙이면 항상 시트 바로 위에 선다. */}
-        <div ref={gapRef} className="relative min-h-2 flex-1">
+        <div ref={gapRef} className="relative min-h-[20vh] flex-1">
           <div className="pointer-events-auto absolute bottom-2 right-0 flex flex-col gap-2">
             <RoundBtn label="내 위치" onClick={useMyLocation}>
               <Crosshair size={19} className="text-coral" />
@@ -656,7 +590,9 @@ export default function BuildScreen({ api }: { api: AppApi }) {
 
             <div
               className={`min-h-0 px-4 ${
-                sheetOpen ? 'flex-1 overflow-y-auto pb-4' : 'overflow-hidden pb-0'
+                // 아래 여백은 고정 바가 직접 갖는다. 여기에 pb 를 두면 sticky 바가
+                // 그만큼 위에 떠서, 그 틈으로 스크롤된 글자가 버튼 밑에 비친다.
+                sheetOpen ? 'flex-1 overflow-y-auto pb-0' : 'overflow-hidden pb-0'
               }`}
               style={{ maxHeight: sheetOpen ? '46vh' : '0px' }}
             >
@@ -801,7 +737,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                       보조 두 버튼은 아이콘만(정사각). 예전엔 글자까지 넣었더니
                       좁은 폰(375·360)에서 셋이 공간을 못 나눠 '이 경로로 뛰기'가
                       두 줄로 접혔다. 주 CTA 는 어떤 폭에서도 한 줄로 유지한다. */}
-                  <div className="sticky bottom-0 -mx-4 mt-3 flex items-center gap-2 border-t border-line/60 bg-paper px-4 pb-1 pt-2.5">
+                  <div className="sticky bottom-0 -mx-4 mt-3 flex items-center gap-2 border-t border-line/60 bg-paper px-4 pb-4 pt-2.5">
                     <button
                       onClick={generate}
                       disabled={loading}
@@ -848,9 +784,78 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                 </>
               ) : (
                 <>
+                  {/* 코스를 만드는 입력은 전부 여기 모은다.
+                      예전엔 거리 슬라이더와 왕복/편도가 지도 위에 각각 떠 있어서,
+                      첫 화면이 '판때기 넉 장 사이에 낀 지도 한 줄'이 됐다
+                      (실측: 지도가 보이는 세로가 844px 중 190px). 입력을 시트로
+                      모으면 지도가 하나의 큰 덩어리로 열린다. */}
+                  {mode === 'distance' && (
+                    <div className="flex items-center gap-3">
+                      <span className="shrink-0 text-[12.5px] font-bold text-espresso">거리</span>
+                      <div className="min-w-0 flex-1">
+                        <input
+                          type="range"
+                          min={1}
+                          max={15}
+                          step={0.5}
+                          value={targetKm}
+                          onChange={(e) => {
+                            setTargetKm(Number(e.target.value));
+                            reset();
+                          }}
+                          className="coral w-full"
+                          list="km-ticks"
+                        />
+                        {/* 눈금 — 1·5·10·15km 위치 표시 */}
+                        <div className="relative mt-1 h-3.5">
+                          {[1, 5, 10, 15].map((v) => (
+                            <span
+                              key={v}
+                              className="absolute -translate-x-1/2 text-[9.5px] font-semibold text-espresso-soft"
+                              style={{ left: `${((v - 1) / 14) * 100}%` }}
+                            >
+                              {v}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <datalist id="km-ticks">
+                        {[1, 5, 10, 15].map((v) => (
+                          <option key={v} value={v} />
+                        ))}
+                      </datalist>
+                      <span className="w-[58px] shrink-0 text-right text-[16px] font-extrabold text-espresso">
+                        {targetKm}
+                        <span className="text-[11px] font-bold text-espresso-muted">km</span>
+                      </span>
+                    </div>
+                  )}
+
+                  {/* 왕복(시작점 복귀) / 편도 — 두 모드 공통 */}
+                  <div className={`flex rounded-full bg-tint p-1 ${mode === 'distance' ? 'mt-2' : ''}`}>
+                    <SegBtn
+                      active={returnToStart}
+                      onClick={() => {
+                        setReturnToStart(true);
+                        reset();
+                      }}
+                    >
+                      🔄 왕복
+                    </SegBtn>
+                    <SegBtn
+                      active={!returnToStart}
+                      onClick={() => {
+                        setReturnToStart(false);
+                        reset();
+                      }}
+                    >
+                      ➡️ 편도
+                    </SegBtn>
+                  </div>
+
                   {/* 스타일 선택 — 가로 한 줄 칩. 2×2 카드(설명 포함)는 세로로 너무 커서
                     지도를 다 덮었다. 선택한 것의 설명만 아래 한 줄로 보여준다. */}
-                  <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
+                  <div className="no-scrollbar -mx-1 mt-2.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
                     {RUN_STYLES.map((s) => (
                       <button
                         key={s.id}
@@ -869,9 +874,6 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                       </button>
                     ))}
                   </div>
-                  <p className="mt-1.5 text-[11.5px] text-espresso-soft">
-                    {RUN_STYLES.find((s) => s.id === style)?.desc}
-                  </p>
 
                   {/* 두 번째 취향 축 — 길 성격. 경사만으로는 대로변 5km 와
                       천변 5km 를 구분하지 못한다. ORS 가 같이 주는
@@ -895,40 +897,41 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                       </button>
                     ))}
                   </div>
-                  <p className="mt-1.5 text-[11.5px] text-espresso-soft">
+                  {/* 두 축의 설명을 한 줄로 합친다 — 각각 한 줄씩 두면 첫 화면에서
+                      그 높이가 그대로 지도에서 빠진다. */}
+                  <p className="mt-1.5 text-[11.5px] leading-relaxed text-espresso-soft">
+                    {RUN_STYLES.find((s) => s.id === style)?.desc} ·{' '}
                     {PATH_PREFS.find((pp) => pp.id === pathPref)?.desc}
                   </p>
 
-                  <button
-                    onClick={generate}
-                    disabled={!canGenerate || loading}
-                    className={`mt-3 flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-[14px] font-bold text-ink transition active:scale-[0.98] ${
-                      canGenerate && !loading ? 'bg-coral shadow-warm' : 'bg-espresso-soft/50'
-                    }`}
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 size={17} className="animate-spin" /> 최적 코스 찾는 중…
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={17} /> 코스 추천받기
-                      </>
+                  {/* 화면이 짧으면 시트가 내부 스크롤로 줄어드는데, 그때 이 버튼이
+                      접힌 아래로 밀려나면 처음 쓰는 사람은 다음에 뭘 눌러야 할지
+                      알 수 없다. 바닥에 고정해 어떤 높이에서도 늘 보이게 한다. */}
+                  <div className="sticky bottom-0 -mx-4 mt-3 border-t border-line/60 bg-paper px-4 pb-4 pt-2.5">
+                    <button
+                      onClick={generate}
+                      disabled={!canGenerate || loading}
+                      className={`flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-[14px] font-bold text-ink transition active:scale-[0.98] ${
+                        canGenerate && !loading ? 'bg-coral shadow-warm' : 'bg-espresso-soft/50'
+                      }`}
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 size={17} className="animate-spin" /> 최적 코스 찾는 중…
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={17} /> 코스 추천받기
+                        </>
+                      )}
+                    </button>
+                    {mode === 'pins' && waypoints.length < 2 && (
+                      <p className="mt-2 text-center text-[11.5px] text-espresso-soft">
+                        지도를 눌러 지점을 2개 이상 찍어주세요.
+                      </p>
                     )}
-                  </button>
-                  {mode === 'pins' && waypoints.length < 2 && (
-                    <p className="mt-2 text-center text-[11.5px] text-espresso-soft">
-                      지도를 눌러 지점을 2개 이상 찍어주세요.
-                    </p>
-                  )}
+                  </div>
 
-                  {/* 코스를 짜는 것 자체가 막막한 사람을 위한 보조 진입로 */}
-                  <button
-                    onClick={() => api.nav('explore')}
-                    className="mt-2.5 flex w-full items-center justify-center gap-1.5 py-1 text-[12px] font-semibold text-espresso-soft underline decoration-line underline-offset-4"
-                  >
-                    <Compass size={13} /> 어디서 뛸지 모르겠다면 · 추천 코스 보기
-                  </button>
                 </>
               )}
 
