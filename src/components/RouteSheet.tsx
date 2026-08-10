@@ -268,7 +268,7 @@ export default function RouteSheet({
             view.activeTimes &&
             view.activeTimes.length > 1 &&
             (() => {
-              const splits = kmSplits(route.coords, view.activeTimes, false);
+              const splits = kmSplits(route.coords, view.activeTimes, false, view.cumDist);
               if (!splits.length) return null;
               const fastest = Math.min(...splits.map((x) => x.sec));
               const slowest = Math.max(...splits.map((x) => x.sec));

@@ -102,8 +102,8 @@ export default function RecordScreen({
 
   // km 구간 기록 — 활성 시간 기준이라 신호 대기로 멈춘 시간이 섞이지 않는다
   const splits = useMemo(
-    () => kmSplits(rec.coords, rec.activeTimes, true),
-    [rec.coords, rec.activeTimes],
+    () => kmSplits(rec.coords, rec.activeTimes, true, rec.cumDist),
+    [rec.coords, rec.activeTimes, rec.cumDist],
   );
 
   /**
@@ -128,6 +128,7 @@ export default function RecordScreen({
       durationSec: rec.elapsedSec,
       times: rec.times,
       activeTimes: rec.activeTimes,
+      cumDist: rec.cumDist,
       savedId: autoSaved.current ?? undefined,
     };
     return (
@@ -307,7 +308,7 @@ export default function RecordScreen({
                 <b className="text-volt">
                   GPS 신호가 약해요{rec.accuracyM ? ` (오차 ±${Math.round(rec.accuracyM)}m)` : ''}.
                 </b>{' '}
-                오차가 큰 위치는 거리에 넣지 않아요. 하늘이 보이는 곳으로 나오면 다시 쌓입니다.
+                지도에 그리는 위치는 잠시 멈추지만, 거리·페이스는 위성 속도로 계속 잽니다.
               </p>
             )}
 

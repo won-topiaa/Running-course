@@ -22,6 +22,8 @@ export interface RecorderState {
   times: number[];
   /** 좌표별 누적 '활성' ms — 일시정지 시간이 빠져 있다. 페이스·구간 기록용 */
   activeTimes: number[];
+  /** 좌표별 누적 거리(m) — 총거리와 같은 방식(도플러 적분)으로 잰 값. 구간 기록용 */
+  cumDist: number[];
   distanceKm: number;
   elapsedSec: number;
   currentPaceSec: number | null;
@@ -71,6 +73,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     elevations: [],
     times: [],
     activeTimes: [],
+    cumDist: [],
     distanceKm: 0,
     elapsedSec: 0,
     currentPaceSec: null,
@@ -86,6 +89,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
   const elevRef = useRef<number[]>([]);
   const timesRef = useRef<number[]>([]);
   const activeTimesRef = useRef<number[]>([]);
+  const cumDistRef = useRef<number[]>([]);
   const lastFixAtRef = useRef(0); //   마지막 GPS 수신 시각
   const gapMsRef = useRef(0); //       백그라운드에서 놓친 누적 시간
   const distMRef = useRef(0);
@@ -169,11 +173,13 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       elevRef.current.push(elevation);
       timesRef.current.push(now);
       activeTimesRef.current.push(activeMsRef.current + (now - segStartRef.current));
+      cumDistRef.current.push(distMRef.current);
       sync({
         coords: coordsRef.current.slice(),
         elevations: elevRef.current.slice(),
         times: timesRef.current.slice(),
         activeTimes: activeTimesRef.current.slice(),
+        cumDist: cumDistRef.current.slice(),
         distanceKm: distMRef.current / 1000,
         accuracyM: accuracy ?? null,
         weakSignal: false,
@@ -224,6 +230,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       elevRef.current = [];
       timesRef.current = [];
       activeTimesRef.current = [];
+      cumDistRef.current = [];
       distMRef.current = 0;
       activeMsRef.current = 0;
       segStartRef.current = Date.now();
@@ -239,6 +246,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         elevations: [],
         times: [],
         activeTimes: [],
+        cumDist: [],
         distanceKm: 0,
         elapsedSec: 0,
         currentPaceSec: null,
@@ -402,6 +410,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     elevRef.current = [];
     timesRef.current = [];
     activeTimesRef.current = [];
+    cumDistRef.current = [];
     distMRef.current = 0;
     activeMsRef.current = 0;
     filterRef.current?.reset();
@@ -411,6 +420,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       elevations: [],
       times: [],
       activeTimes: [],
+      cumDist: [],
       distanceKm: 0,
       elapsedSec: 0,
       currentPaceSec: null,

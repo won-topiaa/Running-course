@@ -24,8 +24,19 @@ export interface Split {
  * @param coords 기록된 좌표
  * @param times  좌표별 epoch ms (coords 와 같은 길이)
  * @param includePartial 마지막 미완 구간도 포함할지 (러닝 중 화면용)
+ * @param cumDistM 좌표별 누적 거리(m). 기록기가 도플러 적분으로 잰 값 —
+ *   이게 있으면 좌표를 다시 합산하지 않는다. 좌표 합산은 코너를 직선으로
+ *   가로질러 거리가 깎이므로(도심 곡선에서 -12~-27%), km 경계가 실제보다
+ *   늦게 지나가 구간 페이스가 전부 느리게 나온다 — 화면 상단의 총거리·평균
+ *   페이스(적분값)와 서로 모순인 숫자가 된다.
  */
-export function kmSplits(coords: LatLng[], times: number[], includePartial = false): Split[] {
+export function kmSplits(
+  coords: LatLng[],
+  times: number[],
+  includePartial = false,
+  cumDistM?: number[],
+): Split[] {
+  const useCum = !!cumDistM && cumDistM.length >= coords.length;
   const n = Math.min(coords.length, times.length);
   if (n < 2) return [];
 
@@ -35,7 +46,9 @@ export function kmSplits(coords: LatLng[], times: number[], includePartial = fal
   let lastMarkTime = times[0];
 
   for (let i = 1; i < n; i++) {
-    const seg = haversineMeters(coords[i - 1], coords[i]);
+    const seg = useCum
+      ? (cumDistM as number[])[i] - (cumDistM as number[])[i - 1]
+      : haversineMeters(coords[i - 1], coords[i]);
     if (seg <= 0) continue;
     const segStart = cum;
     cum += seg;

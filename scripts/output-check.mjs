@@ -128,6 +128,30 @@ check(
   `각 구간이 6분(360초)에 근접 (${splits.map((s) => s.sec.toFixed(1)).join('/')})`,
 );
 check(kmSplits(line.slice(0, 1), times.slice(0, 1)).length === 0, '좌표 1개면 구간 없음');
+
+// 도플러 적분 누적거리를 주면 좌표 합산 대신 그것으로 km 경계를 잰다.
+// 좌표는 코너를 직선으로 가로질러 깎이므로(도심 곡선 -12~-27%), 이걸 안 쓰면
+// 화면 상단 총거리는 3.0km 인데 구간은 2.7km 기준이 되어 구간 페이스가 전부
+// 느리게 나온다 — 실기기에서 '페이스가 너무 높게 나온다'로 보고된 증상이다.
+{
+  // 좌표가 실제(적분)보다 10% 짧게 잡힌 상황을 흉내 낸다
+  const shrunk = Array.from({ length: N + 1 }, (_, i) => [
+    37.5 + ((total * 0.9) / M_PER_DEG_LAT) * (i / N),
+    127.0,
+  ]);
+  const cum = Array.from({ length: N + 1 }, (_, i) => (total / N) * i); // 적분값: 정확히 3km
+  const withCum = kmSplits(shrunk, times, false, cum);
+  const withoutCum = kmSplits(shrunk, times, false);
+  console.log(
+    `    좌표 10% 깎임 → 좌표합산 ${withoutCum.length}개 / 적분거리 ${withCum.length}개 구간`,
+  );
+  check(withCum.length === 3, `적분 거리를 주면 구간이 3개로 맞는다 (${withCum.length})`);
+  check(
+    withCum.every((x) => Math.abs(x.sec - 360) < 3),
+    `구간 페이스도 6분에 맞는다 (${withCum.map((x) => x.sec.toFixed(0)).join('/')})`,
+  );
+  check(withoutCum.length === 2, '(대조) 좌표 합산만 쓰면 구간이 2개로 깎였다');
+}
 const partial = kmSplits(line.slice(0, 150), times.slice(0, 150), true);
 check(
   partial.some((s) => s.partial),

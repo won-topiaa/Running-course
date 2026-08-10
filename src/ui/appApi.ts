@@ -17,6 +17,8 @@ export interface RouteView {
   times?: number[];
   /** 좌표별 누적 활성 ms(일시정지 제외) — 구간 기록용 */
   activeTimes?: number[];
+  /** 좌표별 누적 거리(m) — 총거리와 같은 방식(도플러 적분)으로 잰 값. 구간 기록용 */
+  cumDist?: number[];
   /** 이미 저장된 항목이면 id */
   savedId?: string;
 }
