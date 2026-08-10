@@ -354,6 +354,10 @@ export default function RecordScreen({
             <p className="mt-3 h-4 text-center text-[11px] font-bold uppercase tracking-[0.14em]">
               {rec.status === 'paused' ? (
                 <span className="text-volt">PAUSED</span>
+              ) : rec.autoPaused ? (
+                /* 서 있는 게 확인돼 시계를 멈춘 상태. 알려주지 않으면 시간이
+                   안 가는 걸 고장으로 오해한다(신호 대기에서 매번 겪는다). */
+                <span className="text-volt">멈춤 감지 — 시간·거리 정지 중</span>
               ) : keepAwake ? (
                 <span className="text-ink-muted">화면 꺼짐 방지 중</span>
               ) : null}

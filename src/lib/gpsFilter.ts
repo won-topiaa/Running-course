@@ -156,6 +156,14 @@ export function createGpsFilter() {
       return sawMotion;
     },
 
+    /**
+     * 지금 '확정 정지' 상태인지 (저속이 STILL_TICKS 만큼 이어짐).
+     * 거리는 이 동안 안 쌓이므로, 시계도 같이 멈춰야 페이스가 안 부풀려진다.
+     */
+    get still() {
+      return sawMotion && stillTicks >= STILL_TICKS;
+    },
+
     push(fix: GpsFix): GpsVerdict {
       const acc = Number.isFinite(fix.accuracy as number) ? (fix.accuracy as number) : null;
 

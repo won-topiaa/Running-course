@@ -41,6 +41,8 @@ export interface RecorderState {
   accuracyM: number | null;
   /** 오차가 너무 커서 거리 적산을 멈춘 상태 — 사용자에게 알려야 한다 */
   weakSignal: boolean;
+  /** 서 있는 게 확인돼 시계를 자동으로 멈춘 상태 (신호 대기 등) */
+  autoPaused: boolean;
 }
 
 export interface Recorder extends RecorderState {
@@ -84,6 +86,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     gapSec: 0,
     accuracyM: null,
     weakSignal: false,
+    autoPaused: false,
   });
 
   const coordsRef = useRef<LatLng[]>([]);
@@ -96,6 +99,11 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
   const distMRef = useRef(0);
   const activeMsRef = useRef(0); // 누적 활성 시간
   const segStartRef = useRef(0); // 현재 구간 시작 시각
+  // 자동 일시정지 — 서 있는 동안 흐른 시간. 거리는 그 사이 안 쌓이므로
+  // 시간만 흐르면 페이스가 그만큼 부풀려진다(신호 대기 2분이면 그 km 가
+  // 5'34" 대신 7'32" 로 찍혔다). 그 시간을 활성 시간에서 뺀다.
+  const autoPausedMsRef = useRef(0); //  이번 구간에서 누적된 정지 시간
+  const stillSinceRef = useRef<number | null>(null); // 정지 시작 시각(진행 중)
   const statusRef = useRef<RecStatus>('idle');
   const watchRef = useRef<number | null>(null);
   const demoRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -112,6 +120,15 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
   // 렌더마다 createWakeLock() 이 재실행되지 않도록 지연 초기화
   const wakeRef = useRef<ReturnType<typeof createWakeLock> | null>(null);
   if (wakeRef.current === null) wakeRef.current = createWakeLock();
+
+  /** 지금까지의 '활성' 시간(ms) — 수동 일시정지와 자동 일시정지를 뺀 값 */
+  const activeNow = useCallback((now: number) => {
+    const inStill = stillSinceRef.current == null ? 0 : now - stillSinceRef.current;
+    return Math.max(
+      0,
+      activeMsRef.current + (now - segStartRef.current) - autoPausedMsRef.current - inStill,
+    );
+  }, []);
 
   const sync = useCallback((patch: Partial<RecorderState>) => {
     setState((s) => ({ ...s, ...patch }));
@@ -165,11 +182,21 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       // 위치가 버려진 틱에도 실제로는 그만큼 달린 것이므로 먼저 더한다
       // (여기서 안 더하면 오차가 큰 구간의 거리가 통째로 사라진다).
       distMRef.current += v.addM;
-      // 표시 페이스용 창 표본 — 활성 시간 기준이라 일시정지를 건너뛰어도 이어진다
-      winPaceRef.current = paceWinRef.current!.push(
-        activeMsRef.current + (now - segStartRef.current),
-        distMRef.current,
-      );
+
+      // 자동 일시정지 — 서 있는 게 확인되면 시계를 멈춘다. 거리는 이미 안
+      // 쌓이는데 시간만 흐르면 그 비대칭이 그대로 페이스를 부풀린다
+      // (신호 대기 2분이 낀 km 가 5'34" 대신 7'32" 로 찍혔다).
+      const still = filterRef.current!.still;
+      if (still && stillSinceRef.current == null) {
+        stillSinceRef.current = now;
+      } else if (!still && stillSinceRef.current != null) {
+        autoPausedMsRef.current += now - stillSinceRef.current;
+        stillSinceRef.current = null;
+      }
+
+      const activeMs = activeNow(now);
+      // 표시 페이스용 창 표본 — 활성 시간 기준이라 멈춤을 건너뛰어도 이어진다
+      winPaceRef.current = paceWinRef.current!.push(activeMs, distMRef.current);
 
       // 버려진 측위여도 거리·페이스·신호 상태는 갱신한다. 숫자가 멈춰 보이면
       // 사용자는 앱이 죽은 줄 안다.
@@ -178,6 +205,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
           distanceKm: distMRef.current / 1000,
           accuracyM: accuracy ?? null,
           weakSignal: v.weak,
+          autoPaused: still,
           currentPaceSec: livePace(coordsRef.current, activeTimesRef.current),
         });
         return;
@@ -192,7 +220,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
             : syntheticElevation(lat, lng);
       elevRef.current.push(elevation);
       timesRef.current.push(now);
-      activeTimesRef.current.push(activeMsRef.current + (now - segStartRef.current));
+      activeTimesRef.current.push(activeMs);
       cumDistRef.current.push(distMRef.current);
       sync({
         coords: coordsRef.current.slice(),
@@ -203,25 +231,25 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         distanceKm: distMRef.current / 1000,
         accuracyM: accuracy ?? null,
         weakSignal: false,
+        autoPaused: still,
         currentPaceSec: livePace(coordsRef.current, activeTimesRef.current),
       });
     },
-    [sync, livePace],
+    [sync, livePace, activeNow],
   );
 
   const startTick = useCallback(() => {
     if (tickRef.current) return;
     tickRef.current = setInterval(() => {
       if (statusRef.current !== 'recording') return;
-      const elapsedMs = activeMsRef.current + (Date.now() - segStartRef.current);
-      const elapsedSec = elapsedMs / 1000;
+      const elapsedSec = activeNow(Date.now()) / 1000;
       const km = distMRef.current / 1000;
       // 예전엔 20m 만 움직여도 평균을 냈다 — 시작 직후 거리는 몇 m 인데 시간만
       // 흘러서 '50'00"/km' 같은 숫자가 대문짝만하게 떴다. 최소 거리를 두고,
       // 그래도 범위를 벗어나면(아주 느린 걷기보다 느리면) 숫자 대신 '--'.
       sync({ elapsedSec, avgPaceSec: km >= 0.05 ? sanePace(elapsedSec / km) : null });
     }, 1000);
-  }, [sync]);
+  }, [sync, activeNow]);
 
   /**
    * 이전 세션의 watch/타이머를 확실히 끊는다.
@@ -254,6 +282,8 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       distMRef.current = 0;
       activeMsRef.current = 0;
       segStartRef.current = Date.now();
+      autoPausedMsRef.current = 0;
+      stillSinceRef.current = null;
       lastFixAtRef.current = Date.now();
       gapMsRef.current = 0;
       filterRef.current!.reset();
@@ -276,6 +306,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         gapSec: 0,
         accuracyM: null,
         weakSignal: false,
+        autoPaused: false,
       });
       startTick();
       void wakeRef.current?.enable(); // 뛰는 동안 화면 유지
@@ -367,11 +398,14 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
 
   const pause = useCallback(() => {
     if (statusRef.current !== 'recording') return;
-    activeMsRef.current += Date.now() - segStartRef.current;
+    // 수동 일시정지 시점까지의 활성 시간을 확정한다(자동 정지분을 뺀 값).
+    activeMsRef.current = activeNow(Date.now());
+    autoPausedMsRef.current = 0;
+    stillSinceRef.current = null;
     statusRef.current = 'paused';
     void wakeRef.current?.disable();
-    sync({ status: 'paused' });
-  }, [sync]);
+    sync({ status: 'paused', autoPaused: false });
+  }, [sync, activeNow]);
 
   pauseRef.current = pause;
 
@@ -382,6 +416,8 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     // 재개하는 순간 한 번에 더해져 기록이 부풀려진다.
     filterRef.current?.breakSegment();
     segStartRef.current = Date.now();
+    autoPausedMsRef.current = 0;
+    stillSinceRef.current = null;
     statusRef.current = 'recording';
     void wakeRef.current?.enable();
     sync({ status: 'recording' });
@@ -417,7 +453,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
 
   const stop = useCallback(() => {
     if (statusRef.current === 'recording') {
-      activeMsRef.current += Date.now() - segStartRef.current;
+      activeMsRef.current = activeNow(Date.now());
     }
     statusRef.current = 'finished';
     cleanup();
@@ -425,8 +461,9 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       status: 'finished',
       elapsedSec: activeMsRef.current / 1000,
       distanceKm: distMRef.current / 1000,
+      autoPaused: false,
     });
-  }, [cleanup, sync]);
+  }, [cleanup, sync, activeNow]);
 
   const reset = useCallback(() => {
     cleanup();
@@ -438,6 +475,8 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     cumDistRef.current = [];
     distMRef.current = 0;
     activeMsRef.current = 0;
+    autoPausedMsRef.current = 0;
+    stillSinceRef.current = null;
     filterRef.current?.reset();
     setState({
       status: 'idle',
@@ -455,6 +494,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       gapSec: 0,
       accuracyM: null,
       weakSignal: false,
+      autoPaused: false,
     });
   }, [cleanup]);
 

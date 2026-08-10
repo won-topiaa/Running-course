@@ -211,6 +211,75 @@ if (weakFails.length) {
   process.exit(1);
 }
 
+// ── 자동 일시정지 ──────────────────────────────────────────────────────────
+// 서 있으면 거리는 안 쌓이는데 시간만 흐르면, 그 비대칭이 그대로 페이스를
+// 부풀린다. 신호 대기 2분이 낀 km 가 실제 5'34" 인데 7'32" 로 찍혔다.
+// 필터가 '확정 정지'를 알려주면 시계도 같이 멈춘다.
+console.log('\n [자동 일시정지] 신호 대기가 페이스를 부풀리면 안 된다');
+{
+  const f = createGpsFilter();
+  const t0 = Date.now();
+  let tickN = 0;
+  let dist = 0;
+  let wall = 0;
+  let paused = 0;
+  let since = null;
+  let north = 0;
+  const feed = (speed, secs) => {
+    for (let k = 0; k < secs; k++) {
+      tickN++;
+      wall += 1000;
+      north += speed;
+      const now = t0 + tickN * 1000;
+      const v = f.push({ lat: LAT0 + north / MPD_LAT, lng: LNG0, accuracy: 10, speed, t: now });
+      dist += v.addM;
+      if (f.still && since == null) since = now;
+      else if (!f.still && since != null) {
+        paused += now - since;
+        since = null;
+      }
+    }
+  };
+  feed(3.0, 300); //  5분 러닝
+  feed(0, 120); //    2분 신호 대기
+  feed(3.0, 300); //  5분 러닝
+  const active = wall - paused - (since ? t0 + tickN * 1000 - since : 0);
+  const pace = active / 1000 / (dist / 1000);
+  const fmt = (p) => `${Math.floor(p / 60)}'${String(Math.round(p % 60)).padStart(2, '0')}"`;
+  console.log(
+    `  10분 러닝 + 2분 정지 → 거리 ${(dist / 1000).toFixed(2)}km · 정지로 뺀 시간 ${(paused / 1000).toFixed(0)}초 · 평균 ${fmt(pace)}/km`,
+  );
+  const fails = [];
+  if (paused < 100_000) fails.push(`정지 시간을 ${(paused / 1000).toFixed(0)}초만 뺐다 (실제 120초)`);
+  if (Math.abs(pace - 1000 / 3) / (1000 / 3) > 0.06) {
+    fails.push(`평균 페이스가 실제(5'33")와 ${fmt(pace)} 로 어긋난다`);
+  }
+  // 뛰는 중에 잘못 멈춤 판정이 나면 시간이 깎여 페이스가 빨라진다 — 그것도 막는다
+  const f2 = createGpsFilter();
+  let d2 = 0;
+  let paused2 = 0;
+  let since2 = null;
+  for (let k = 1; k <= 600; k++) {
+    const now = t0 + k * 1000;
+    // 15초마다 3틱 도플러 끊김 (도시 협곡)
+    const sp = k % 15 < 3 ? 0 : 3.0;
+    const v = f2.push({ lat: LAT0 + (3.0 * k) / MPD_LAT, lng: LNG0, accuracy: 10, speed: sp, t: now });
+    d2 += v.addM;
+    if (f2.still && since2 == null) since2 = now;
+    else if (!f2.still && since2 != null) {
+      paused2 += now - since2;
+      since2 = null;
+    }
+  }
+  console.log(`  뛰는 중 도플러 끊김 10분 → 잘못 멈춘 시간 ${(paused2 / 1000).toFixed(0)}초`);
+  if (paused2 > 30_000) fails.push(`뛰는 중인데 ${(paused2 / 1000).toFixed(0)}초를 정지로 뺐다`);
+  if (fails.length) {
+    fails.forEach((x) => console.log('  ❌ ' + x));
+    process.exit(1);
+  }
+  console.log('  ✅ 정지는 빼고, 뛰는 중 끊김은 안 뺀다');
+}
+
 // ── 도심 곡선 ──────────────────────────────────────────────────────────────
 // 60m 마다 꺾는 서울 골목 규모의 러닝. 위치를 이어 붙여 거리를 재면 두 점
 // 사이를 직선으로 가로질러 코너마다 거리가 사라진다 — 임계가 오차에 비례해
