@@ -333,6 +333,12 @@ export default function BuildScreen({ api }: { api: AppApi }) {
             pathPref,
           });
 
+    // 오래 걸리면 이유를 말해준다. 경로 서버가 느린 날에는 결과가 나오기까지
+    // 20초 넘게 걸리는데, 그동안 스피너만 돌면 사용자는 앱이 멈춘 줄 안다.
+    const slowTimer = setTimeout(() => {
+      setNotice('경로 서버 응답이 느려요. 조금만 기다려 주세요…');
+    }, 7000);
+
     // ORS → OSRM(키 불필요) → 데모(직선) 순으로 내려가며 시도
     let provider: RoutingProvider | null = makeProvider(api.settings.orsKey);
     let lastErr: unknown = null;
@@ -340,8 +346,10 @@ export default function BuildScreen({ api }: { api: AppApi }) {
       while (provider) {
         try {
           const out = await build(provider);
+          clearTimeout(slowTimer);
           setResults(out);
           setSelIdx(0);
+          setNotice(null); // '느려요' 안내가 결과 화면까지 따라오지 않게
           if (!provider.realRoads) {
             setNotice(
               '실제 경로 서버에 연결할 수 없어 직선 데모로 그렸어요. 이 경로는 실제 도로가 아닙니다.',
@@ -372,6 +380,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
       setError(msg);
       setResults(null);
     } finally {
+      clearTimeout(slowTimer);
       setLoading(false);
     }
   };

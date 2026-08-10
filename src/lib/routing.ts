@@ -531,6 +531,15 @@ export class OfflineProvider implements RoutingProvider {
  * 어느 쪽이든 **실제 사람이 다닐 수 있는 길**을 따라간다. 데모(직선)는 둘 다 실패할 때만.
  */
 export function makeProvider(orsKey: string | null): RoutingProvider {
+  // 기기가 '네트워크 없음'이라고 확실히 말하면 두 서버를 타임아웃까지 기다리지
+  // 않는다. 실측: 연결이 안 되는 환경에서 ORS(8초)와 OSRM(12초)을 차례로
+  // 기다리느라 결과가 나오기까지 20.6초가 걸렸고, 그동안 화면에는 스피너뿐이었다
+  // (지하철·통신 음영에서 실제로 겪는 상황이다).
+  // navigator.onLine 은 'false 면 확실히 오프라인'만 믿을 수 있는 신호라
+  // 빠른 길로 새는 용도로만 쓴다 — true 라고 연결을 보장하지는 않는다.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return new OfflineProvider();
+  }
   return orsKey ? new OrsProvider(orsKey) : new OsrmProvider();
 }
 
