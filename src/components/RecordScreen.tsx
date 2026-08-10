@@ -229,11 +229,19 @@ export default function RecordScreen({
   // 유지하며 '잡는 중'을 보여주고 데모 대안을 계속 노출한다.
   const acquiring = rec.status === 'recording' && rec.coords.length === 0;
 
-  /** 끊긴 기록을 내 코스에 저장한다 (요약을 열지 않고 한 번에 — 이미 지난 일이다) */
-  const recoverRun = () => {
+  /**
+   * 끊긴 기록을 내 코스에 저장한다 (요약을 열지 않고 한 번에 — 이미 지난 일이다).
+   *
+   * 정상 종료와 똑같이 지형 고도(DEM)를 입힌다. 안 그러면 복구된 기록만
+   * 휴대폰 GPS 고도를 쓰게 되어, 앞서 잡았던 '0.39km 에 총 오르막 144m'
+   * 문제가 이 경로에서만 되살아난다.
+   */
+  const recoverRun = async () => {
     const r = recovered;
-    if (!r) return;
-    const route = buildResult(r.coords, r.elevations, 'offline', [r.coords[0]]);
+    if (!r || saving) return;
+    setSaving(true);
+    const dem = await realElevations(r.coords);
+    const route = buildResult(r.coords, dem ?? r.elevations, 'offline', [r.coords[0]]);
     api.addSavedRoute(
       savedFromView({
         name: r.name,
@@ -245,6 +253,7 @@ export default function RecordScreen({
     );
     clearInProgress();
     setRecovered(null);
+    setSaving(false);
     api.nav('saved');
     onClose();
   };
@@ -331,6 +340,7 @@ export default function RecordScreen({
             onStart={rec.start}
             recovered={recovered}
             onRecover={recoverRun}
+            busy={saving}
             onDiscard={() => {
               clearInProgress();
               setRecovered(null);
@@ -453,6 +463,7 @@ function StartPanel({
   recovered,
   onRecover,
   onDiscard,
+  busy = false,
 }: {
   rec: ReturnType<typeof useRunRecorder>;
   planned?: { name: string; route: RouteResult } | null;
@@ -463,6 +474,8 @@ function StartPanel({
   recovered: { name: string; distanceKm: number; elapsedSec: number } | null;
   onRecover: () => void;
   onDiscard: () => void;
+  /** 복구 저장 진행 중 (지형 고도를 받아 오는 동안) */
+  busy?: boolean;
 }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center text-center">
@@ -480,9 +493,10 @@ function StartPanel({
           <div className="mt-2.5 flex gap-2">
             <button
               onClick={onRecover}
-              className="flex-1 rounded-full bg-volt py-2 text-[12.5px] font-bold text-ink active:scale-95"
+              disabled={busy}
+              className="flex-1 rounded-full bg-volt py-2 text-[12.5px] font-bold text-ink active:scale-95 disabled:opacity-70"
             >
-              내 코스에 저장
+              {busy ? '저장 중…' : '내 코스에 저장'}
             </button>
             <button
               onClick={onDiscard}
