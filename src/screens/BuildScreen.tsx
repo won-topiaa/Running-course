@@ -27,6 +27,7 @@ import { estimateTimeLabel, formatDistance } from '../lib/format';
 import { fetchGreenShares } from '../lib/greenShare';
 import { wayMixLabel } from '../lib/wayMix';
 import { haversineMeters } from '../lib/geo';
+import { superlatives } from '../lib/compare';
 import type { LatLng } from '../lib/types';
 import type { AppApi } from '../ui/appApi';
 import { VOLT } from '../ui/theme';
@@ -253,7 +254,16 @@ export default function BuildScreen({ api }: { api: AppApi }) {
 
   // 후보끼리 비교해 붙이는 '이 코스만의 장점' 배지
   const badges = useMemo(
-    () => (results ? superlatives(results, greenPct) : []),
+    () =>
+      results
+        ? superlatives(
+            results.map((r, i) => ({
+              ascentM: r.route.ascentM,
+              distanceScore: r.distanceScore,
+              greenPct: greenPct[i] ?? null,
+            })),
+          )
+        : [],
     [results, greenPct],
   );
 
@@ -369,17 +379,9 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const canGenerate = mode === 'pins' ? waypoints.length >= 2 : true;
   const headline = results ? buildHeadline(results, selIdx, style) : null;
 
-  // 결과가 있으면 '실제로 무엇으로 그렸는지', 없으면 '무엇으로 그릴 예정인지'
-  const sourceBadge = (() => {
-    const src = selected?.route.source;
-    // short 는 좁은 화면용 — 컨디션 줄이 두 줄로 깨지지 않게 한다
-    if (src === 'ors') return { text: '🛰 실경로 · ORS', short: '🛰 ORS', demo: false };
-    if (src === 'osrm') return { text: '🚶 실보행로 · OSM', short: '🚶 OSM', demo: false };
-    if (src === 'offline') return { text: '⚠️ 직선 데모', short: '⚠️ 데모', demo: true };
-    return api.settings.orsKey
-      ? { text: '🛰 실경로 · ORS', short: '🛰 ORS', demo: false }
-      : { text: '🚶 실보행로 · OSM', short: '🚶 OSM', demo: false };
-  })();
+  // 실제 도로가 아닌 '직선 데모'로 그렸을 때만 알린다. ORS 냐 OSM 이냐는
+  // 둘 다 실제 도로라 사용자에겐 같은 말이고, 그 자리는 컨디션 줄에 내준다.
+  const isDemoRoute = selected?.route.source === 'offline';
 
   return (
     <div className="fixed inset-0 z-0 overflow-hidden bg-cream">
@@ -469,9 +471,9 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                   )}
                   {api.conditions.runScore}점
                 </span>
-                {sourceBadge.demo && (
+                {isDemoRoute && (
                   <span className="shrink-0 rounded-full bg-coral-100 px-2 py-0.5 text-[10px] font-bold text-coral-600">
-                    {sourceBadge.short}
+                    ⚠️ 데모
                   </span>
                 )}
               </div>
@@ -1012,35 +1014,6 @@ export default function BuildScreen({ api }: { api: AppApi }) {
 
 const styleLabel = (s: RunStyle) => RUN_STYLES.find((x) => x.id === s)?.label ?? '러닝';
 
-/**
- * 후보들이 서로 어떻게 다른지 한 마디로 붙인다.
- *
- * 세 후보가 다 '5.0km · 상승 20m' 처럼 비슷하게 적혀 있으면 무엇을 고를지
- * 알 수 없어서 결국 1번을 누르게 된다. 후보들끼리 비교해서 이 코스만의
- * 장점을 찾아 붙인다. 차이가 의미 없을 만큼 작으면 아무것도 안 붙인다 —
- * 1m 차이로 '가장 평탄'이라고 하면 그게 더 헷갈린다.
- */
-function superlatives(rs: BuiltRoute[], green: (number | null)[]): (string | null)[] {
-  const out: (string | null)[] = rs.map(() => null);
-  if (rs.length < 2) return out;
-  const put = (i: number, label: string) => {
-    if (i >= 0 && out[i] == null) out[i] = label;
-  };
-
-  // 숲길 — 전부 값이 와 있을 때만(일부만 오면 비교가 거짓이 된다)
-  const g = rs.map((_, i) => green[i]);
-  if (g.every((v): v is number => typeof v === 'number')) {
-    const max = Math.max(...g);
-    if (max >= 20 && max - Math.min(...g) >= 10) put(g.indexOf(max), '🌳 숲길 최다');
-  }
-  // 평탄함
-  const asc = rs.map((r) => r.route.ascentM);
-  if (Math.max(...asc) - Math.min(...asc) >= 10) put(asc.indexOf(Math.min(...asc)), '가장 평탄');
-  // 목표 거리 근접
-  const ds = rs.map((r) => r.distanceScore);
-  if (Math.max(...ds) - Math.min(...ds) >= 0.05) put(ds.indexOf(Math.max(...ds)), '목표에 가장 가까움');
-  return out;
-}
 
 const courseName = (b: BuiltRoute) =>
   `${styleLabel(b.styleEval.style)} ${formatDistance(b.route.distanceKm)} 코스`;

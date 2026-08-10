@@ -248,6 +248,54 @@ check(sanePace(NaN) === null && sanePace(null) === null, 'NaN·null 은 거른�
 check(sanePace(60 / 0.02) === null, '20m·60초(시작 직후) 평균은 숫자로 안 내보낸다');
 check(sanePace(120 / 0.4) === 300, '400m·2분은 정상 페이스로 통과 (5\'00")');
 
+// ── 후보 비교 배지 ──────────────────────────────────────────────────────────
+// 카드에 '가장 평탄' 같은 단정을 붙인다. 틀리면 사용자를 속이는 것이라
+// (그 말을 믿고 코스를 고른다) 눈이 아니라 검사로 확인한다.
+console.log('\n[후보 배지] 근거 없는 단정이 안 나가는지');
+const { superlatives } = await bundle('src/lib/compare.ts', 'cmp.mjs');
+const item = (ascentM, distanceScore = 1, greenPct = null) => ({ ascentM, distanceScore, greenPct });
+
+const flatBadges = superlatives([item(10), item(60), item(80)]);
+console.log(`    상승 10·60·80m → ${JSON.stringify(flatBadges)}`);
+check(flatBadges[0] === '가장 평탄', '가장 낮은 상승에 붙는다');
+check(flatBadges.filter((x) => x === '가장 평탄').length === 1, "'가장 평탄'은 하나뿐");
+
+check(
+  superlatives([item(30), item(34), item(36)]).every((x) => x == null),
+  '차이가 작으면(6m) 아무 말도 안 한다',
+);
+check(superlatives([item(10)]).every((x) => x == null), '후보가 하나면 비교하지 않는다');
+check(superlatives([]).length === 0, '빈 목록도 안 터진다');
+
+// 숲길 — 값이 다 와 있을 때만, 그리고 의미 있는 차이일 때만
+const g = superlatives([item(50, 1, 45), item(50, 1, 12), item(50, 1, 8)]);
+console.log(`    숲길 45·12·8% → ${JSON.stringify(g)}`);
+check(g[0] === '🌳 숲길 최다', '숲길이 확실히 많은 후보에 붙는다');
+check(
+  superlatives([item(50, 1, 45), item(50, 1, null), item(50, 1, 8)]).every((x) => x == null),
+  '숲길 값이 일부만 도착했으면 비교하지 않는다 (안 온 후보가 지는 셈이 된다)',
+);
+check(
+  superlatives([item(50, 1, 8), item(50, 1, 3), item(50, 1, 1)]).every((x) => x == null),
+  '다 같이 숲길이 적으면 최다라고 안 한다',
+);
+
+// 목표 거리 — 핀 모드처럼 목표가 없으면 전부 1 이라 비교 대상이 아니다
+const d = superlatives([item(50, 0.4), item(50, 0.95), item(50, 0.5)]);
+check(d[1] === '목표에 가장 가까움', '목표에 가장 가까운 후보에 붙는다');
+check(
+  superlatives([item(50, 1), item(50, 1), item(50, 1)]).every((x) => x == null),
+  '목표가 없으면(전부 1) 거리 배지를 안 붙인다',
+);
+
+// 한 후보가 둘 다 1등이면 두 번째는 버린다 — 차점자에게 넘기면 거짓이 된다
+const both = superlatives([item(5, 1, 50), item(90, 1, 10), item(95, 1, 5)]);
+console.log(`    한 후보가 숲길·평탄 모두 1등 → ${JSON.stringify(both)}`);
+check(
+  both[0] === '🌳 숲길 최다' && both[1] == null && both[2] == null,
+  "1등이 겹치면 하나만 붙이고 남에게 넘기지 않는다",
+);
+
 // ── 통계 ────────────────────────────────────────────────────────────────────
 console.log('\n[통계] 마이 페이지 숫자');
 const day = 86400_000;
