@@ -1,5 +1,5 @@
 // 배포본 스모크 검증 — 빌드된 dist 를 실제 브라우저로 열어 전 화면을 눌러 본다.
-//   npm run build && node scripts/smoke-check.mjs
+//   npm run check:smoke   (dist 를 새로 빌드한 뒤 연다)
 //
 // 단위 검증(check:*)은 로직만 본다. 이 스크립트는 그 반대로, '진짜 배포되는
 // 파일'이 실제 브라우저에서 렌더 오류·미처리 예외 없이 도는지만 본다.

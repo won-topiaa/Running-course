@@ -287,6 +287,36 @@ check(sanitizeRoutes(null).length === 0 && sanitizeRoutes('x').length === 0, '�
   // 거리가 없는 옛 기록은 좌표로 계산한 값을 그대로 쓴다(회귀 방지)
   const legacy = toRouteResult({ ...rec, distanceKm: 0 });
   check(legacy.distanceKm > 0, '거리 정보가 없는 항목은 좌표로 계산해 채운다');
+
+  // 상승도 같은 문제였다. 저장할 때 좌표·고도를 1500점으로 솎고(compactRoute),
+  // 용량이 꽉 차면 100점까지 더 줄이는데(shrinkOldest) 그걸로 다시 계산하면
+  // 오르내림이 뭉개진다 — 언덕 11km 를 100점까지 줄이니 목록 377m / 열면 322m.
+  const hill = [];
+  const hillElev = [];
+  let hla = 37.55;
+  let hln = 126.99;
+  for (let i = 0; i < 3000; i++) {
+    hla += 0.00003;
+    hln += 0.00002;
+    hill.push([hla, hln]);
+    hillElev.push(50 + 20 * Math.sin((i / 300) * Math.PI * 2));
+  }
+  const thin = (a) => a.filter((_, i) => i % 30 === 0); // 용량 정리로 성겨진 상태
+  const shrunk = {
+    id: 'h', name: '언덕', createdAt: Date.now(), kind: 'recorded', distanceKm: 11.31,
+    ascentM: 377, maxGradePct: 8, source: 'gps',
+    coords: thin(hill), elevations: thin(hillElev), durationSec: 3600,
+  };
+  const openedHill = toRouteResult(shrunk);
+  console.log(`    저장 상승 377m → 열었을 때 ${openedHill.ascentM}m`);
+  check(openedHill.ascentM === 377, `저장한 상승이 그대로 유지된다 (${openedHill.ascentM}m)`);
+  check(openedHill.maxGradePct === 8, `저장한 최대 경사가 그대로 유지된다 (${openedHill.maxGradePct}%)`);
+  check(
+    openedHill.elevations.length === shrunk.coords.length,
+    '고도 그래프용 배열은 좌표 수만큼 그대로 만들어진다',
+  );
+  const flatLegacy = toRouteResult({ ...shrunk, ascentM: 0, maxGradePct: 0 });
+  check(flatLegacy.ascentM > 0, '상승 정보가 없는 옛 항목은 고도로 계산해 채운다');
 }
 
 // ── 페이스 표기 ─────────────────────────────────────────────────────────────

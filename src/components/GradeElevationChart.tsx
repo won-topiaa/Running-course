@@ -1,3 +1,4 @@
+import { formatDistance } from '../lib/format';
 import { gradeBand, GRADE_COLORS } from '../lib/routeStyle';
 
 interface Props {
@@ -81,7 +82,9 @@ export default function GradeElevationChart({
         <path d={line} fill="none" stroke="#FFFFFF" strokeOpacity={0.45} strokeWidth={1.5} />
       </svg>
       <div className="mt-1 flex justify-between text-[10.5px] text-espresso-soft">
-        <span>거리 {distanceKm.toFixed(distanceKm < 10 ? 1 : 0)}km</span>
+        {/* 목록·상세와 같은 규칙으로 적는다 — 한 화면에서 11.3km 와 11km 가
+            같이 보이면 어느 쪽이 맞는 값인지 알 수 없다 */}
+        <span>거리 {formatDistance(distanceKm)}</span>
         <span>
           고도 {Math.round(min)}~{Math.round(max)}m
         </span>

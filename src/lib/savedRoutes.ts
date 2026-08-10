@@ -187,12 +187,23 @@ export function savedFromView(v: {
 export function toRouteResult(s: SavedRoute): RouteResult {
   const src = s.source === 'gps' ? 'offline' : s.source;
   const r = buildResult(s.coords, s.elevations, src, [s.coords[0]]);
-  // 거리는 저장해 둔 값을 그대로 쓴다. buildResult 는 좌표를 이어 붙여 다시
-  // 재는데, 기록한 러닝의 좌표는 게이트를 지난 점들이라 코너를 직선으로
-  // 가로지른다 — 목록에는 3.2km 라고 떠 있는데 열면 2.34km 가 되는 식이다
-  // (도심 지그재그로 재보니 26.9% 차이). 저장값은 도플러 적분으로 낸 값이라
-  // 그쪽이 실제에 가깝다. 저장한 코스를 솎아낸(다운샘플) 경우도 마찬가지다.
-  return s.distanceKm > 0 ? { ...r, distanceKm: s.distanceKm } : r;
+  // 요약 수치(거리·상승·최대 경사)는 저장해 둔 값을 그대로 쓴다.
+  //
+  // buildResult 는 좌표·고도를 다시 훑어 계산하는데, 저장된 좌표는 원본이
+  // 아니다. compactRoute 가 1500점으로 솎고, 용량이 꽉 차면 shrinkOldest 가
+  // 100점까지 더 줄인다. 그래서 다시 계산하면 목록과 상세가 어긋난다 —
+  //   · 거리: 기록 좌표는 게이트를 지난 점들이라 코너를 직선으로 가로지른다.
+  //           도심 지그재그에서 목록 3.2km / 열면 2.34km (26.9% 차이).
+  //   · 상승: 솎을수록 오르내림이 뭉개진다. 언덕 11km 를 100점까지 줄이면
+  //           목록 377m / 열면 322m (14.6% 차이).
+  // 저장값은 원본 해상도에서(거리는 도플러 적분으로) 낸 값이라 그쪽이 맞다.
+  // 좌표·고도 배열은 지도 선과 고도 그래프를 그리는 용도로만 쓴다.
+  return {
+    ...r,
+    distanceKm: s.distanceKm > 0 ? s.distanceKm : r.distanceKm,
+    ascentM: s.ascentM > 0 ? s.ascentM : r.ascentM,
+    maxGradePct: s.maxGradePct > 0 ? s.maxGradePct : r.maxGradePct,
+  };
 }
 
 // --- 공유 ------------------------------------------------------------------
