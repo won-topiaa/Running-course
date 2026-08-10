@@ -85,7 +85,9 @@ await page.waitForTimeout(1200);
 step(await page.getByText('FREE RUN').first().isVisible().catch(() => false), '기록 화면이 열린다');
 
 await page.getByRole('button', { name: /GPS 없이 데모/ }).click();
-await page.waitForTimeout(4000);
+// 데모는 실제 러닝 속도(3.33m/s)로 재생된다 — 이동 임계(12m)를 넘어 거리가
+// 찍히기까지 7초쯤 걸리므로, 그만큼 기다렸다가 본다.
+await page.waitForTimeout(11000);
 const dist = await page.locator('text=/^\\d+\\.\\d{2}$/').first().textContent().catch(() => null);
 step(dist !== null && parseFloat(dist) > 0, `데모 러닝으로 거리가 쌓인다 (${dist ?? '없음'}km)`);
 

@@ -338,7 +338,10 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         ring.push(ring[0]);
         source = ring;
       }
-      demoPathRef.current = densifyPath(source, 22);
+      // 재생 속도는 실제 러닝(3.33m/s = 5'00"/km)에 맞춘다. 예전엔 22m/500ms
+      // (= 44m/s)로 재생해서, 페이스 범위 검사(sanePace)가 들어온 뒤로는 데모의
+      // 현재·평균 페이스가 전부 '--' 였다 — 데모가 정작 페이스 기능을 못 보여줬다.
+      demoPathRef.current = densifyPath(source, 1.67);
       demoIdxRef.current = 0;
       beginSession(true);
       demoRef.current = setInterval(() => {

@@ -30,6 +30,10 @@ export function createPaceWindow(windowMs = WINDOW_MS, minSpanMs = MIN_SPAN_MS) 
      * 아직 창이 안 찼거나 그 사이 이동이 없으면 null.
      */
     push(activeMs: number, distM: number): number | null {
+      // 시간이 뒤로 가면(세션 리셋 직후 등 비정상) 옛 표본과 섞어 계산하지
+      // 않는다 — 음수 창이 되어 엉뚱한 숫자가 나온다. 새로 시작한다.
+      const last = samples[samples.length - 1];
+      if (last && activeMs < last.t) samples = [];
       samples.push({ t: activeMs, d: distM });
       // 창 밖 표본은 버리되, 경계에 걸친 마지막 하나는 남긴다 — 다 버리면
       // 창이 실제보다 짧아져 페이스가 다시 출렁인다.
