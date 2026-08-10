@@ -34,9 +34,22 @@ export interface InProgressRun {
 
 const r5 = (v: number) => Math.round(v * 1e5) / 1e5;
 
-export function saveInProgress(run: Omit<InProgressRun, 'at'>): void {
+/**
+ * 마지막으로 쓴 거리(km). 주기 저장은 '달라진 게 있을 때만' 한다 —
+ * localStorage 쓰기는 동기라 메인 스레드를 잡는데, 마라톤 길이면 한 번에
+ * 수백 KB 다. 신호 대기처럼 안 움직이는 동안 그걸 10초마다 반복할 이유가 없다.
+ */
+let lastSavedKm = -1;
+
+export function saveInProgress(
+  run: Omit<InProgressRun, 'at'>,
+  opts?: { force?: boolean },
+): void {
   try {
     if (run.coords.length < 2) return; // 되살릴 가치가 없다
+    // 화면이 가려지는 순간(force)은 조건 없이 쓴다 — 탭이 죽기 직전
+    // 남길 수 있는 마지막 기회라 '안 바뀌었으니 건너뛴다'가 위험하다.
+    if (!opts?.force && Math.abs(run.distanceKm - lastSavedKm) < 0.005) return;
     const packed: InProgressRun = {
       ...run,
       at: Date.now(),
@@ -45,12 +58,14 @@ export function saveInProgress(run: Omit<InProgressRun, 'at'>): void {
       cumDist: run.cumDist.map((d) => Math.round(d)),
     };
     localStorage.setItem(KEY, JSON.stringify(packed));
+    lastSavedKm = run.distanceKm;
   } catch {
     // 용량 초과 등 — 안전망이 실패해도 진행 중인 기록 자체를 방해하면 안 된다
   }
 }
 
 export function clearInProgress(): void {
+  lastSavedKm = -1;
   try {
     localStorage.removeItem(KEY);
   } catch {

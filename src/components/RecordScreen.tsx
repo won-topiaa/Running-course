@@ -86,29 +86,34 @@ export default function RecordScreen({
   recRef.current = rec;
   useEffect(() => {
     if (rec.status !== 'recording' || rec.demo) return;
-    const snapshot = () => {
+    const snapshot = (force = false) => {
       const r = recRef.current;
-      saveInProgress({
+      saveInProgress(
+        {
         name,
         coords: r.coords,
         elevations: r.elevations,
         times: r.times,
         activeTimes: r.activeTimes,
         cumDist: r.cumDist,
-        distanceKm: r.distanceKm,
-        elapsedSec: r.elapsedSec,
-      });
+          distanceKm: r.distanceKm,
+          elapsedSec: r.elapsedSec,
+        },
+        { force },
+      );
     };
+    // 화면이 가려지는 순간은 무조건 쓴다 — 그 뒤에 기회가 없을 수 있다
     const onHide = () => {
-      if (document.visibilityState === 'hidden') snapshot();
+      if (document.visibilityState === 'hidden') snapshot(true);
     };
-    const t = setInterval(snapshot, 10_000);
+    const onPageHide = () => snapshot(true);
+    const t = setInterval(() => snapshot(), 10_000);
     document.addEventListener('visibilitychange', onHide);
-    window.addEventListener('pagehide', snapshot);
+    window.addEventListener('pagehide', onPageHide);
     return () => {
       clearInterval(t);
       document.removeEventListener('visibilitychange', onHide);
-      window.removeEventListener('pagehide', snapshot);
+      window.removeEventListener('pagehide', onPageHide);
     };
   }, [rec.status, rec.demo, name]);
 
