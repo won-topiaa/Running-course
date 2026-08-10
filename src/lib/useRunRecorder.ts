@@ -247,7 +247,16 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       // 예전엔 20m 만 움직여도 평균을 냈다 — 시작 직후 거리는 몇 m 인데 시간만
       // 흘러서 '50'00"/km' 같은 숫자가 대문짝만하게 떴다. 최소 거리를 두고,
       // 그래도 범위를 벗어나면(아주 느린 걷기보다 느리면) 숫자 대신 '--'.
-      sync({ elapsedSec, avgPaceSec: km >= 0.05 ? sanePace(elapsedSec / km) : null });
+      // 측위가 끊기면 '지금 페이스'는 옛 숫자다. 창 페이스는 새 측위가 올 때만
+      // 다시 계산되므로, 터널·백그라운드로 신호가 끊긴 채 5'12" 가 계속 떠
+      // 있게 된다 — 사용자는 그걸 지금 자기 페이스로 믿는다. 한동안 측위가
+      // 없으면 숫자를 거둔다(거리·시간은 그대로 두고 페이스만).
+      const staleFix = Date.now() - lastFixAtRef.current > 8_000;
+      sync({
+        elapsedSec,
+        avgPaceSec: km >= 0.05 ? sanePace(elapsedSec / km) : null,
+        ...(staleFix ? { currentPaceSec: null } : {}),
+      });
     }, 1000);
   }, [sync, activeNow]);
 
