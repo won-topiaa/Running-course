@@ -205,11 +205,14 @@ function adviceFor(
   better: BetterHour | null,
 ): string | null {
   if (risk === 'none') return null;
-  const when = better ? ` ${better.hour}시쯤이면 체감 ${better.feelsC}°까지 내려가요.` : '';
-  if (risk === 'danger') {
-    return `체감 ${Math.round(feelsC)}°${uv >= 8 ? ` · 자외선 ${uv.toFixed(0)}` : ''} — 지금은 무리예요. 물 챙기고 그늘 있는 코스로, 짧게.${when}`;
-  }
-  return `체감 ${Math.round(feelsC)}°${uv >= 7 ? ` · 자외선 ${uv.toFixed(0)}` : ''} — 페이스를 낮추고 물을 챙기세요.${when}`;
+  // 짧게 쓴다. 첫 화면 맨 위에 뜨는 줄이라 두 줄이 되면 그 높이가 그대로
+  // 지도에서 빠진다 — 실측에서 두 줄을 먹고 지도를 눌렀다.
+  const when = better ? ` · ${better.hour}시 ${better.feelsC}°` : '';
+  const uvPart = uv >= 7 ? ` · 자외선 ${uv.toFixed(0)}` : '';
+  const head = `체감 ${Math.round(feelsC)}°${uvPart}${when}`;
+  return risk === 'danger'
+    ? `${head} — 무리 말고 그늘로 짧게`
+    : `${head} — 천천히, 물 챙기기`;
 }
 
 /** 네트워크/키 없이도 화면이 채워지도록 하는 샘플 컨디션 (선선한 가을 저녁) */

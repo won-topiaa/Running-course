@@ -172,7 +172,16 @@ check(
     `'몇 시간 뒤'가 지역 시각 기준으로 계산됨 (${tz.betterHour?.inHours}시간 뒤)`,
   );
   check(tz.betterHour?.feelsC === 28, '후보 중 가장 시원한 시각을 고른다');
-  check(/지금은 무리예요/.test(tz.advice ?? ''), '위험 문구 + 추천 시각이 한 줄로');
+  // 문구 자체가 아니라 '무엇이 담겼는지'를 본다 — 표현을 다듬을 때마다
+  // 검사가 깨지면 안 되고, 정작 중요한 건 체감·추천 시각이 한 줄에 다 있는지다.
+  // (첫 화면 맨 위에 뜨는 줄이라 두 줄이 되면 그만큼 지도가 줄어든다)
+  const adv = tz.advice ?? '';
+  check(
+    adv.includes(`체감 ${Math.round(tz.feelsC)}°`) &&
+      adv.includes(`${tz.betterHour?.hour}시`) &&
+      adv.length <= 45,
+    `위험 문구에 체감·추천 시각이 한 줄로 (${adv.length}자) — "${adv}"`,
+  );
 }
 
 // 실제 Open-Meteo 호출 (키 불필요). 네트워크가 막히면 건너뛴다.

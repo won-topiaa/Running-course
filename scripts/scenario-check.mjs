@@ -59,6 +59,11 @@ async function scenario(name, opts, fn) {
   page.on('pageerror', (e) => errs.push(`예외: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !NOISE.test(m.text())) errs.push(`콘솔: ${m.text().slice(0,140)}`); });
   if (opts.init) await page.addInitScript(opts.init);
+  for (const [pattern, body] of opts.routes ?? []) {
+    await ctx.route(pattern, (r) =>
+      r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body()) }),
+    );
+  }
   if (opts.blockExternal) {
     await ctx.route('**/*', (route) => {
       const h = new URL(route.request().url()).hostname;
@@ -207,7 +212,41 @@ await scenario('초소형 화면 320px', { viewport: { width: 320, height: 640 }
   expect(sw <= cw + 2, `가로 스크롤 발생 (내용 ${sw}px > 화면 ${cw}px)`);
 });
 
-// 11) 오프라인 재로드 (SW 캐시로 다시 열리는지)
+// 11) 더운 날 경고 — 어두운 화면에 밝은 판때기가 생기면 안 된다.
+// 실측: 러닝 점수 73점(주의)인 날, 팔레트에 없는 amber 가 Tailwind 기본
+// (거의 흰색)으로 떨어져 화면 맨 위가 통째로 하얗게 떴다.
+await scenario('더운 날 폭염 경고 표시', {
+  routes: [
+    [/api\.open-meteo\.com\/v1\/forecast/, () => {
+      const now = new Date();
+      const iso = (h) => { const d = new Date(now); d.setHours(now.getHours() + h, 0, 0, 0); return d.toISOString().slice(0, 16); };
+      return {
+        utc_offset_seconds: 32400,
+        current: { temperature_2m: 29, apparent_temperature: 32, relative_humidity_2m: 70, weather_code: 1, wind_speed_10m: 6, precipitation: 0, uv_index: 7 },
+        hourly: { time: [iso(0), iso(6), iso(11)], apparent_temperature: [32, 29, 27], uv_index: [7, 0, 0], precipitation_probability: [10, 10, 10] },
+      };
+    }],
+    [/air-quality-api\.open-meteo\.com/, () => ({ current: { pm2_5: 8, pm10: 16 } })],
+  ],
+}, async (page, _c, expect) => {
+  await page.goto(base, { waitUntil: 'load' }); await settle(page, 3000);
+  const el = page.getByText(/체감 \d+°/).first();
+  expect(await el.isVisible().catch(() => false), '폭염 경고 줄이 안 뜸');
+  const info = await el.evaluate((n) => {
+    const bg = getComputedStyle(n).backgroundColor;
+    const [r, g, b] = (bg.match(/\d+/g) ?? [0, 0, 0]).map(Number);
+    // 줄 수는 높이÷줄높이로 재면 안 된다 — padding 이 섞여 1줄이 2줄로 나온다.
+    // 텍스트에 Range 를 씌우면 실제로 몇 줄로 흘렀는지 그대로 나온다.
+    const range = document.createRange();
+    range.selectNodeContents(n);
+    return { bg, lum: (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255, lines: range.getClientRects().length };
+  });
+  console.log(`     경고 배경 ${info.bg} · 밝기 ${info.lum.toFixed(2)} · ${info.lines}줄`);
+  expect(info.lum < 0.3, `어두운 테마인데 경고 배경이 밝다 (밝기 ${info.lum.toFixed(2)})`);
+  expect(info.lines <= 1, `경고가 ${info.lines}줄 — 첫 화면에서 그만큼 지도가 줄어든다`);
+});
+
+// 12) 오프라인 재로드 (SW 캐시로 다시 열리는지)
 await scenario('오프라인 재로드(PWA)', {}, async (page, ctx, expect) => {
   await page.goto(base, { waitUntil: 'load' });
   await page.waitForTimeout(3500); // SW 설치 + idle prefetch 대기
