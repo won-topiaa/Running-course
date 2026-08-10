@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { densifyPath, destinationPoint, haversineMeters } from './geo';
 import { syntheticElevation } from './routing';
 import { createGpsFilter } from './gpsFilter';
+import { sanePace } from './format';
 import { createWakeLock } from './wakeLock';
 import type { LatLng } from './types';
 
@@ -113,11 +114,12 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     const v = f?.speed ?? null;
     // speedTrusted: 진짜 움직임이 관측된 기기만. speed 를 항상 0 으로 주는
     // 기기에서 그 0 을 믿으면 페이스가 영영 '--' 가 된다 — 그땐 좌표 차분으로.
+    // 어느 경로로 구하든 마지막에 한 번 거른다. 도플러가 0.6m/s 를 주면
+    // 27'/km 가 나오는데, 그건 '천천히 뛰는 중'이 아니라 '거의 서 있는 중'이다.
     if (f?.speedTrusted && v != null) {
-      // 0.5 m/s 미만은 사실상 멈춘 것 — 33'/km 같은 숫자보다 '--' 가 낫다
-      return v >= 0.5 ? 1000 / v : null;
+      return sanePace(v > 0 ? 1000 / v : null);
     }
-    return paceFromPath(coords, activeTimes);
+    return sanePace(paceFromPath(coords, activeTimes));
   }, []);
 
   const ingest = useCallback(
@@ -183,7 +185,10 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       const elapsedMs = activeMsRef.current + (Date.now() - segStartRef.current);
       const elapsedSec = elapsedMs / 1000;
       const km = distMRef.current / 1000;
-      sync({ elapsedSec, avgPaceSec: km > 0.02 ? elapsedSec / km : null });
+      // 예전엔 20m 만 움직여도 평균을 냈다 — 시작 직후 거리는 몇 m 인데 시간만
+      // 흘러서 '50'00"/km' 같은 숫자가 대문짝만하게 떴다. 최소 거리를 두고,
+      // 그래도 범위를 벗어나면(아주 느린 걷기보다 느리면) 숫자 대신 '--'.
+      sync({ elapsedSec, avgPaceSec: km >= 0.05 ? sanePace(elapsedSec / km) : null });
     }, 1000);
   }, [sync]);
 
@@ -355,6 +360,10 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       // GPS 는 원래 몇 초씩 끊긴다. 20초 넘게 비어 있었으면 실제 공백으로 본다.
       if (since > 20_000) {
         gapMsRef.current += since;
+        // 그 사이 어디로 갔는지 모르므로 구간을 끊는다. 안 끊으면 돌아온
+        // 첫 좌표가 '화면 끄기 직전 위치'와 이어져, 그 직선거리가 통째로
+        // 기록에 더해진다(지하철로 이동했다면 몇 km 가 얹힌다).
+        filterRef.current?.breakSegment();
         sync({ gapSec: Math.round(gapMsRef.current / 1000) });
       }
       lastFixAtRef.current = Date.now();

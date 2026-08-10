@@ -22,7 +22,7 @@ import { lockBodyScroll } from '../lib/scrollLock';
 import { kmSplits } from '../lib/splits';
 import { loadToken, STRAVA_UPLOAD_PAGE, uploadGpx } from '../lib/strava';
 import { buildShareToken, savedFromView, shareUrl } from '../lib/savedRoutes';
-import { estimateTimeLabel, formatDuration, formatPace } from '../lib/format';
+import { estimateTimeLabel, formatDuration, formatPace, sanePace } from '../lib/format';
 import type { AppApi, RouteView } from '../ui/appApi';
 
 const noop = () => {};
@@ -206,7 +206,11 @@ export default function RouteSheet({
             </div>
             <div className="mb-0.5">
               <p className="text-[15px] font-bold leading-none">{timeLabel}</p>
-              <p className="mt-1 text-[12px] text-ink/70">{formatPace(paceSec)}/km</p>
+              {/* 거리가 GPS 오차 수준이면 페이스는 숫자로 의미가 없다.
+                  ('0.01km 를 5분'은 500'/km 가 되는데 그건 기록이 아니다) */}
+              <p className="mt-1 text-[12px] text-ink/70">
+                {sanePace(paceSec) != null ? `${formatPace(paceSec)}/km` : '페이스 —'}
+              </p>
             </div>
           </div>
         </div>

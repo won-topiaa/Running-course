@@ -201,4 +201,55 @@ if (weakFails.length) {
   weakFails.forEach((f) => console.log('  ❌ ' + f));
   process.exit(1);
 }
+
+// ── 긴 공백 ────────────────────────────────────────────────────────────────
+// 화면을 끄거나 지하로 들어가면 측위가 수십 초씩 통째로 끊긴다. 돌아왔을 때
+// 낡은 기준점과의 직선거리를 그대로 더하면 안 뛴 거리가 한 번에 얹힌다
+// (지하철로 이동했다면 몇 km). 순간이동 가드는 10초 미만 간격만 보므로
+// 이 경우를 못 잡았다.
+console.log('\n [긴 공백] 화면 껐다 켠 사이 이동 — 유령 거리가 붙으면 안 된다');
+const gapFails = [];
+{
+  const f = createGpsFilter();
+  const t0 = Date.now();
+  let dist = 0;
+  // 1) 60초 정상 러닝 (3m/s, 북쪽으로)
+  for (let k = 1; k <= 60; k++) {
+    const v = f.push({
+      lat: LAT0 + (3 * k) / MPD_LAT, lng: LNG0,
+      accuracy: 8, speed: 3, t: t0 + k * 1000,
+    });
+    dist += v.addM;
+  }
+  const ran = dist;
+  // 2) 90초 공백 뒤, 2km 떨어진 곳에서 측위 재개 (지하철로 이동한 셈)
+  const v = f.push({
+    lat: LAT0 + (3 * 60 + 2000) / MPD_LAT, lng: LNG0,
+    accuracy: 8, speed: 0, t: t0 + 60_000 + 90_000,
+  });
+  dist += v.addM;
+  console.log(
+    `  60초 러닝 ${ran.toFixed(0)}m → 90초 공백 뒤 2km 떨어진 곳에서 재개 ` +
+      `→ 그 한 틱이 더한 거리 ${v.addM.toFixed(0)}m (총 ${dist.toFixed(0)}m)`,
+  );
+  if (v.addM > 50) gapFails.push(`공백 뒤 유령 거리 ${v.addM.toFixed(0)}m 가 붙었다 (한도 50m)`);
+  else console.log('  ✅ 공백 구간은 거리에 안 더한다');
+  // 3) 재개 후에는 정상적으로 다시 쌓여야 한다 (기준점만 옮긴 것이지 멈춘 게 아니다)
+  let after = 0;
+  const base = 3 * 60 + 2000;
+  for (let k = 1; k <= 30; k++) {
+    const v2 = f.push({
+      lat: LAT0 + (base + 3 * k) / MPD_LAT, lng: LNG0,
+      accuracy: 8, speed: 3, t: t0 + 150_000 + k * 1000,
+    });
+    after += v2.addM;
+  }
+  console.log(`  재개 후 30초(실제 90m) → ${after.toFixed(0)}m`);
+  if (after < 45) gapFails.push(`공백 뒤 기록이 안 이어진다 (${after.toFixed(0)}m)`);
+  else console.log('  ✅ 공백이 끝나면 다시 정상 적산');
+}
+if (gapFails.length) {
+  gapFails.forEach((f) => console.log('  ❌ ' + f));
+  process.exit(1);
+}
 console.log('');

@@ -5,6 +5,7 @@ import {
   Download,
   Flame,
   Footprints,
+  MessageSquare,
   Play,
   Plus,
   Timer,
@@ -318,11 +319,78 @@ export default function MyScreen({ api }: { api: AppApi }) {
         </p>
       </div>
 
+      {/* 의견 보내기 — 베타에서 가장 중요한 길. 계정·백업보다 위에 둔다. */}
+      <FeedbackSection api={api} />
+
       {/* 계정 — 이메일 로그인으로 기록을 계정에 보관 */}
       <CloudSection api={api} />
 
       {/* 파일 백업 — 로그인 없이 쓰는 안전망 */}
       <SyncSection />
+    </div>
+  );
+}
+
+/**
+ * 베타 의견 보내기.
+ *
+ * 베타의 목적은 '무엇을 고쳐야 하는지 사람들이 알려주게 만드는 것'인데,
+ * 보낼 길이 없으면 아무리 잘 써 봐도 그 정보가 안 돌아온다. 구글폼으로 보낸다.
+ *
+ * 화면·브라우저 같은 정보는 자동으로 못 붙인다(폼은 우리 페이지가 아니다).
+ * 대신 버그 제보에 필요한 값들을 한 번에 복사할 수 있게 해 두고, 붙여넣기는
+ * 사용자 선택에 맡긴다 — 묻지도 않고 기기 정보를 실어 보내지 않기 위해서다.
+ */
+const FEEDBACK_FORM_URL =
+  'https://docs.google.com/forms/d/e/1FAIpQLSfTRlHLhAgnDQtQi8KM1KzAnefW4umgr7-XdN-vGg0rFs8Vrg/viewform';
+
+function FeedbackSection({ api }: { api: AppApi }) {
+  const [copied, setCopied] = useState(false);
+
+  const diagnostics = () => {
+    const ua = navigator.userAgent;
+    const lines = [
+      `화면 ${window.innerWidth}×${window.innerHeight}`,
+      `브라우저 ${ua.slice(0, 120)}`,
+      `기록 ${api.savedRoutes.length}건`,
+      `지도 ${api.settings.kakaoJsKey ? '카카오' : 'OSM'}`,
+      `날씨 ${api.conditions?.source ?? '없음'}`,
+      `설치형 ${window.matchMedia('(display-mode: standalone)').matches ? '예' : '아니오'}`,
+    ];
+    return lines.join('\n');
+  };
+
+  const copyInfo = async () => {
+    try {
+      await navigator.clipboard.writeText(diagnostics());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 rounded-3xl border border-coral/40 bg-coral-50 p-4 shadow-soft">
+      <h2 className="flex items-center gap-1.5 text-[14px] font-bold text-coral-600">
+        <MessageSquare size={16} /> 베타 의견 보내기
+      </h2>
+      <p className="mt-1.5 text-[12px] leading-relaxed text-espresso-muted">
+        불편한 점, 이상한 화면, 있었으면 하는 기능 — 무엇이든 편하게 알려주세요. 짧게 한 줄이어도
+        큰 도움이 됩니다.
+      </p>
+      <button
+        onClick={() => window.open(FEEDBACK_FORM_URL, '_blank', 'noopener,noreferrer')}
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-coral py-3 text-[14px] font-bold text-ink active:scale-[0.98]"
+      >
+        <MessageSquare size={15} /> 의견 보내기
+      </button>
+      <button
+        onClick={copyInfo}
+        className="mt-2 w-full text-center text-[11.5px] font-semibold text-espresso-soft underline decoration-line underline-offset-4"
+      >
+        {copied ? '복사했어요 — 폼에 붙여넣어 주세요' : '버그 제보용 기기 정보 복사'}
+      </button>
     </div>
   );
 }

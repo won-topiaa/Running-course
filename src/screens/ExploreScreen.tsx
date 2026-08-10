@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Moon, SlidersHorizontal } from 'lucide-react';
+import { Moon } from 'lucide-react';
 import ScenePhoto from '../components/ScenePhoto';
 import { COURSES } from '../data/courses';
 import { defaultPreferences, recommend } from '../lib/scoring';
@@ -9,10 +9,8 @@ import {
   COURSE_TYPE_EMOJI,
   COURSE_TYPE_LABEL,
   ELEVATION_LABEL,
-  FACTOR_META,
   GRADIENT_PREF_LABEL,
   type CourseType,
-  type FactorKey,
   type GradientPreference,
   type Preferences,
   type Recommendation,
@@ -21,27 +19,18 @@ import type { AppApi } from '../ui/appApi';
 
 const TYPES: CourseType[] = ['city', 'uninterrupted', 'green', 'waterfront', 'trail', 'track'];
 const GRADS: GradientPreference[] = ['flat', 'any', 'hilly'];
-const FACTORS: FactorKey[] = [
-  'gradient',
-  'preference',
-  'safety',
-  'amenities',
-  'scenery',
-  'distance',
-];
 
 /**
  * 취향 설정도 탭을 옮기면 사라졌다 — 코스를 하나 열어보고 돌아오면 슬라이더를
  * 처음부터 다시 맞춰야 했다. BuildScreen 과 같은 이유로 세션 동안만 기억한다.
  */
-let session: { prefs: Preferences; showWeights: boolean } | null = null;
+let session: { prefs: Preferences } | null = null;
 
 export default function ExploreScreen({ api }: { api: AppApi }) {
   const [prefs, setPrefs] = useState<Preferences>(session?.prefs ?? defaultPreferences);
-  const [showWeights, setShowWeights] = useState(session?.showWeights ?? false);
   useEffect(() => {
-    session = { prefs, showWeights };
-  }, [prefs, showWeights]);
+    session = { prefs };
+  }, [prefs]);
 
   const recs = useMemo(() => recommend(COURSES, prefs), [prefs]);
   const set = (patch: Partial<Preferences>) => setPrefs({ ...prefs, ...patch });
@@ -137,41 +126,6 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
           </span>
         </label>
 
-        {/* 세부 중요도 */}
-        <button
-          onClick={() => setShowWeights((v) => !v)}
-          className="mt-4 flex w-full items-center justify-between border-t border-line pt-3 text-[12.5px] font-semibold text-espresso-muted"
-        >
-          <span className="inline-flex items-center gap-1.5">
-            <SlidersHorizontal size={14} /> 요소별 중요도 세부 조정
-          </span>
-          <ChevronDown size={16} className={`transition ${showWeights ? 'rotate-180' : ''}`} />
-        </button>
-        {showWeights && (
-          <div className="mt-3 space-y-3">
-            {FACTORS.map((k) => (
-              <div key={k}>
-                <div className="mb-1 flex justify-between text-[12px] text-espresso-muted">
-                  <span>
-                    {FACTOR_META[k].emoji} {FACTOR_META[k].label}
-                  </span>
-                  <span className="font-semibold text-espresso">{prefs.weights[k]}/5</span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={5}
-                  step={1}
-                  value={prefs.weights[k]}
-                  onChange={(e) =>
-                    set({ weights: { ...prefs.weights, [k]: Number(e.target.value) } })
-                  }
-                  className="coral w-full"
-                />
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* 결과 */}

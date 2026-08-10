@@ -17,8 +17,18 @@ export const RUN_STYLES: {
   { id: 'flat', label: '평지 위주', desc: '일정한 페이스로 편하게', emoji: '🛣️' },
   { id: 'gentle', label: '완만한 언덕', desc: '살짝 기복 있게', emoji: '🌿' },
   { id: 'rolling', label: '오르막내리막', desc: '굴곡 반복', emoji: '🌊' },
-  { id: 'hilly', label: '경사 훈련', desc: '빡센 언덕', emoji: '⛰️' },
+  { id: 'hilly', label: '언덕 훈련', desc: '빡센 언덕', emoji: '⛰️' },
 ];
+
+/**
+ * 화면에 실제로 내놓는 선택지.
+ *
+ * '오르막내리막'과 '경사 훈련'은 사용자가 보기에 둘 다 "언덕 있는 코스"라
+ * 무엇이 다른지 설명 없이는 구분이 안 됐다. 고르는 축을 셋(평지 / 완만 /
+ * 언덕)으로 줄인다. rolling 은 타입에서 빼지 않고 목록에만 안 넣는다 —
+ * 이미 rolling 으로 저장된 기록의 이름표를 RUN_STYLES 로 계속 찾아야 한다.
+ */
+export const RUN_STYLE_CHOICES = RUN_STYLES.filter((s) => s.id !== 'rolling');
 
 export interface StyleMetrics {
   ascentPerKm: number; //     km당 누적 상승(m)

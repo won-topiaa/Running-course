@@ -36,7 +36,7 @@ export interface GpsFix {
   t: number;
 }
 
-export type RejectReason = 'accuracy' | 'gate' | 'still' | 'jump';
+export type RejectReason = 'accuracy' | 'gate' | 'still' | 'jump' | 'stale';
 
 export interface GpsVerdict {
   /** 경로에 새 점으로 추가할지 */
@@ -89,6 +89,15 @@ const STILL_TICKS = 4;
 const MAX_SPEED_MS = 10;
 /** 순간이동을 이만큼 연속으로 만나면 진짜 이동으로 받아들인다 */
 const MAX_JUMP_SKIPS = 3;
+/**
+ * 공백을 '길다'고 볼 간격(초).
+ *
+ * 이보다 오래 끊겼다가 사람이 낼 수 없는 속도로 돌아오면, 그 사이 경로를
+ * 알 수 없다고 보고 거리를 안 더한다. 시간만으로 판단하면 안 된다 —
+ * 신호가 약할 때는 임계가 커져서 정상 측위도 30초씩 벌어지는데, 그것까지
+ * 공백으로 치면 진짜 뛴 거리가 깎인다(실측 -3.3% → -15.9%).
+ */
+const LONG_GAP_SEC = 10;
 /** 오차 초과를 이만큼 연속으로 만나면 '신호 약함'을 알린다 */
 const WEAK_AFTER = 3;
 
@@ -203,9 +212,25 @@ export function createGpsFilter() {
       }
 
       const dtSec = (fix.t - anchorT) / 1000;
-      if (dtSec > 0 && dtSec < 10 && d / dtSec > MAX_SPEED_MS && jumps < MAX_JUMP_SKIPS) {
-        jumps += 1;
-        return { accept: false, point: smooth, addM: 0, reason: 'jump', weak: false, speed: spd };
+      const impliedMs = dtSec > 0 ? d / dtSec : 0;
+      if (impliedMs > MAX_SPEED_MS) {
+        if (dtSec >= LONG_GAP_SEC) {
+          // 오래 끊겼다가 사람이 낼 수 없는 속도로 돌아왔다 — 화면을 껐거나
+          // 지하로 들어간 사이 이동한 것(지하철·차량)이다. 그 사이 경로를
+          // 모르므로 거리에 더하지 않고 여기서 새로 시작한다.
+          // 평활값도 같이 끊어야 한다. 안 끊으면 다음 몇 틱 동안 평활값이
+          // 새 위치를 향해 뒤따라오면서 그 거리가 통째로 쌓인다
+          // (실측: 90m 를 뛴 30초가 838m 로 기록됐다).
+          smooth = raw;
+          anchor = raw;
+          anchorT = fix.t;
+          jumps = 0;
+          return { accept: true, point: raw, addM: 0, reason: 'stale', weak: false, speed: spd };
+        }
+        if (jumps < MAX_JUMP_SKIPS) {
+          jumps += 1;
+          return { accept: false, point: smooth, addM: 0, reason: 'jump', weak: false, speed: spd };
+        }
       }
       jumps = 0;
 

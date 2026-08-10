@@ -8,6 +8,7 @@ import {
   Share2,
   Sparkles,
   Undo2,
+  X,
 } from 'lucide-react';
 import RouteMap from '../components/RouteMap';
 import GradeElevationChart from '../components/GradeElevationChart';
@@ -18,6 +19,7 @@ import {
   GRADE_COLORS,
   PATH_PREFS,
   RUN_STYLES,
+  RUN_STYLE_CHOICES,
   type PathPref,
   type RunStyle,
 } from '../lib/routeStyle';
@@ -30,6 +32,9 @@ import type { AppApi } from '../ui/appApi';
 import { HALO, VOLT } from '../ui/theme';
 
 type Mode = 'pins' | 'distance';
+
+/** 첫 실행 안내를 이미 봤는지 (기기에 한 번만 기억) */
+const HINT_KEY = 'run-app-hint-v1';
 
 /**
  * 탭을 옮겼다 돌아와도 만들던 코스가 남아 있게 하는 세션 캐시.
@@ -77,6 +82,24 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const [peek, setPeek] = useState(false);
   const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [returnToStart, setReturnToStart] = useState(session?.returnToStart ?? true);
+  // 처음 여는 사람에게만 한 번 보여주는 3단계 안내. 지도에 툭 떨어뜨려 놓으면
+  // 뭘 눌러야 하는지 알 수 없다 — 베타에서 가장 많이 나올 질문을 미리 없앤다.
+  // 닫으면 다시 안 뜬다(기기에 기억). 지도 공간을 영구히 먹지 않게 하려는 것.
+  const [showHint, setShowHint] = useState(() => {
+    try {
+      return localStorage.getItem(HINT_KEY) == null;
+    } catch {
+      return false; // 저장소가 막힌 환경이면 매번 뜨는 게 더 성가시다
+    }
+  });
+  const dismissHint = () => {
+    setShowHint(false);
+    try {
+      localStorage.setItem(HINT_KEY, '1');
+    } catch {
+      /* 무시 */
+    }
+  };
   const attemptRef = useRef(0);
 
   const selected = results?.[selIdx] ?? null;
@@ -227,6 +250,12 @@ export default function BuildScreen({ api }: { api: AppApi }) {
       alive = false;
     };
   }, [results]);
+
+  // 후보끼리 비교해 붙이는 '이 코스만의 장점' 배지
+  const badges = useMemo(
+    () => (results ? superlatives(results, greenPct) : []),
+    [results, greenPct],
+  );
 
   // 접힌 상태에서도 남길 한 줄용 고도 범위
   const elevRange = useMemo(() => {
@@ -532,6 +561,25 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           )}
         </div>
 
+        {/* 첫 방문 안내 — 한 번만, 닫으면 끝. 결과를 보는 중에는 안 띄운다. */}
+        {showHint && !results && (
+          <div className="pointer-events-auto mt-2 shrink-0">
+            <div className="mx-auto flex w-full max-w-md items-start gap-2 rounded-2xl border border-coral/40 bg-coral-50 px-3 py-2.5 shadow-card sm:mx-0">
+              <span className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-coral-600">
+                <b className="font-bold">처음이신가요?</b> ① 지도를 눌러 출발점을 찍고 ② 아래에서
+                거리·취향을 고른 뒤 ③ <b className="font-bold">코스 추천받기</b>를 누르면 돼요.
+              </span>
+              <button
+                onClick={dismissHint}
+                aria-label="안내 닫기"
+                className="-mr-1 -mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-coral-600 active:scale-90"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 지도가 보이는 구멍 — 남는 높이를 여기서 먹는다.
             min-h 로 바닥을 깔아 둔다: 예전엔 min-h-2(8px)라 화면이 짧은 폰
             (360×640)에서 시트가 지도를 60px 까지 밀어내 첫 화면이 다시
@@ -647,6 +695,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                           r={r}
                           selected={i === selIdx}
                           greenPct={greenPct[i] ?? null}
+                          badge={badges[i]}
                           paceSec={api.settings.paceSecPerKm}
                           onSelect={() => {
                             setSelIdx(i);
@@ -856,7 +905,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                   {/* 스타일 선택 — 가로 한 줄 칩. 2×2 카드(설명 포함)는 세로로 너무 커서
                     지도를 다 덮었다. 선택한 것의 설명만 아래 한 줄로 보여준다. */}
                   <div className="no-scrollbar -mx-1 mt-2.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
-                    {RUN_STYLES.map((s) => (
+                    {RUN_STYLE_CHOICES.map((s) => (
                       <button
                         key={s.id}
                         onClick={() => {
@@ -968,6 +1017,36 @@ export default function BuildScreen({ api }: { api: AppApi }) {
 
 const styleLabel = (s: RunStyle) => RUN_STYLES.find((x) => x.id === s)?.label ?? '러닝';
 
+/**
+ * 후보들이 서로 어떻게 다른지 한 마디로 붙인다.
+ *
+ * 세 후보가 다 '5.0km · 상승 20m' 처럼 비슷하게 적혀 있으면 무엇을 고를지
+ * 알 수 없어서 결국 1번을 누르게 된다. 후보들끼리 비교해서 이 코스만의
+ * 장점을 찾아 붙인다. 차이가 의미 없을 만큼 작으면 아무것도 안 붙인다 —
+ * 1m 차이로 '가장 평탄'이라고 하면 그게 더 헷갈린다.
+ */
+function superlatives(rs: BuiltRoute[], green: (number | null)[]): (string | null)[] {
+  const out: (string | null)[] = rs.map(() => null);
+  if (rs.length < 2) return out;
+  const put = (i: number, label: string) => {
+    if (i >= 0 && out[i] == null) out[i] = label;
+  };
+
+  // 숲길 — 전부 값이 와 있을 때만(일부만 오면 비교가 거짓이 된다)
+  const g = rs.map((_, i) => green[i]);
+  if (g.every((v): v is number => typeof v === 'number')) {
+    const max = Math.max(...g);
+    if (max >= 20 && max - Math.min(...g) >= 10) put(g.indexOf(max), '🌳 숲길 최다');
+  }
+  // 평탄함
+  const asc = rs.map((r) => r.route.ascentM);
+  if (Math.max(...asc) - Math.min(...asc) >= 10) put(asc.indexOf(Math.min(...asc)), '가장 평탄');
+  // 목표 거리 근접
+  const ds = rs.map((r) => r.distanceScore);
+  if (Math.max(...ds) - Math.min(...ds) >= 0.05) put(ds.indexOf(Math.max(...ds)), '목표에 가장 가까움');
+  return out;
+}
+
 const courseName = (b: BuiltRoute) =>
   `${styleLabel(b.styleEval.style)} ${formatDistance(b.route.distanceKm)} 코스`;
 
@@ -1077,6 +1156,7 @@ function CompareCard({
   selected,
   paceSec,
   greenPct,
+  badge,
   onSelect,
 }: {
   r: BuiltRoute;
@@ -1084,6 +1164,8 @@ function CompareCard({
   paceSec: number;
   /** 숲길 비율(%) — 아직 안 왔거나 못 구했으면 null */
   greenPct: number | null;
+  /** 다른 후보와 비교한 이 코스만의 장점 (없으면 null) */
+  badge: string | null;
   onSelect: () => void;
 }) {
   const { route, matchScore } = r;
@@ -1122,16 +1204,26 @@ function CompareCard({
           {formatDistance(route.distanceKm)} · {estimateTimeLabel(route.distanceKm, paceSec)} · 최대{' '}
           {route.maxGradePct}%
         </span>
-        {/* 길 성격 + 숲길 비율. 둘 다 없으면 줄 자체를 안 만든다 —
+        {/* 길 성격 + 숲길 + 이 코스만의 장점. 아무것도 없으면 줄을 안 만든다 —
             모르는 값을 0% 로 적으면 거짓말이 된다. */}
-        {(route.way || greenPct != null) && (
-          <span className="mt-0.5 block truncate text-[11px] text-espresso-soft">
-            {route.way && wayMixLabel(route.way)}
-            {route.way && greenPct != null && ' · '}
-            {greenPct != null && (
-              <span className={greenPct >= 40 ? 'font-bold text-sage-600' : ''}>
+        {(route.way || greenPct != null || badge) && (
+          <span className="mt-1 flex flex-wrap items-center gap-1">
+            {badge && (
+              <span className="rounded-full bg-coral px-1.5 py-0.5 text-[10px] font-bold text-ink">
+                {badge}
+              </span>
+            )}
+            {/* 여름 러닝에서 그늘은 경사만큼 중요하다 — 높으면 눈에 띄게 */}
+            {greenPct != null && greenPct >= 25 && (
+              <span className="rounded-full bg-sage-100 px-1.5 py-0.5 text-[10px] font-bold text-sage-600">
                 🌳 숲길 {greenPct}%
               </span>
+            )}
+            {greenPct != null && greenPct < 25 && (
+              <span className="text-[11px] text-espresso-soft">🌳 숲길 {greenPct}%</span>
+            )}
+            {route.way && (
+              <span className="truncate text-[11px] text-espresso-soft">{wayMixLabel(route.way)}</span>
             )}
           </span>
         )}

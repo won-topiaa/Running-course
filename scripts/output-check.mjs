@@ -220,6 +220,34 @@ check(
 );
 check(sanitizeRoutes(null).length === 0 && sanitizeRoutes('x').length === 0, '배열이 아니면 빈 목록');
 
+// ── 페이스 표기 ─────────────────────────────────────────────────────────────
+// 화면에 그대로 찍히는 문자열이라 한 번 틀리면 사용자가 바로 본다.
+// 실측: 방어가 없어서 NaN 이 들어오면 "NaN'NaN\"" 이, 음수면 "-1'-5\"" 가 떴고,
+// 20m 만 움직인 시작 직후 평균 페이스가 "50'00\"/km" 로 나왔다.
+console.log('\n[페이스] 이상한 값이 화면에 새지 않는지');
+const { formatPace, sanePace } = await bundle('src/lib/format.ts', 'fmt.mjs');
+const junkPace = [NaN, Infinity, -Infinity, 0, -5, undefined, null];
+const rendered = junkPace.map((v) => formatPace(v));
+console.log(`    이상한 입력 ${junkPace.length}개 → ${[...new Set(rendered)].join(' ')}`);
+check(
+  rendered.every((r) => r === '--'),
+  `이상한 값은 전부 '--' 로 (${rendered.join(', ')})`,
+);
+// '-' 하나만 보면 '--' 자체가 걸린다. 음수는 '-12' 처럼 숫자가 붙은 걸 본다.
+check(
+  !rendered.some((r) => /NaN|Infinity|-\d/.test(r)),
+  '화면 문자열에 NaN·Infinity·음수가 안 샌다',
+);
+check(formatPace(330) === "5'30\"" && formatPace(359.6) === "6'00\"", '정상 값은 그대로 (5\'30", 6\'00")');
+// 범위 판정 — 세계기록보다 빠르거나 걷기보다 느리면 숫자로 내보내지 않는다
+check(sanePace(330) === 330, '정상 페이스는 통과');
+check(sanePace(60) === null, "1'00\"/km(세계기록보다 빠름)는 거른다");
+check(sanePace(3000) === null, "50'00\"/km(시작 직후 허수)는 거른다");
+check(sanePace(NaN) === null && sanePace(null) === null, 'NaN·null 은 거른다');
+// 시작 직후 시나리오 — 예전에 50'00" 가 떴던 조건
+check(sanePace(60 / 0.02) === null, '20m·60초(시작 직후) 평균은 숫자로 안 내보낸다');
+check(sanePace(120 / 0.4) === 300, '400m·2분은 정상 페이스로 통과 (5\'00")');
+
 // ── 통계 ────────────────────────────────────────────────────────────────────
 console.log('\n[통계] 마이 페이지 숫자');
 const day = 86400_000;
