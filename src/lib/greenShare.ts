@@ -59,6 +59,28 @@ interface Poly {
 // bbox 당 결과를 잠깐 기억한다. '다시 찾기'를 눌러도 같은 동네면 재조회하지 않는다.
 const cache = new Map<string, { at: number; polys: Poly[] }>();
 const CACHE_TTL_MS = 10 * 60_000;
+// 한 동네의 숲 polygon 이 실측 약 0.9MB 다(남산 주변). TTL 이 지나면 못 쓰는
+// 값인데도 Map 에 그대로 남아 메모리를 계속 붙잡고 있었다 — 여러 동네를 옮겨
+// 다니며 코스를 만들면 그만큼 쌓인다. 쓸 때마다 만료분을 버리고 개수도 막는다.
+const MAX_CACHE = 6;
+
+function rememberPolys(key: string, polys: Poly[]): void {
+  const now = Date.now();
+  for (const [k, v] of cache) if (now - v.at >= CACHE_TTL_MS) cache.delete(k);
+  cache.set(key, { at: now, polys });
+  // 아직 안 만료됐어도 개수가 넘치면 가장 오래된 것부터 버린다
+  // (Map 은 넣은 순서를 지키므로 첫 키가 가장 오래된 것)
+  while (cache.size > MAX_CACHE) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+}
+
+/** 검증용 — 지금 캐시에 몇 건이 남아 있는지 */
+export function greenCacheSize(): number {
+  return cache.size;
+}
 
 function bboxOf(routes: LatLng[][]): [number, number, number, number] | null {
   let minLat = Infinity;
@@ -216,7 +238,7 @@ export async function fetchGreenShares(routes: LatLng[][]): Promise<(number | nu
       }
       if (!res.ok) return empty;
       polys = parseGreenPolys(await res.json());
-      cache.set(key, { at: Date.now(), polys });
+      rememberPolys(key, polys);
     } catch {
       return empty;
     } finally {

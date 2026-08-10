@@ -472,5 +472,49 @@ check(stats.streakDays === 3, `오늘부터 3일 연속 (${stats.streakDays})`);
 check(stats.longestKm === 10, '최장 거리 10km');
 check(computeRunStats([], now).runCount === 0, '기록이 없으면 0');
 
+// ── 숲길 캐시 ───────────────────────────────────────────────────────────────
+// 한 동네 결과가 실측 약 0.9MB 인데, TTL(10분)이 지나도 Map 에 남아 있었다.
+// 여러 동네를 옮겨 다니며 코스를 만들면 그만큼 계속 쌓인다.
+console.log('\n[숲길 캐시] 오래된 값이 메모리를 붙잡고 있으면 안 된다');
+{
+  const green = await bundle('src/lib/greenShare.ts', 'green.mjs');
+  // 실제 Overpass 응답 모양을 흉내 낸다. 조회가 성공해야 캐시가 차므로,
+  // 응답을 막아버리면 새는지 안 새는지 알 수 없는 검사가 된다.
+  const sizes = [];
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      elements: [
+        {
+          type: 'way',
+          geometry: [
+            { lat: 37.0, lon: 127.0 },
+            { lat: 37.9, lon: 127.0 },
+            { lat: 37.9, lon: 127.9 },
+            { lat: 37.0, lon: 127.9 },
+          ],
+        },
+      ],
+    }),
+  });
+  for (let i = 0; i < 12; i++) {
+    const path = [];
+    let la = 37.5 + i * 0.05;
+    let ln = 127.0 + i * 0.05;
+    for (let k = 0; k < 20; k++) {
+      la += 0.0002;
+      ln += 0.0002;
+      path.push([la, ln]);
+    }
+    await green.fetchGreenShares([path]);
+    sizes.push(green.greenCacheSize());
+  }
+  const peak = Math.max(...sizes);
+  console.log(`    서로 다른 동네 12곳 조회 → 캐시 ${sizes.join('·')} (최대 ${peak}건)`);
+  check(peak > 1, '조회에 성공하면 캐시가 실제로 찬다 (검사가 헛돌지 않게)');
+  check(peak <= 6, `그래도 무한정 늘지 않는다 (최대 ${peak}건)`);
+}
+
 console.log(`\n통과 ${ok.length} / 실패 ${bad.length}`);
 if (bad.length) process.exit(1);
