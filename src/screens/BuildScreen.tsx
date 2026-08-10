@@ -29,7 +29,7 @@ import { wayMixLabel } from '../lib/wayMix';
 import { haversineMeters } from '../lib/geo';
 import type { LatLng } from '../lib/types';
 import type { AppApi } from '../ui/appApi';
-import { HALO, VOLT } from '../ui/theme';
+import { VOLT } from '../ui/theme';
 
 type Mode = 'pins' | 'distance';
 
@@ -437,10 +437,15 @@ export default function BuildScreen({ api }: { api: AppApi }) {
         }`}
       >
         <div className="pointer-events-auto mx-auto w-full max-w-md shrink-0 overflow-hidden rounded-3xl border border-line/70 bg-paper/80 shadow-card backdrop-blur-md sm:mx-0">
-          {/* 오늘의 러닝 컨디션 — 한 줄 요약 (뛸지 말지 바로 판단) */}
+          {/* 오늘의 러닝 컨디션.
+              예전엔 '날씨 줄'과 '더위 조언 줄'이 각각 패딩을 가진 별도 블록이라,
+              더운 날이면 그 두 벌(위아래 16px×2)이 그대로 지도에서 빠졌다.
+              한 블록으로 합치고 체감온도는 첫 줄로 올린다 — 조언 줄은 위험할 때만.
+              경로 출처 뱃지도 '데모(직선)'일 때만 남긴다. ORS 냐 OSM 이냐는
+              둘 다 실제 도로라 사용자에겐 같은 말이고, 그 자리를 체감온도에 준다. */}
           {api.conditions && (
             <div
-              className={`flex items-center gap-1.5 whitespace-nowrap px-3.5 py-2 text-[11.5px] ${
+              className={`px-3.5 py-2 text-[11.5px] ${
                 api.conditions.runScore >= 75
                   ? 'bg-sage-50 text-sage-600'
                   : api.conditions.runScore >= 55
@@ -448,40 +453,34 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                     : 'bg-coral-50 text-coral-600'
               }`}
             >
-              <span>{api.conditions.emoji}</span>
-              <span className="font-bold">{api.conditions.tempC}°</span>
-              <span className="opacity-70">·</span>
-              <span className="min-w-0 truncate">미세먼지 {api.conditions.aqiLabel}</span>
-              <span className="ml-auto shrink-0 font-semibold">
-                {/* 실측이 아닌 폴백 값이면 숨기지 말고 정직하게 표시 */}
-                {api.conditions.source === 'sample' && (
-                  <span className="mr-1 font-normal opacity-60">예시</span>
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <span>{api.conditions.emoji}</span>
+                <span className="font-bold">{api.conditions.tempC}°</span>
+                {/* 조언 줄이 뜨는 날은 거기에 체감이 이미 들어 있다 — 두 번 쓰지 않는다 */}
+                {!api.conditions.advice && api.conditions.feelsC !== api.conditions.tempC && (
+                  <span className="opacity-80">체감 {api.conditions.feelsC}°</span>
                 )}
-                {api.conditions.runScore}점
-              </span>
-              <span
-                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                  sourceBadge.demo ? 'bg-coral-100 text-coral-600' : 'bg-sage-100 text-sage-600'
-                }`}
-              >
-                <span className="sm:hidden">{sourceBadge.short}</span>
-                <span className="hidden sm:inline">{sourceBadge.text}</span>
-              </span>
+                <span className="opacity-70">·</span>
+                <span className="min-w-0 truncate">미세먼지 {api.conditions.aqiLabel}</span>
+                <span className="ml-auto shrink-0 font-semibold">
+                  {/* 실측이 아닌 폴백 값이면 숨기지 말고 정직하게 표시 */}
+                  {api.conditions.source === 'sample' && (
+                    <span className="mr-1 font-normal opacity-60">예시</span>
+                  )}
+                  {api.conditions.runScore}점
+                </span>
+                {sourceBadge.demo && (
+                  <span className="shrink-0 rounded-full bg-coral-100 px-2 py-0.5 text-[10px] font-bold text-coral-600">
+                    {sourceBadge.short}
+                  </span>
+                )}
+              </div>
+              {/* 더위·자외선 조언 — 한국 여름엔 '지금 뛸까'가 코스보다 먼저다.
+                  위험할 때만 나오고 평소엔 줄 자체가 없다. */}
+              {api.conditions.advice && (
+                <p className="mt-1 leading-relaxed opacity-90">{api.conditions.advice}</p>
+              )}
             </div>
-          )}
-
-          {/* 더위·자외선 조언 — 한국 여름엔 '지금 뛸까'가 코스보다 먼저다.
-              위험할 때만 나오고 평소엔 줄 자체가 없다. */}
-          {api.conditions?.advice && (
-            <p
-              className={`px-3.5 py-2 text-[11.5px] leading-relaxed ${
-                api.conditions.heatRisk === 'danger'
-                  ? 'bg-coral-50 text-coral-600'
-                  : 'bg-amber-50 text-amber-700'
-              }`}
-            >
-              {api.conditions.advice}
-            </p>
           )}
 
           {/* 결과를 보는 동안에는 입력 컨트롤을 접는다. 코스를 고르는 단계에서
@@ -491,47 +490,44 @@ export default function BuildScreen({ api }: { api: AppApi }) {
               지도에 돌아간다. */}
           {!results && (
             <>
-              {/* 모드 세그먼트 — 화면 제목은 하단 네비가 이미 알려주므로 두지 않는다 */}
-              <div className="mx-4 mt-3 flex rounded-full bg-tint p-1">
-                <SegBtn
-                  active={mode === 'distance'}
-                  onClick={() => {
-                    setMode('distance');
-                    reset();
-                  }}
+              {/* 모드 + 내 위치를 한 줄로.
+                  예전엔 모드 세그먼트 한 줄, '출발 · 지도를 눌러 시작점 지정'
+                  한 줄로 나뉘어 있었다. 그런데 아래 줄은 상태가 아니라 고정
+                  안내문이었다 — 시작점을 찍어도 문구가 그대로였다. 같은 말을
+                  첫 실행 안내와 지도의 '출발' 말풍선이 이미 하고 있어서,
+                  거리 모드에서는 그 줄을 없애고 '내 위치'만 옆으로 붙였다.
+                  핀 모드는 찍은 개수를 알려주는 진짜 상태라 그대로 둔다. */}
+              <div className="mt-3 flex items-center gap-2 px-4 pb-3">
+                <div className="flex min-w-0 flex-1 rounded-full bg-tint p-1">
+                  <SegBtn
+                    active={mode === 'distance'}
+                    onClick={() => {
+                      setMode('distance');
+                      reset();
+                    }}
+                  >
+                    🎯 거리로
+                  </SegBtn>
+                  <SegBtn
+                    active={mode === 'pins'}
+                    onClick={() => {
+                      setMode('pins');
+                      reset();
+                    }}
+                  >
+                    📍 핀으로
+                  </SegBtn>
+                </div>
+                <button
+                  onClick={useMyLocation}
+                  className="shrink-0 rounded-full border border-line px-3 py-2 text-[12px] font-semibold text-espresso-muted active:scale-95"
                 >
-                  🎯 거리로
-                </SegBtn>
-                <SegBtn
-                  active={mode === 'pins'}
-                  onClick={() => {
-                    setMode('pins');
-                    reset();
-                  }}
-                >
-                  📍 핀으로
-                </SegBtn>
+                  내 위치
+                </button>
               </div>
 
-              {/* 입력 행 */}
-              <div className="mt-2 px-4 pb-3">
-                {mode === 'distance' ? (
-                  <>
-                    <InputRow
-                      dot={HALO}
-                      label="출발"
-                      value="지도를 눌러 시작점 지정"
-                      action={
-                        <button
-                          onClick={useMyLocation}
-                          className="rounded-full bg-tint px-2.5 py-1 text-[11px] font-semibold text-espresso-muted active:scale-95"
-                        >
-                          내 위치
-                        </button>
-                      }
-                    />
-                  </>
-                ) : (
+              {mode === 'pins' && (
+                <div className="-mt-1 px-4 pb-3">
                   <InputRow
                     dot={VOLT}
                     label="경유"
@@ -554,9 +550,8 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                       ) : undefined
                     }
                   />
-                )}
-
-              </div>
+                </div>
+              )}
             </>
           )}
         </div>
