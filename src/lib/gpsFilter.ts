@@ -198,8 +198,11 @@ export function createGpsFilter() {
           // 통째로 빠진다(합성 검증에서 -19.7%). 끊김 동안에는 직전 속도를
           // 유지한 평활값으로 적분한다.
           const confirmedStill = stillTicks >= STILL_TICKS;
-          const v = spd as number;
-          moved = !confirmedStill && v >= STILL_MS ? Math.min(v, MAX_SPEED_MS) * dt : 0;
+          // 확정 정지일 때만 0. 'v < STILL_MS 면 0' 조건까지 걸면 잡음으로
+          // 순간 낮게 읽힌 틱이 통째로 깎여 — 위쪽만 자르는 비대칭이라 —
+          // 거리가 늘 부족한 쪽으로 치우친다. 평활 속도는 정지가 확정되기
+          // 전에는 어차피 달리던 값 근처에 있다.
+          moved = confirmedStill ? 0 : Math.min(spd as number, MAX_SPEED_MS) * dt;
         }
       }
       lastT = fix.t;

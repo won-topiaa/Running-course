@@ -272,6 +272,52 @@ check(sanePace(NaN) === null && sanePace(null) === null, 'NaN·null 은 거른�
 check(sanePace(60 / 0.02) === null, '20m·60초(시작 직후) 평균은 숫자로 안 내보낸다');
 check(sanePace(120 / 0.4) === 300, '400m·2분은 정상 페이스로 통과 (5\'00")');
 
+// ── 표시 페이스(창) ─────────────────────────────────────────────────────────
+// 순간 도플러를 그대로 뒤집으면(1000/speed) 실기기 잡음 ±0.45m/s 에서 일정하게
+// 달려도 표시가 4'34"~6'57" 를 오갔다 — 전체 틱의 18% 가 실제와 10% 이상
+// 어긋났다(직선에서도). '최근 20초 누적 거리 ÷ 시간'으로 바꾼 뒤의 안정성을
+// 같은 조건으로 잰다.
+console.log('\n[표시 페이스] 직선 일정 주행에서 안 출렁이는지');
+{
+  const { createPaceWindow } = await bundle('src/lib/paceWindow.ts', 'pw.mjs');
+  const { createGpsFilter } = await bundle('src/lib/gpsFilter.ts', 'gf.mjs');
+  const seeded = (s0) => { let x = s0 >>> 0; return () => { x = (x * 1103515245 + 12345) & 0x7fffffff; return x / 0x7fffffff; }; };
+  const rnd = seeded(11);
+  const gauss = () => { const u = Math.max(1e-9, rnd()); const v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+
+  const f = createGpsFilter();
+  const win = createPaceWindow();
+  const speed = 3.0; // 5'33"/km 일정
+  const t0 = Date.now();
+  let dist = 0; let flick = 0; let n = 0; let minP = 1e9; let maxP = 0;
+  for (let k = 1; k <= 300; k++) {
+    const v = f.push({ lat: 37.5665 + (speed * k) / 111320, lng: 126.978, accuracy: 8,
+      speed: Math.max(0, speed + gauss() * 0.45), t: t0 + k * 1000 });
+    dist += v.addM;
+    const p = win.push(k * 1000, dist);
+    if (k > 30 && p != null) {
+      n++; minP = Math.min(minP, p); maxP = Math.max(maxP, p);
+      if (Math.abs(p - 1000 / speed) / (1000 / speed) > 0.1) flick++;
+    }
+  }
+  const fmt = (p) => `${Math.floor(p / 60)}'${String(Math.round(p % 60)).padStart(2, '0')}"`;
+  console.log(`    실제 5'33" → 표시 범위 ${fmt(minP)}~${fmt(maxP)} · 10% 이탈 ${flick}/${n}틱`);
+  check(flick === 0, `일정 주행에서 표시가 실제의 ±10% 안에 머문다 (이탈 ${flick}틱, 순간 방식은 18%)`);
+  check(Math.abs((minP + maxP) / 2 - 1000 / speed) < 15, '표시의 중심이 실제 페이스와 일치');
+
+  // 정지: 거리가 안 늘면 숫자 대신 null (창에 옛 이동이 남아 있어도 언젠간)
+  let last = 999;
+  for (let k = 301; k <= 330; k++) last = win.push(k * 1000, dist);
+  check(last === null, '완전히 멈추면 페이스가 null 로 내려온다');
+  // 재개: 다시 쌓이면 8초 뒤부터 정상 복귀
+  let resumed = null;
+  for (let k = 331; k <= 360; k++) { dist += 3; resumed = win.push(k * 1000, dist); }
+  check(resumed != null && Math.abs(resumed - 1000 / 3) / (1000 / 3) < 0.35, `재개하면 페이스가 돌아온다 (${resumed?.toFixed(0)}초/km)`);
+  // 창이 안 찼을 때는 숫자를 안 내보낸다
+  const w2 = createPaceWindow();
+  check(w2.push(3000, 9) === null, '8초가 안 쌓였으면 null (시작 직후 허수 방지)');
+}
+
 // ── 후보 비교 배지 ──────────────────────────────────────────────────────────
 // 카드에 '가장 평탄' 같은 단정을 붙인다. 틀리면 사용자를 속이는 것이라
 // (그 말을 믿고 코스를 고른다) 눈이 아니라 검사로 확인한다.

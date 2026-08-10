@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { densifyPath, destinationPoint, haversineMeters } from './geo';
 import { syntheticElevation } from './routing';
 import { createGpsFilter } from './gpsFilter';
+import { createPaceWindow } from './paceWindow';
 import { sanePace } from './format';
 import { createWakeLock } from './wakeLock';
 import type { LatLng } from './types';
@@ -104,6 +105,10 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
   // GPS 잡음 필터 — 지터가 거리로 둔갑하지 않게 막는다 (gpsFilter.ts)
   const filterRef = useRef<ReturnType<typeof createGpsFilter> | null>(null);
   if (filterRef.current === null) filterRef.current = createGpsFilter();
+  // 표시용 '지금 페이스' — 최근 20초의 실제 누적 거리 ÷ 시간 (paceWindow.ts)
+  const paceWinRef = useRef<ReturnType<typeof createPaceWindow> | null>(null);
+  if (paceWinRef.current === null) paceWinRef.current = createPaceWindow();
+  const winPaceRef = useRef<number | null>(null);
   // 렌더마다 createWakeLock() 이 재실행되지 않도록 지연 초기화
   const wakeRef = useRef<ReturnType<typeof createWakeLock> | null>(null);
   if (wakeRef.current === null) wakeRef.current = createWakeLock();
@@ -112,14 +117,24 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     setState((s) => ({ ...s, ...patch }));
   }, []);
 
-  /** 지금 페이스 — 믿을 만한 도플러 속도 우선, 아니면 좌표 차분 */
+  /**
+   * 지금 페이스.
+   *
+   * 1순위는 '최근 20초의 실제 누적 거리 ÷ 시간'(창 페이스) — 순간 도플러를
+   * 그대로 뒤집으면 잡음 ±0.45m/s 에서 일정하게 달려도 표시가 4'34"~6'57" 를
+   * 오갔다(직선에서도). 창 페이스는 총거리와 같은 자로 재므로 안정적이고
+   * 화면 상단 숫자와 항상 앞뒤가 맞는다.
+   * 창이 아직 안 찼을 때(시작 직후)만 도플러 순간값 → 좌표 차분 순서로 잇고,
+   * 정지가 확정되면 창이 남아 있어도 즉시 '--' 로 넘긴다.
+   */
   const livePace = useCallback((coords: LatLng[], activeTimes: number[]): number | null => {
     const f = filterRef.current;
     const v = f?.speed ?? null;
-    // speedTrusted: 진짜 움직임이 관측된 기기만. speed 를 항상 0 으로 주는
-    // 기기에서 그 0 을 믿으면 페이스가 영영 '--' 가 된다 — 그땐 좌표 차분으로.
-    // 어느 경로로 구하든 마지막에 한 번 거른다. 도플러가 0.6m/s 를 주면
-    // 27'/km 가 나오는데, 그건 '천천히 뛰는 중'이 아니라 '거의 서 있는 중'이다.
+    // 확정 정지 — 창에는 아직 직전 20초의 이동이 남아 있어 22'/km 같은
+    // 숫자가 한동안 이어진다. 서 있는 걸 아는데 숫자를 보여줄 이유가 없다.
+    if (f?.speedTrusted && v != null && v < 0.5) return null;
+    const win = sanePace(winPaceRef.current);
+    if (win != null) return win;
     if (f?.speedTrusted && v != null) {
       return sanePace(v > 0 ? 1000 / v : null);
     }
@@ -150,6 +165,11 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       // 위치가 버려진 틱에도 실제로는 그만큼 달린 것이므로 먼저 더한다
       // (여기서 안 더하면 오차가 큰 구간의 거리가 통째로 사라진다).
       distMRef.current += v.addM;
+      // 표시 페이스용 창 표본 — 활성 시간 기준이라 일시정지를 건너뛰어도 이어진다
+      winPaceRef.current = paceWinRef.current!.push(
+        activeMsRef.current + (now - segStartRef.current),
+        distMRef.current,
+      );
 
       // 버려진 측위여도 거리·페이스·신호 상태는 갱신한다. 숫자가 멈춰 보이면
       // 사용자는 앱이 죽은 줄 안다.
@@ -237,6 +257,8 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       lastFixAtRef.current = Date.now();
       gapMsRef.current = 0;
       filterRef.current!.reset();
+      paceWinRef.current!.reset();
+      winPaceRef.current = null;
       statusRef.current = 'recording';
       sync({
         status: 'recording',
