@@ -22,7 +22,7 @@ const RIGHT: { id: Screen; label: string; icon: typeof Route }[] = [
 export default function BottomNav({ active, onChange, onRecord, savedCount }: Props) {
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-[1000] flex justify-center pb-[env(safe-area-inset-bottom)]">
-      <div className="pointer-events-auto mx-3 mb-3 flex w-full max-w-md items-center justify-around rounded-full border border-line bg-paper/85 px-2 py-1.5 shadow-card backdrop-blur-md">
+      <div className="pointer-events-auto mx-3 mb-2 flex w-full max-w-md items-center justify-around rounded-full border border-line bg-paper/85 px-2 py-1 shadow-card backdrop-blur-md">
         {LEFT.map((t) => (
           <Tab key={t.id} {...t} active={active === t.id} onClick={() => onChange(t.id)} />
         ))}

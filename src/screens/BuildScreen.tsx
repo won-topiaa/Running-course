@@ -432,7 +432,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           같은 flex 컬럼에 두면 공간이 모자랄 때 각자 내부 스크롤로 줄어들 뿐
           서로 겹칠 수가 없다. 컬럼 자체는 클릭을 통과시켜 지도를 가리지 않는다. */}
       <div
-        className={`pointer-events-none absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+88px)] top-0 z-[500] flex flex-col px-3 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] transition-opacity duration-200 sm:inset-x-auto sm:left-0 sm:w-[420px] ${
+        className={`pointer-events-none absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+80px)] top-0 z-[500] flex flex-col px-3 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] transition-opacity duration-200 sm:inset-x-auto sm:left-0 sm:w-[420px] ${
           peek ? 'opacity-0' : 'opacity-100'
         }`}
       >
