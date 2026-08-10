@@ -105,6 +105,20 @@ check(decoded?.n === payload.n, '한글·특수문자 이름이 살아 돌아온
 check(decoded?.d === payload.d && decoded?.a === payload.a, '거리·상승 보존');
 check(url.length < 8000, `URL 길이가 브라우저 한계 안 (${url.length}자)`);
 
+// 받는 사람이 보는 수치가 보낸 사람이 본 것과 같아야 한다.
+// 링크에는 좌표를 100개로 솎아 담으므로, 그걸로 거리를 다시 계산하면 코너를
+// 크게 가로질러 짧아진다 — 같은 코스인데 보낸 쪽과 받은 쪽 숫자가 달라진다.
+{
+  const { parseSharedFromHash } = await bundle('src/lib/savedRoutes.ts', 'sr3.mjs');
+  const got = parseSharedFromHash(`#course=${token}`);
+  console.log(
+    `    보낸 값 ${payload.d}km/상승${payload.a}m → 받은 값 ${got.route.distanceKm}km/상승${got.route.ascentM}m`,
+  );
+  check(got.route.distanceKm === payload.d, `공유받은 거리가 보낸 값과 같다 (${got.route.distanceKm}km)`);
+  check(got.route.ascentM === payload.a, `공유받은 상승이 보낸 값과 같다 (${got.route.ascentM}m)`);
+  check(got.route.coords.length > 1, '지도에 그릴 좌표는 그대로 살아 있다');
+}
+
 // ── 구간 기록 ───────────────────────────────────────────────────────────────
 console.log('\n[구간 기록] km 경계 보간');
 // 정확히 3km 를 6분/km 로 뛴 직선.
@@ -243,6 +257,37 @@ check(
   '남은 항목은 지도에 그릴 수 있는 좌표를 가진다 (center 가 undefined 일 수 없다)',
 );
 check(sanitizeRoutes(null).length === 0 && sanitizeRoutes('x').length === 0, '배열이 아니면 빈 목록');
+
+// 저장한 기록을 다시 열 때 거리가 목록과 같아야 한다.
+// buildResult 는 좌표를 이어 붙여 거리를 다시 재는데, 기록 좌표는 게이트를
+// 지난 점들이라 코너를 직선으로 가로지른다 — 목록 3.2km / 열면 2.34km 처럼
+// 같은 기록이 화면마다 다른 거리로 보였다(도심 지그재그에서 26.9% 차이).
+{
+  const { toRouteResult } = await bundle('src/lib/savedRoutes.ts', 'sr2.mjs');
+  const zig = [];
+  const zelev = [];
+  let la = 37.5;
+  let ln = 127.0;
+  for (let i = 0; i < 40; i++) {
+    if (i % 2 === 0) la += 0.00054;
+    else ln += 0.00068;
+    zig.push([la, ln]);
+    zelev.push(40);
+  }
+  const rec = {
+    id: 'z', name: '도심', createdAt: Date.now(), kind: 'recorded', distanceKm: 3.2,
+    ascentM: 12, maxGradePct: 3, source: 'gps', coords: zig, elevations: zelev, durationSec: 1100,
+  };
+  const opened = toRouteResult(rec);
+  console.log(`    저장 3.20km → 열었을 때 ${opened.distanceKm.toFixed(2)}km`);
+  check(
+    Math.abs(opened.distanceKm - 3.2) < 0.01,
+    `저장한 거리가 그대로 유지된다 (${opened.distanceKm.toFixed(2)}km)`,
+  );
+  // 거리가 없는 옛 기록은 좌표로 계산한 값을 그대로 쓴다(회귀 방지)
+  const legacy = toRouteResult({ ...rec, distanceKm: 0 });
+  check(legacy.distanceKm > 0, '거리 정보가 없는 항목은 좌표로 계산해 채운다');
+}
 
 // ── 페이스 표기 ─────────────────────────────────────────────────────────────
 // 화면에 그대로 찍히는 문자열이라 한 번 틀리면 사용자가 바로 본다.

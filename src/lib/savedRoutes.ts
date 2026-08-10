@@ -186,7 +186,13 @@ export function savedFromView(v: {
 /** SavedRoute 를 지도/차트에서 쓰는 RouteResult 로 복원 */
 export function toRouteResult(s: SavedRoute): RouteResult {
   const src = s.source === 'gps' ? 'offline' : s.source;
-  return buildResult(s.coords, s.elevations, src, [s.coords[0]]);
+  const r = buildResult(s.coords, s.elevations, src, [s.coords[0]]);
+  // 거리는 저장해 둔 값을 그대로 쓴다. buildResult 는 좌표를 이어 붙여 다시
+  // 재는데, 기록한 러닝의 좌표는 게이트를 지난 점들이라 코너를 직선으로
+  // 가로지른다 — 목록에는 3.2km 라고 떠 있는데 열면 2.34km 가 되는 식이다
+  // (도심 지그재그로 재보니 26.9% 차이). 저장값은 도플러 적분으로 낸 값이라
+  // 그쪽이 실제에 가깝다. 저장한 코스를 솎아낸(다운샘플) 경우도 마찬가지다.
+  return s.distanceKm > 0 ? { ...r, distanceKm: s.distanceKm } : r;
 }
 
 // --- 공유 ------------------------------------------------------------------
@@ -252,14 +258,25 @@ export function parseSharedFromHash(hash: string): SharedRoute | null {
     payload.e.filter((n) => typeof n === 'number' && Number.isFinite(n)),
     coords.length,
   );
+  // 링크에는 좌표를 100개로, 고도를 60개로 솎아 담는다(URL 길이 때문). 그걸로
+  // 거리·상승을 다시 계산하면 보낸 사람이 본 값과 달라진다 — 코너를 훨씬 크게
+  // 가로지르기 때문이다. 링크에 실려 온 수치가 원본이므로 그쪽을 쓴다.
+  // (좌표는 지도에 선을 그리는 용도로만 쓴다)
+  const r = buildResult(coords, elev, 'offline', [coords[0]]);
+  const route: RouteResult = {
+    ...r,
+    distanceKm: payload.d > 0 ? payload.d : r.distanceKm,
+    ascentM: Number.isFinite(payload.a) ? payload.a : r.ascentM,
+    maxGradePct: Number.isFinite(payload.g) ? payload.g : r.maxGradePct,
+  };
   return {
     name: payload.n,
     style: payload.s,
-    distanceKm: payload.d,
-    ascentM: payload.a,
-    maxGradePct: payload.g,
+    distanceKm: route.distanceKm,
+    ascentM: route.ascentM,
+    maxGradePct: route.maxGradePct,
     source: payload.src,
-    route: buildResult(coords, elev, 'offline', [coords[0]]),
+    route,
   };
 }
 
