@@ -958,49 +958,54 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                       (실측: 지도가 보이는 세로가 844px 중 190px). 입력을 시트로
                       모으면 지도가 하나의 큰 덩어리로 열린다. */}
                   {mode === 'distance' && (
-                    <div className="flex items-center gap-3">
-                      <span className="shrink-0 text-[12.5px] font-bold text-espresso">거리</span>
-                      <div className="min-w-0 flex-1">
-                        <input
-                          type="range"
-                          min={1}
-                          max={15}
-                          step={0.5}
-                          value={targetKm}
-                          onChange={(e) => {
-                            setTargetKm(Number(e.target.value));
-                            reset();
-                          }}
-                          className="coral w-full"
-                          list="km-ticks"
-                        />
-                        {/* 눈금 — 1·5·10·15km 위치 표시.
-                            슬라이더가 손가락 여유를 아래로 9px 넓혀 두는데,
-                            이 줄이 그 위에 겹쳐 탭을 가로챘다(여유가 6px 로
-                            줄었다). 읽기만 하는 글자라 터치는 통과시킨다. */}
-                        {/* mt 는 13px: 슬라이더가 음수 margin 으로 9px 을 당겨 올리므로
-                            실제 간격은 예전과 같은 4px 이 된다. */}
-                        <div className="pointer-events-none relative mt-[13px] h-3.5">
-                          {[1, 5, 10, 15].map((v) => (
-                            <span
-                              key={v}
-                              className="absolute -translate-x-1/2 text-[9.5px] font-semibold text-espresso-soft"
-                              style={{ left: `${((v - 1) / 14) * 100}%` }}
-                            >
-                              {v}
-                            </span>
-                          ))}
-                        </div>
+                    /* 라벨 · 트랙 · 값을 한 줄(1행)에 두고, 눈금은 그 아래 칸에 따로 둔다.
+                     *
+                     * 예전엔 트랙과 눈금이 같은 칸에 겹쳐 있어서, 세로 가운데
+                     * 정렬이 '트랙+눈금' 덩어리를 기준으로 잡혔다. 그래서
+                     * '거리'·'5km' 글자가 트랙보다 13.5px 아래, 눈금 숫자와
+                     * 같은 줄에 앉아 '거리 1' 처럼 붙어 보였다(실측 390×844).
+                     * grid 로 나누면 글자가 트랙에 맞춰 서고, 눈금은 라벨
+                     * 너비와 무관하게 트랙 칸에 정확히 정렬된다. */
+                    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3">
+                      <span className="text-[12.5px] font-bold text-espresso">거리</span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={15}
+                        step={0.5}
+                        value={targetKm}
+                        onChange={(e) => {
+                          setTargetKm(Number(e.target.value));
+                          reset();
+                        }}
+                        className="coral w-full"
+                        list="km-ticks"
+                        aria-label="목표 거리(km)"
+                      />
+                      <span className="w-[58px] text-right text-[16px] font-extrabold leading-none text-espresso">
+                        {targetKm}
+                        <span className="text-[11px] font-bold text-espresso-muted">km</span>
+                      </span>
+                      {/* 눈금 — 1·5·10·15km. 가운데 칸(col-start-2)에만 놓아 트랙과
+                          x 축이 맞는다. 손잡이가 트랙 아래로 11px 튀어나오고 그림자가
+                          더 번지므로 그만큼 띄운다. 읽기만 하는 글자라 터치는
+                          통과시킨다 — 예전에 이 줄이 슬라이더 탭을 가로챘다. */}
+                      <div className="pointer-events-none relative col-start-2 mt-2.5 h-3.5">
+                        {[1, 5, 10, 15].map((v) => (
+                          <span
+                            key={v}
+                            className="absolute -translate-x-1/2 text-[9.5px] font-medium text-espresso-soft"
+                            style={{ left: `${((v - 1) / 14) * 100}%` }}
+                          >
+                            {v}
+                          </span>
+                        ))}
                       </div>
                       <datalist id="km-ticks">
                         {[1, 5, 10, 15].map((v) => (
                           <option key={v} value={v} />
                         ))}
                       </datalist>
-                      <span className="w-[58px] shrink-0 text-right text-[16px] font-extrabold text-espresso">
-                        {targetKm}
-                        <span className="text-[11px] font-bold text-espresso-muted">km</span>
-                      </span>
                     </div>
                   )}
 
