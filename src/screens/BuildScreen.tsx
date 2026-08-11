@@ -34,6 +34,8 @@ import {
   fetchGreenShares,
   fetchGreenPolysForArea,
   greenShareOf,
+  greenRadiusKm,
+  greenIsFor,
 } from '../lib/greenShare';
 import { flowInfo } from '../lib/wayMix';
 import { haversineMeters } from '../lib/geo';
@@ -53,6 +55,21 @@ const HINT_KEY = 'run-app-hint-v1';
  * 0.77~0.88 이다. 0.45 면 '동네에 그런 길이 없는' 경우만 걸러진다.
  */
 const STYLE_FIT_MIN = 0.45;
+
+/**
+ * 코스가 준비된 뒤 녹지 데이터를 더 기다려 주는 시간.
+ *
+ * Overpass 는 한가할 때 2.6~3초지만 밀리면 15초까지 간다(greenShare.ts).
+ * 경로는 이미 손에 있는데 15초를 더 세워두면 앱이 멈춘 걸로 보인다.
+ * 제때 오면 순위에 반영하고, 늦으면 코스를 먼저 보여준 뒤 값만 채운다
+ * (늦게 온 값으로 재정렬하면 사용자가 카드를 고르는 중에 순서가 바뀐다).
+ */
+const GREEN_GRACE_MS = 3000;
+
+/** ms 안에 안 오면 null. 원래 promise 는 계속 살아 있다 (뒤에 장식으로 쓴다) */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+}
 
 /**
  * 탭을 옮겼다 돌아와도 만들던 코스가 남아 있게 하는 세션 캐시.
@@ -254,19 +271,27 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   );
 
   // 숲길 비율 — 코스가 나온 뒤 뒤늦게 채워지는 부가 정보(greenShare.ts).
-  // 여름에는 generate() 안에서 녹지를 채점한다(병렬 조회). 비여름에만 여기서
-  // 비동기로 채운다 — 결과가 나온 뒤 뒤늦게 도착하는 장식 정보.
+  // 여름에는 generate() 안에서 미리 받아 순위에까지 반영한다(병렬 조회).
   const [greenPct, setGreenPct] = useState<(number | null)[]>([]);
+  /** 지금 greenPct 가 '어느 결과'의 값인지 (판단 기준은 greenShare.greenIsFor) */
+  const greenForRef = useRef<BuiltRoute[] | null>(null);
   useEffect(() => {
-    if (!results || results.length === 0) { setGreenPct([]); return; }
-    // 여름에 generate 에서 이미 채웠으면 다시 부르지 않는다
-    if (greenPct.length === results.length && greenPct.some((v) => v != null)) return;
+    if (!results || results.length === 0) {
+      greenForRef.current = null;
+      setGreenPct([]);
+      return;
+    }
+    if (greenIsFor(greenForRef.current, results)) return; // generate() 가 이미 채웠다
+    setGreenPct([]); // 이전 코스 값이 새 코스 카드에 남지 않게 먼저 지운다
     let alive = true;
     void fetchGreenShares(results.map((r) => r.route.coords)).then((pcts) => {
-      if (alive) setGreenPct(pcts);
+      if (!alive) return;
+      greenForRef.current = results;
+      setGreenPct(pcts);
     });
-    return () => { alive = false; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      alive = false;
+    };
   }, [results]);
 
   // 후보끼리 비교해 붙이는 '이 코스만의 장점' 배지
@@ -352,11 +377,25 @@ export default function BuildScreen({ api }: { api: AppApi }) {
 
     // 여름(6~8월)이면 녹지 폴리곤을 경로 생성과 병렬로 가져온다.
     // Overpass(OSM 공원·숲 데이터)는 경로 서버보다 느리지만 병렬이라 대기는
-    // max(경로, 녹지) = 녹지 시간 ≈ 2.6~3초 정도다.
+    // max(경로, 녹지) 로 묶인다.
     const summer = isSummerSeason();
-    const greenCenter = mode === 'pins' ? waypoints[0] : start;
-    const greenRadius = mode === 'pins' ? 8 : Math.max(targetKm * 1.2, 5);
-    const greenPolyP = summer ? fetchGreenPolysForArea(greenCenter, greenRadius) : null;
+    // 핀 모드는 찍은 핀들이 실제 범위를 알려준다 — 중심과 반경을 거기서 뽑는다.
+    // 거리 모드는 시작점 기준으로 왕복/편도에 맞는 반경을 계산한다.
+    const greenArea = (():
+      | { center: LatLng; radiusKm: number }
+      | null => {
+      if (mode === 'pins') {
+        if (waypoints.length === 0) return null; // 핀이 없으면 조회할 곳이 없다
+        const lat = waypoints.reduce((s, w) => s + w[0], 0) / waypoints.length;
+        const lng = waypoints.reduce((s, w) => s + w[1], 0) / waypoints.length;
+        const center: LatLng = [lat, lng];
+        const farM = waypoints.reduce((m, w) => Math.max(m, haversineMeters(center, w)), 0);
+        return { center, radiusKm: farM / 1000 + 1 };
+      }
+      return { center: start, radiusKm: greenRadiusKm(targetKm, returnToStart) };
+    })();
+    const greenPolyP =
+      summer && greenArea ? fetchGreenPolysForArea(greenArea.center, greenArea.radiusKm) : null;
 
     // 오래 걸리면 이유를 말해준다. 경로 서버가 느린 날에는 결과가 나오기까지
     // 20초 넘게 걸리는데, 그동안 스피너만 돌면 사용자는 앱이 멈춘 줄 안다.
@@ -377,13 +416,26 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           let out = await build(provider);
           clearTimeout(slowTimer);
 
-          // 여름: 녹지 데이터가 도착하면 그늘 가중치를 반영해 재채점
+          // 여름: 녹지 데이터가 제때 오면 그늘 가중치를 반영해 재채점한다.
+          // 늦으면 기다리지 않는다 — 코스를 먼저 내주고 값만 뒤에 채운다.
           if (summer && greenPolyP) {
-            const polys = await greenPolyP;
+            const polys = await withTimeout(greenPolyP, GREEN_GRACE_MS);
+            const settled = out;
             if (polys) {
-              const pcts = out.map((r) => greenShareOf(r.route.coords, polys));
-              out = rescoreWithGreen(out, pcts);
+              const pcts = settled.map((r) => greenShareOf(r.route.coords, polys));
+              out = rescoreWithGreen(settled, pcts);
+              greenForRef.current = out;
               setGreenPct(pcts);
+            } else {
+              // 아직 오는 중. 이 결과의 값이라고 미리 표시해 두고(중복 조회 방지),
+              // 도착하면 순위는 그대로 둔 채 숫자만 채운다.
+              greenForRef.current = settled;
+              setGreenPct(settled.map(() => null));
+              void greenPolyP.then((late) => {
+                // 그 사이 사용자가 다시 찾았으면 이 값은 남의 코스 것이다 — 버린다
+                if (!late || !greenIsFor(greenForRef.current, settled)) return;
+                setGreenPct(settled.map((r) => greenShareOf(r.route.coords, late)));
+              });
             }
           }
 
@@ -1211,6 +1263,17 @@ function CompareCard({
   onSelect: () => void;
 }) {
   const { route, matchScore } = r;
+  // 끊김 한 줄. 길 종류를 충분히 모르면 null 이라 아예 안 그린다.
+  // coral 은 이 앱에서 '주요 액션(볼트 라임)' 색이라 경고에 쓰면 강조처럼
+  // 보인다 — 주의는 amber 로 통일한다.
+  const flow = route.way ? flowInfo(route.way) : null;
+  const flowTone =
+    flow?.level === 'smooth'
+      ? { color: 'text-sage-600', dot: '🟢' }
+      : flow?.level === 'mixed'
+        ? { color: 'text-espresso-muted', dot: '🟡' }
+        : { color: 'text-amber-600', dot: '🔴' };
+  const hasGreen = greenPct != null && greenPct > 0;
   return (
     <button
       onClick={onSelect}
@@ -1248,36 +1311,26 @@ function CompareCard({
         </span>
         {/* 끊김·숲길·배지. ORS waytype 으로 신호등 끊김을, OSM 녹지
             데이터로 그늘 비율을 알려준다 — 둘 다 확인된 데이터다. */}
-        {(route.way || greenPct != null || badge) && (
+        {(flow || hasGreen || badge) && (
           <span className="mt-1 flex flex-wrap items-center gap-1">
             {badge && (
               <span className="rounded-full bg-coral px-1.5 py-0.5 text-[10px] font-bold text-ink">
                 {badge}
               </span>
             )}
-            {route.way && (() => {
-              const fi = flowInfo(route.way);
-              const color =
-                fi.level === 'smooth'
-                  ? 'text-sage-600'
-                  : fi.level === 'mixed'
-                    ? 'text-espresso-muted'
-                    : 'text-coral-600';
-              return (
-                <span className={`text-[11px] font-medium ${color}`}>
-                  {fi.level === 'smooth' ? '🟢' : fi.level === 'mixed' ? '🟡' : '🔴'}{' '}
-                  {fi.text}
-                </span>
-              );
-            })()}
-            {greenPct != null && greenPct >= 25 && (
-              <span className="rounded-full bg-sage-100 px-1.5 py-0.5 text-[10px] font-bold text-sage-600">
-                🌳 숲길 {greenPct}%
+            {flow && (
+              <span className={`text-[11px] font-medium ${flowTone.color}`}>
+                {flowTone.dot} {flow.text}
               </span>
             )}
-            {greenPct != null && greenPct > 0 && greenPct < 25 && (
-              <span className="text-[11px] text-espresso-soft">🌳 숲길 {greenPct}%</span>
-            )}
+            {hasGreen &&
+              (greenPct >= 25 ? (
+                <span className="rounded-full bg-sage-100 px-1.5 py-0.5 text-[10px] font-bold text-sage-600">
+                  🌳 숲길 {greenPct}%
+                </span>
+              ) : (
+                <span className="text-[11px] text-espresso-soft">🌳 숲길 {greenPct}%</span>
+              ))}
           </span>
         )}
       </span>

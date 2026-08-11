@@ -763,6 +763,25 @@ console.log('\n[숲길 캐시] 오래된 값이 메모리를 붙잡고 있으면
   const steps = flowInfo({ trailPct: 90, roadPct: 5, softPct: 0, stepsM: 150 });
   check(steps.level === 'choppy', `계단 150m → '${steps.level}' (choppy)`);
   check(steps.text.includes('계단'), `텍스트에 '계단': ${steps.text}`);
+
+  // 모르는 건 말하지 않는다 — waytype 에 UNKNOWN(0) 이 섞이면 비율이 안 찬다
+  check(
+    flowInfo({ trailPct: 0, roadPct: 0, softPct: 0, stepsM: 0 }) === null,
+    '전부 미분류(0%/0%) → 아무 말도 안 한다 (차도 0% 인데 신호등 잦다고 하던 문제)',
+  );
+  check(
+    flowInfo({ trailPct: 20, roadPct: 15, softPct: 0, stepsM: 0 }) === null,
+    '알려진 구간 35% 뿐 → 단정하지 않는다',
+  );
+  check(
+    flowInfo({ trailPct: 35, roadPct: 30, softPct: 0, stepsM: 0 }) !== null,
+    '알려진 구간 65% 면 말해도 된다',
+  );
+  // 계단은 절대량이라 분류 비율과 무관하게 확실하다
+  check(
+    flowInfo({ trailPct: 0, roadPct: 0, softPct: 0, stepsM: 200 })?.text.includes('계단'),
+    '미분류라도 계단 200m 는 확실한 근거라 알린다',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -818,6 +837,65 @@ console.log('\n[숲길 캐시] 오래된 값이 메모리를 붙잡고 있으면
   if (isSummerSeason()) {
     check(rescored[0].matchScore < 50, `수역 의심 감점 적용됨 (${rescored[0].matchScore})`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// 녹지 조회 범위 — 목표 거리가 커져도 조회가 조용히 죽으면 안 된다
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[녹지 조회 범위] 1~15km 전 구간에서 실제로 조회되는지');
+  const g = await bundle('src/lib/greenShare.ts', 'greenShare2.mjs');
+  const span = (r) => 2 * (r / 111) + 2 * g.GREEN_MARGIN_DEG;
+
+  let allFit = true;
+  const rows = [];
+  for (const loop of [true, false]) {
+    for (let t = 1; t <= 15; t++) {
+      const s = span(g.greenRadiusKm(t, loop));
+      if (s > g.GREEN_MAX_SPAN_DEG) {
+        allFit = false;
+        rows.push(`${loop ? '왕복' : '편도'} ${t}km → ${s.toFixed(3)}° 초과`);
+      }
+    }
+  }
+  console.log(
+    `    왕복 15km → 반경 ${g.greenRadiusKm(15, true).toFixed(1)}km · bbox ${span(g.greenRadiusKm(15, true)).toFixed(3)}° / 상한 ${g.GREEN_MAX_SPAN_DEG}°`,
+  );
+  console.log(
+    `    편도 15km → 반경 ${g.greenRadiusKm(15, false).toFixed(1)}km · bbox ${span(g.greenRadiusKm(15, false)).toFixed(3)}°`,
+  );
+  check(allFit, `1~15km 왕복·편도 전부 조회 상한 안 (${rows.join(', ') || '초과 없음'})`);
+
+  // 왕복은 갔다 오므로 편도보다 반경이 작아야 한다
+  check(
+    g.greenRadiusKm(10, true) < g.greenRadiusKm(10, false),
+    `왕복 반경(${g.greenRadiusKm(10, true)}km) < 편도 반경(${g.greenRadiusKm(10, false).toFixed(1)}km)`,
+  );
+  // 기하학적으로 시작점에서 멀어지는 최대 거리를 덮어야 한다 (왕복 = 절반)
+  check(
+    g.greenRadiusKm(10, true) >= 10 / 2,
+    `왕복 10km 반경이 최악(5km)을 덮는다 (${g.greenRadiusKm(10, true)}km)`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 숲길 값 재사용 판정 — 이전 코스 값이 새 코스에 남으면 안 된다
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[숲길 재사용] 다시 찾기 후 이전 코스 값이 남지 않는지');
+  const { greenIsFor } = await bundle('src/lib/greenShare.ts', 'greenShare3.mjs');
+
+  const build1 = [{ id: 'A' }, { id: 'B' }, { id: 'C' }];
+  check(greenIsFor(build1, build1), '같은 결과면 받아둔 값을 그대로 쓴다');
+
+  // 후보는 거의 항상 3개다 — 개수/내용으로 비교하면 여기서 뚫린다
+  const build2 = [{ id: 'A' }, { id: 'B' }, { id: 'C' }];
+  check(
+    !greenIsFor(build1, build2),
+    '개수·내용이 같아도 다른 결과면 다시 받는다 (여의도 값이 강남 카드에 남던 문제)',
+  );
+  check(!greenIsFor(null, build1), '받아둔 값이 없으면 다시 받는다');
+  check(!greenIsFor(null, null), '결과가 없으면 재사용도 없다');
 }
 
 console.log(`\n통과 ${ok.length} / 실패 ${bad.length}`);

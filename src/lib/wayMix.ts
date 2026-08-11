@@ -114,10 +114,23 @@ export interface FlowInfo {
   level: 'smooth' | 'mixed' | 'choppy';
 }
 
-export function flowInfo(mix: WayMix): FlowInfo {
+/**
+ * 이만큼은 길 종류를 알아야 끊김을 말한다.
+ *
+ * waytype 에는 UNKNOWN(0) 이 섞인다. 이걸 안 걸러내면 전부 미분류인 경로가
+ * '차도 옆 0% — 신호등에 자주 걸릴 수 있어요' 로 나온다 — 차도가 0% 인데
+ * 신호등이 잦다고 단정하는 셈이라 근거가 없다. 모르면 아무 말도 안 한다.
+ */
+const MIN_KNOWN_PCT = 60;
+
+/** 끊김 한 줄. 길 종류를 충분히 모르면 null — 호출측은 줄을 안 그린다. */
+export function flowInfo(mix: WayMix): FlowInfo | null {
+  // 계단은 절대량(m)이라 분류 비율과 무관하게 확실한 근거다
   if (mix.stepsM >= 100) {
     return { text: `계단 ${mix.stepsM}m — 뛰다 걸어야 해요`, level: 'choppy' };
   }
+  if (mix.trailPct + mix.roadPct < MIN_KNOWN_PCT) return null;
+
   if (mix.trailPct >= 80) {
     return { text: '끊김 없이 달릴 수 있어요', level: 'smooth' };
   }

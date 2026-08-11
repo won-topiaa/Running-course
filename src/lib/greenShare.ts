@@ -252,6 +252,37 @@ export async function fetchGreenShares(routes: LatLng[][]): Promise<(number | nu
 }
 
 /**
+ * 녹지를 조회할 반경(km). bbox 는 시작점 중심이라 '경로 길이'가 아니라
+ * '시작점에서 얼마나 멀어지는가'로 잡아야 한다.
+ *
+ * 예전엔 목표거리 × 1.2 를 반경으로 썼는데, 15km 왕복은 시작점에서 최대
+ * 7.5km(왕복 직선 최악)인데도 18km 반경을 물어봤다 — 필요한 면적의 5배가
+ * 넘고, bbox 가 MAX_SPAN_DEG 를 넘겨 12km 이상 목표에서는 그늘이 조용히
+ * 빠졌다(실측: 12km→0.267°, 15km→0.332° 로 조회 자체가 안 됐다).
+ */
+export function greenRadiusKm(targetKm: number, loop: boolean): number {
+  // 왕복은 갔다 오므로 최대 반경이 절반, 편도는 한 방향으로 뻗는다
+  // (편도는 직선거리를 0.8배로 줄여 잡는다 — courseBuilder.oneWayFromStart)
+  return (loop ? targetKm / 2 : targetKm * 0.85) + 0.5;
+}
+
+/** bbox 한 변이 이 각도를 넘으면 조회하지 않는다 (검증용 공개) */
+export const GREEN_MAX_SPAN_DEG = MAX_SPAN_DEG;
+export const GREEN_MARGIN_DEG = MARGIN_DEG;
+
+/**
+ * 이미 받아 둔 숲길 비율을 그대로 써도 되는가.
+ *
+ * **개수나 내용으로 비교하면 안 된다.** 후보는 거의 항상 3개라, '다시 찾기'로
+ * 완전히 다른 동네 코스를 만들어도 개수가 같아서 이전 값이 그대로 남는다
+ * (실측: 여의도 31%/12%/4% 가 강남 코스 카드에 그대로 표시됐다).
+ * 같은 결과 객체일 때만 재사용한다.
+ */
+export function greenIsFor(cachedFor: unknown, results: unknown): boolean {
+  return cachedFor != null && cachedFor === results;
+}
+
+/**
  * 시작점 주변 영역의 녹지 폴리곤을 미리 받는다.
  * 경로 생성과 병렬로 돌려, 둘 다 끝나면 greenShareOf 로 채점한다.
  * 실패하면 null — 호출측은 이 축을 빼고 채점한다.
