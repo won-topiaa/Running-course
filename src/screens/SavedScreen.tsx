@@ -74,7 +74,8 @@ export default function SavedScreen({ api }: { api: AppApi }) {
                   <span className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11.5px] text-espresso-muted">
                     <span>{formatDistance(r.distanceKm)}</span>
                     <span className="inline-flex items-center gap-0.5">
-                      <TrendingUp size={11} /> {r.ascentM}m
+                      {/* 고도를 못 받고 만든 코스는 0m 가 아니라 모르는 것이다 */}
+                      <TrendingUp size={11} /> {r.elevKnown === false ? '—' : `${r.ascentM}m`}
                     </span>
                     {r.durationSec != null && <span>{formatDuration(r.durationSec)}</span>}
                     <span className="rounded-full bg-tint px-1.5 py-0.5 text-[10px] font-medium">

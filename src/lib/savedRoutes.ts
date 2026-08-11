@@ -29,6 +29,14 @@ export interface SavedRoute {
   coords: LatLng[];
   elevations: number[];
   durationSec?: number; // 기록한 러닝에만
+  /**
+   * 고도를 실제로 받았는지. false 면 elevations 는 전부 0 인 '모름' 이다.
+   *
+   * 이걸 안 실으면 저장했다 다시 열 때 '모름'이 '상승 0m·최대 0%' 라는
+   * 사실 선언으로 둔갑한다. 예전 기록에는 이 칸이 없는데(undefined),
+   * 그때는 지금까지처럼 '안다'로 본다 — 없던 값을 소급해 의심하지 않는다.
+   */
+  elevKnown?: boolean;
 }
 
 /**
@@ -180,6 +188,8 @@ export function savedFromView(v: {
     coords: v.route.coords,
     elevations: v.route.elevations,
     durationSec: v.durationSec,
+    // 모르는 건 모른다고 실어 보낸다 (아는 경우엔 칸을 안 만들어 용량을 아낀다)
+    elevKnown: v.route.elevationKnown === false ? false : undefined,
   });
 }
 
@@ -203,6 +213,8 @@ export function toRouteResult(s: SavedRoute): RouteResult {
     distanceKm: s.distanceKm > 0 ? s.distanceKm : r.distanceKm,
     ascentM: s.ascentM > 0 ? s.ascentM : r.ascentM,
     maxGradePct: s.maxGradePct > 0 ? s.maxGradePct : r.maxGradePct,
+    // 저장할 때 '모름'이었으면 열어서도 '모름'이다
+    ...(s.elevKnown === false ? { elevationKnown: false } : {}),
   };
 }
 
@@ -217,6 +229,8 @@ export function buildShareToken(s: {
   source: string;
   coords: LatLng[];
   elevations: number[];
+  /** 고도를 실제로 받았는지 — false 면 받는 사람에게도 '모름'으로 전한다 */
+  elevKnown?: boolean;
 }): string {
   const coords = downsample(s.coords, 100);
   const elev = downsample(s.elevations, 60).map((e) => Math.round(e));
@@ -229,6 +243,7 @@ export function buildShareToken(s: {
     src: s.source,
     p: encodePolyline(coords),
     e: elev,
+    ...(s.elevKnown === false ? { k: 0 as const } : {}),
   };
   return encodeShare(payload);
 }
@@ -279,6 +294,8 @@ export function parseSharedFromHash(hash: string): SharedRoute | null {
     distanceKm: payload.d > 0 ? payload.d : r.distanceKm,
     ascentM: Number.isFinite(payload.a) ? payload.a : r.ascentM,
     maxGradePct: Number.isFinite(payload.g) ? payload.g : r.maxGradePct,
+    // 보낸 사람이 '모름'으로 만들었으면 받는 사람에게도 모름이다
+    ...(payload.k === 0 ? { elevationKnown: false } : {}),
   };
   return {
     name: payload.n,

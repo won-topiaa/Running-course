@@ -82,6 +82,13 @@ export interface SharePayload {
   src: string; // 데이터 소스
   p: string; //   polyline
   e: number[]; // 다운샘플 고도
+  /**
+   * 고도를 모르고 만든 코스면 0. 이 칸이 없으면 '안다'로 본다.
+   *
+   * 모른다는 사실을 안 실으면, 받는 사람 화면에서는 a=0·g=0 이 '평지 코스'
+   * 라는 선언이 된다. 링크 길이를 아끼려고 아는 경우엔 칸을 안 만든다.
+   */
+  k?: 0;
 }
 
 function b64urlEncode(s: string): string {

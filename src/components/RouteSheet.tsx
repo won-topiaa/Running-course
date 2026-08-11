@@ -107,6 +107,8 @@ export default function RouteSheet({
       source: view.source,
       coords: route.coords,
       elevations: route.elevations,
+      // 내가 '모름'으로 보고 있는 코스를 받는 사람이 '평지'로 보면 안 된다
+      elevKnown: !elevUnknown,
     });
     const url = shareUrl(token);
     try {

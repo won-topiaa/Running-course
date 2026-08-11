@@ -898,5 +898,147 @@ console.log('\n[숲길 캐시] 오래된 값이 메모리를 붙잡고 있으면
   check(!greenIsFor(null, null), '결과가 없으면 재사용도 없다');
 }
 
+// ---------------------------------------------------------------------------
+// 잴 축이 하나도 없을 때 — 숫자를 지어내지도, NaN 을 내보내지도 않는다
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[매칭 점수] 잴 수 있는 기준이 없을 때 NaN 이 안 새는지');
+  const cb = await bundle('src/lib/courseBuilder.ts', 'courseBuilder3.mjs');
+
+  const coords = [
+    [37.5, 127.0],
+    [37.501, 127.001],
+    [37.502, 127.002],
+  ];
+  const flatRoute = {
+    coords,
+    distanceKm: 2.4,
+    ascentM: 0,
+    maxGradePct: 0,
+    elevations: [0, 0, 0],
+    segments: [
+      { lengthM: 1200, gradePct: 0 },
+      { lengthM: 1200, gradePct: 0 },
+    ],
+    source: 'osrm',
+    waypoints: coords,
+    elevationKnown: false, // 고도 조회 실패
+    way: undefined, //        OSRM 은 waytype 을 안 준다
+  };
+  const provider = {
+    id: 'osrm',
+    realRoads: true,
+    route: async () => flatRoute,
+    roundTrip: async () => flatRoute,
+  };
+
+  // 핀 모드(거리 목표 없음) + OSRM(waytype 없음) + 고도 실패 → 세 축 전부 null
+  const res = await cb.buildFromPins([coords[0], coords[2]], 'flat', provider, {
+    pathPref: 'any',
+  });
+  const m = res[0].matchScore;
+  console.log(`    핀 모드 + OSRM + 고도 실패 → matchScore = ${m}`);
+  check(!Number.isNaN(m), `NaN 이 아니다 (카드에 'NaN%' 가 뜨던 문제)`);
+  check(m === null, `모르면 null 로 내보낸다 (0/100 을 지어내지 않는다)`);
+
+  // 축이 하나라도 있으면 정상 점수가 나온다 (검사가 헛돌지 않게)
+  const withDist = await cb.buildFromDistance([37.5, 127.0], 2.4, 'flat', provider, {});
+  check(
+    typeof withDist[0].matchScore === 'number' && !Number.isNaN(withDist[0].matchScore),
+    `거리 목표가 있으면 점수가 나온다 (${withDist[0].matchScore})`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 최상급 배지 — 모르는 값으로 '가장 ~' 이라고 하면 안 된다
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[최상급 배지] 고도를 모르는 코스가 가장 평탄을 가져가지 않는지');
+  const { superlatives } = await bundle('src/lib/compare.ts', 'compare2.mjs');
+
+  // 후보 하나만 고도 조회에 실패하면 ascentM 이 0 이라 자동으로 1등이 된다
+  const mixed = superlatives([
+    { ascentM: 120, distanceScore: 1, greenPct: null, elevKnown: true },
+    { ascentM: 0, distanceScore: 1, greenPct: null, elevKnown: false }, // 모름
+    { ascentM: 95, distanceScore: 1, greenPct: null, elevKnown: true },
+  ]);
+  check(
+    !mixed.includes('가장 평탄'),
+    `고도를 모르는 후보가 섞이면 평탄 배지를 안 붙인다 (${JSON.stringify(mixed)})`,
+  );
+
+  // 전부 알면 정상 동작 (검사가 헛돌지 않게)
+  const known = superlatives([
+    { ascentM: 120, distanceScore: 1, greenPct: null, elevKnown: true },
+    { ascentM: 12, distanceScore: 1, greenPct: null, elevKnown: true },
+  ]);
+  check(known[1] === '가장 평탄', `전부 알면 실제로 평탄한 쪽에 붙는다 (${known[1]})`);
+}
+
+// ---------------------------------------------------------------------------
+// '고도 모름'이 저장·공유를 건너도 살아남는지
+// ---------------------------------------------------------------------------
+{
+  console.log("\n['고도 모름' 보존] 저장·공유 후에도 0m 로 둔갑하지 않는지");
+  const sr = await bundle('src/lib/savedRoutes.ts', 'savedRoutes2.mjs');
+
+  const coords = Array.from({ length: 20 }, (_, i) => [37.5 + i * 0.0004, 127.0 + i * 0.0004]);
+  const unknownRoute = {
+    coords,
+    elevations: coords.map(() => 0),
+    distanceKm: 2.1,
+    ascentM: 0,
+    maxGradePct: 0,
+    source: 'osrm',
+    waypoints: [coords[0]],
+    segments: [],
+    elevationKnown: false,
+  };
+
+  // 저장 → 복원
+  const saved = sr.savedFromView({
+    name: '고도 못 받은 코스',
+    route: unknownRoute,
+    kind: 'built',
+    source: 'osrm',
+  });
+  check(saved.elevKnown === false, `저장 레코드에 '모름'이 실린다 (elevKnown=${saved.elevKnown})`);
+  const restored = sr.toRouteResult(saved);
+  check(
+    restored.elevationKnown === false,
+    `복원해도 '모름'이다 (열었을 때 상승 0m 로 단정하던 문제)`,
+  );
+
+  // 공유 링크 → 파싱
+  const token = sr.buildShareToken({
+    name: '고도 못 받은 코스',
+    distanceKm: 2.1,
+    ascentM: 0,
+    maxGradePct: 0,
+    source: 'osrm',
+    coords,
+    elevations: coords.map(() => 0),
+    elevKnown: false,
+  });
+  const shared = sr.parseSharedFromHash(`#course=${token}`);
+  check(
+    shared?.route.elevationKnown === false,
+    `공유 링크를 받은 쪽도 '모름'으로 본다 (${shared?.route.elevationKnown})`,
+  );
+
+  // 아는 코스는 지금까지처럼 그대로 (검사가 헛돌지 않게)
+  const knownSaved = sr.savedFromView({
+    name: '정상 코스',
+    route: { ...unknownRoute, elevationKnown: true, ascentM: 88, maxGradePct: 7 },
+    kind: 'built',
+    source: 'ors',
+  });
+  check(knownSaved.elevKnown === undefined, '아는 코스엔 칸을 안 만든다 (용량 절약)');
+  check(
+    sr.toRouteResult(knownSaved).elevationKnown !== false,
+    '아는 코스는 복원해도 정상 (상승 88m 유지)',
+  );
+}
+
 console.log(`\n통과 ${ok.length} / 실패 ${bad.length}`);
 if (bad.length) process.exit(1);

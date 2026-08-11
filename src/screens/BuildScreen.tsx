@@ -303,6 +303,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
               ascentM: r.route.ascentM,
               distanceScore: r.distanceScore,
               greenPct: greenPct[i] ?? null,
+              elevKnown: r.route.elevationKnown !== false,
             })),
           )
         : [],
@@ -1274,6 +1275,11 @@ function CompareCard({
         ? { color: 'text-espresso-muted', dot: '🟡' }
         : { color: 'text-amber-600', dot: '🔴' };
   const hasGreen = greenPct != null && greenPct > 0;
+  // 고도를 못 받은 경로는 ascentM·maxGradePct 가 0 으로 채워져 있다. 그대로
+  // 적으면 '상승 0m · 최대 0%' 라는 평지 선언이 되는데 사실은 모르는 값이다
+  // — 상세 시트(RouteSheet)는 이미 '—' 로 내보내는데 카드만 0 이라고 해서
+  // 같은 코스를 두 화면이 다르게 말하고 있었다.
+  const elevUnknown = route.elevationKnown === false;
   return (
     <button
       onClick={onSelect}
@@ -1302,12 +1308,12 @@ function CompareCard({
               selected ? 'bg-coral text-ink' : 'bg-tint text-espresso-muted'
             }`}
           >
-            상승 {route.ascentM}m
+            상승 {elevUnknown ? '—' : `${route.ascentM}m`}
           </span>
         </span>
         <span className="mt-0.5 block truncate text-[11.5px] text-espresso-muted">
           {formatDistance(route.distanceKm)} · {estimateTimeLabel(route.distanceKm, paceSec)} · 최대{' '}
-          {route.maxGradePct}%
+          {elevUnknown ? '—' : `${route.maxGradePct}%`}
         </span>
         {/* 끊김·숲길·배지. ORS waytype 으로 신호등 끊김을, OSM 녹지
             데이터로 그늘 비율을 알려준다 — 둘 다 확인된 데이터다. */}
@@ -1341,7 +1347,8 @@ function CompareCard({
             selected ? 'text-coral-600' : 'text-espresso-soft'
           }`}
         >
-          {matchScore}%
+          {/* 잴 수 있는 기준이 하나도 없으면 null 이다 — 숫자를 지어내지 않는다 */}
+          {matchScore == null ? '—' : `${matchScore}%`}
         </span>
         <span className="mt-0.5 block text-[10px] text-espresso-soft">매칭</span>
       </span>

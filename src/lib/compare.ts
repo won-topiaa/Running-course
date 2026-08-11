@@ -19,6 +19,8 @@ export interface Comparable {
   distanceScore: number;
   /** 숲길 비율(%) — 아직 안 왔거나 못 구했으면 null */
   greenPct: number | null;
+  /** 고도를 실제로 받았는지 — 모르면 ascentM 이 0 으로 채워져 있다 */
+  elevKnown?: boolean;
 }
 
 /** 이만큼은 차이가 나야 '가장 ~' 이라고 말한다 */
@@ -47,8 +49,13 @@ export function superlatives(items: Comparable[]): (string | null)[] {
     }
   }
 
+  // 평탄함 — 숲길과 같은 규칙으로, 전부 고도를 받았을 때만 비교한다.
+  // 고도를 못 받은 경로는 ascentM 이 0 으로 채워져 있어서, 그대로 비교하면
+  // '모르는 코스'가 자동으로 '가장 평탄'을 가져간다 — 근거 없는 최상급이다.
+  // (Open-Meteo 가 후보 중 일부에서만 429 로 막히면 실제로 섞여 들어온다)
   const asc = items.map((it) => it.ascentM);
-  if (Math.max(...asc) - Math.min(...asc) >= MIN_ASCENT_GAP_M) {
+  const elevAllKnown = items.every((it) => it.elevKnown !== false);
+  if (elevAllKnown && Math.max(...asc) - Math.min(...asc) >= MIN_ASCENT_GAP_M) {
     put(asc.indexOf(Math.min(...asc)), '가장 평탄');
   }
 

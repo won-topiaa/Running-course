@@ -26,8 +26,8 @@ export interface BuiltRoute {
   pathEval: PathEval;
   /** 목표 거리 대비 근접도 0~1 (핀 모드는 1) */
   distanceScore: number;
-  /** 종합 매칭 점수 0~100 */
-  matchScore: number;
+  /** 종합 매칭 점수 0~100 — 잴 수 있는 기준이 하나도 없으면 null */
+  matchScore: number | null;
   label: string;
   /** 숲길 비율(%) — 아직 없으면 undefined */
   greenPct?: number;
@@ -84,12 +84,16 @@ function toBuilt(
   if (pathEval.score != null) parts.push({ w: 0.7, v: pathEval.score });
   const rawW = parts.reduce((t, p) => t + p.w, 0);
   const rawSum = parts.reduce((t, p) => t + p.w * p.v, 0);
-  let matchScore = Math.round((rawSum / rawW) * 100);
+  // 잴 수 있는 축이 하나도 없을 수 있다 — 핀 모드(거리 목표 없음) + OSRM
+  // 폴백(waytype 없음) + 고도 조회 실패가 겹치면 세 축이 전부 null 이다.
+  // 그대로 0/0 을 계산하면 카드에 'NaN%' 가 뜬다(실측). 모르면 숫자를
+  // 지어내지 말고 모른다고 한다 — 다른 '모름' 처리와 같은 규칙.
+  let matchScore: number | null = rawW > 0 ? Math.round((rawSum / rawW) * 100) : null;
 
   // 수역 위 의심 구간이 있는 후보는 순위를 크게 내린다.
   // 확신이 아니라 의심이므로 배제하진 않는다 — 깨끗한 후보가 있으면 그쪽이 이긴다.
   const suspectGap = maxAdjacentGapM(route.coords) > SUSPECT_GAP_M;
-  if (suspectGap) {
+  if (suspectGap && matchScore != null) {
     matchScore = Math.round(matchScore * 0.45);
   }
   return {
@@ -105,7 +109,16 @@ function toBuilt(
  * 올라오는 일이 있었다. 사용자가 고른 거리는 지켜주는 편이 낫다.
  */
 function byMatchThenDistance(a: BuiltRoute, b: BuiltRoute): number {
-  if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+  // 점수를 못 매긴 후보(잴 축이 하나도 없음)는 뒤로 민다. 셋 다 못 매겼으면
+  // 순서를 흔들지 않고 거리 근접도로만 가른다.
+  const am = a.matchScore;
+  const bm = b.matchScore;
+  if (am == null || bm == null) {
+    if (am != null) return -1;
+    if (bm != null) return 1;
+    return b.distanceScore - a.distanceScore;
+  }
+  if (bm !== am) return bm - am;
   return b.distanceScore - a.distanceScore;
 }
 
