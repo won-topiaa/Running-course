@@ -246,6 +246,39 @@ await scenario('더운 날 폭염 경고 표시', {
   expect(info.lines <= 1, `경고가 ${info.lines}줄 — 첫 화면에서 그만큼 지도가 줄어든다`);
 });
 
+// 12) 종료 버튼 연타 — 고도 조회를 기다리는 몇 초 사이에 여러 번 눌러도
+//     기록이 두 번 저장되면 안 된다 (마이 통계가 두 배가 된다).
+await scenario('종료 연타(중복 저장 방지)', { geolocation: { latitude: 37.5665, longitude: 126.978, accuracy: 6 } },
+  async (page, ctx, expect) => {
+  await page.goto(base, { waitUntil: 'load' }); await settle(page);
+  await page.getByRole('button', { name: '뛰기', exact: true }).first().click();
+  await page.waitForTimeout(600);
+  await page.getByRole('button', { name: 'START' }).click();
+  await page.waitForTimeout(1200);
+  for (let i = 1; i <= 20; i++) {
+    await ctx.setGeolocation({ latitude: 37.5665 + i * 0.000045, longitude: 126.978, accuracy: 6 });
+    await page.waitForTimeout(600);
+  }
+  const count = () => page.evaluate(() => {
+    try { return JSON.parse(localStorage.getItem('run-app-routes-v1') || '[]').length; } catch { return -1; }
+  });
+  const before = await count();
+  const fin = page.getByRole('button', { name: /종료 · 저장|저장 중/ });
+  let taps = 0;
+  for (let i = 0; i < 6; i++) {
+    if (await fin.click({ timeout: 1500 }).then(() => true).catch(() => false)) taps++;
+    await page.waitForTimeout(100);
+  }
+  await page.waitForTimeout(6000);
+  const after = await count();
+  const saved = await page.evaluate(() => {
+    try { return JSON.parse(localStorage.getItem('run-app-routes-v1') || '[]')[0] ?? null; } catch { return null; }
+  });
+  console.log(`     ${taps}번 눌림 · 기록 ${before} → ${after}건 · ${saved?.distanceKm?.toFixed?.(2)}km/상승${saved?.ascentM}m`);
+  expect(after - before === 1, `연타로 ${after - before}건 저장됨 (1건이어야 함)`);
+  expect(!!saved && saved.distanceKm > 0, `저장된 거리가 0 (${saved?.distanceKm})`);
+});
+
 // 12) 오프라인 재로드 (SW 캐시로 다시 열리는지)
 await scenario('오프라인 재로드(PWA)', {}, async (page, ctx, expect) => {
   await page.goto(base, { waitUntil: 'load' });

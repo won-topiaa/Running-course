@@ -472,6 +472,144 @@ check(stats.streakDays === 3, `오늘부터 3일 연속 (${stats.streakDays})`);
 check(stats.longestKm === 10, '최장 거리 10km');
 check(computeRunStats([], now).runCount === 0, '기록이 없으면 0');
 
+// ── 코스 만들기 ─────────────────────────────────────────────────────────────
+// 앱의 핵심 기능인데 수치로 묶어 둔 검사가 없었다. 요청한 거리가 나오는지,
+// 왕복은 정말 돌아오고 편도는 정말 멀어지는지 본다 (오프라인 provider 기준).
+console.log('\n[코스 만들기] 요청 거리 · 왕복과 편도의 차이');
+{
+  Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+  const routing = await bundle('src/lib/routing.ts', 'rt2.mjs');
+  const cb = await bundle('src/lib/courseBuilder.ts', 'cb.mjs');
+  const provider = routing.makeProvider({});
+  const start = [37.5665, 126.978];
+  const gapM = (c) =>
+    Math.round(Math.hypot((c[0][0] - c.at(-1)[0]) * 110540, (c[0][1] - c.at(-1)[1]) * 88800));
+  for (const km of [1, 5, 15]) {
+    for (const oneWay of [false, true]) {
+      const res = await cb.buildFromDistance(start, km, 'flat', provider, {
+        seedBase: 1,
+        oneWay,
+        pathPref: 'any',
+      });
+      const best = res[0];
+      const err = ((best.route.distanceKm - km) / km) * 100;
+      const g = gapM(best.route.coords);
+      console.log(
+        `    ${String(km).padStart(2)}km ${oneWay ? '편도' : '왕복'} → ${best.route.distanceKm.toFixed(2)}km (${err >= 0 ? '+' : ''}${err.toFixed(1)}%) · 시작↔끝 ${g}m`,
+      );
+      // 코스빌더는 오차 10% 안이면 만족하고 멈춘다(왕복·편도 같은 기준).
+      check(Math.abs(err) <= 20, `${km}km ${oneWay ? '편도' : '왕복'} 거리가 요청과 맞는다 (${err.toFixed(1)}%)`);
+      if (oneWay) check(g > 200, `${km}km 편도는 출발점에서 멀어져 끝난다 (${g}m)`);
+      else check(g < 200, `${km}km 왕복은 출발점으로 돌아온다 (${g}m)`);
+    }
+  }
+}
+
+// ── 백업/복원 ───────────────────────────────────────────────────────────────
+// 기록을 통째로 잃을 수 있는 경로다. 내보낸 그대로 돌아오는지, 남이 준 이상한
+// 파일에 저장소가 덮어써지지 않는지 본다.
+console.log('\n[백업] 내보낸 그대로 돌아오는지');
+{
+  const mem = new Map();
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: {
+      getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+      setItem: (k, v) => void mem.set(k, String(v)),
+      removeItem: (k) => void mem.delete(k),
+    },
+    configurable: true,
+  });
+  const backup = await bundle('src/lib/backup.ts', 'bk.mjs');
+  const run = {
+    id: 'r1', name: '한강 저녁 러닝', createdAt: 1e12, kind: 'recorded',
+    distanceKm: 5.24, ascentM: 38, maxGradePct: 6, source: 'gps',
+    coords: [[37.5, 127], [37.51, 127.01]], elevations: [40, 42], durationSec: 1800,
+  };
+  localStorage.setItem('run-app-routes-v1', JSON.stringify([run]));
+  localStorage.setItem('run-app-settings-v1', JSON.stringify({ weekGoalKm: 20 }));
+  const file = backup.collectBackup();
+  const snapshot = new Map(mem);
+  mem.clear();
+  const applied = backup.applyBackup(file);
+  const back = JSON.parse(localStorage.getItem('run-app-routes-v1') ?? '[]');
+  console.log(`    ${applied}개 항목 복원 → ${back[0]?.name} ${back[0]?.distanceKm}km/상승${back[0]?.ascentM}m`);
+  check([...snapshot].every(([k, v]) => mem.get(k) === v), '지웠다 복원해도 모든 값이 그대로');
+  check(back[0]?.distanceKm === 5.24 && back[0]?.ascentM === 38, '기록 수치가 보존된다');
+  check(back[0]?.name === '한강 저녁 러닝', '한글 이름이 보존된다');
+  // 남이 준 파일 — 저장소를 덮어쓰지 않고 사람이 읽을 안내로 거절해야 한다
+  const junk = [null, 'not json', [1, 2, 3], { hello: 'world' }, { app: 'runcourse' }, { app: 'runcourse', data: null }];
+  let allRejected = true;
+  for (const j of junk) {
+    const keep = new Map(mem);
+    try {
+      backup.applyBackup(j);
+      allRejected = false;
+    } catch (e) {
+      if (!(e instanceof Error) || !/[가-힣]/.test(e.message)) allRejected = false;
+    }
+    if ([...keep].some(([k, v]) => mem.get(k) !== v)) allRejected = false;
+  }
+  check(allRejected, `백업 파일이 아니면 한국어 안내로 거절하고 저장소를 안 건드린다 (${junk.length}종)`);
+}
+
+// ── 날짜 경계 ───────────────────────────────────────────────────────────────
+// 자정을 넘겨 뛰거나 일요일 밤에 뛰면 어느 주로 잡히는지 — 통계가 틀리면
+// '이번 주 목표'가 통째로 어긋난다.
+console.log('\n[날짜] 자정·주 경계·연속 일수');
+{
+  const { computeRunStats } = await bundle('src/lib/runStats.ts', 'rs2.mjs');
+  const mkRun = (t, km) => ({
+    id: 'r' + t, name: 'x', createdAt: t, kind: 'recorded', distanceKm: km,
+    ascentM: 0, maxGradePct: 0, source: 'gps',
+    coords: [[37, 127], [37.1, 127.1]], elevations: [0, 0], durationSec: 1800,
+  });
+  const now = new Date(2026, 7, 10, 9, 0); // 월요일 오전
+  const D = 86400000;
+  const wk = computeRunStats(
+    [mkRun(new Date(2026, 7, 9, 23, 59).getTime(), 3), mkRun(new Date(2026, 7, 10, 0, 1).getTime(), 4)],
+    now,
+  );
+  console.log(`    일 23:59(3km) + 월 00:01(4km) → 이번 주 ${wk.weekKm}km · 누적 ${wk.totalKm}km`);
+  check(wk.weekKm === 4, '일요일 것은 지난주로 빠진다');
+  check(wk.totalKm === 7, '누적에는 둘 다 들어간다');
+  const yest = computeRunStats([mkRun(now.getTime() - D, 5), mkRun(now.getTime() - 2 * D, 5)], now);
+  check(yest.streakDays === 2, `오늘 아직 안 뛰었어도 연속이 안 끊긴다 (${yest.streakDays}일)`);
+  const broken = computeRunStats([mkRun(now.getTime() - 2 * D, 5), mkRun(now.getTime() - 3 * D, 5)], now);
+  check(broken.streakDays === 0, '이틀 비면 연속이 끊긴다');
+  const twice = computeRunStats([mkRun(now.getTime() - 3600e3, 5), mkRun(now.getTime() - 7200e3, 3)], now);
+  check(twice.streakDays === 1 && twice.weekKm === 8, '하루 두 번은 연속 1일, 거리는 둘 다 더해진다');
+}
+
+// ── 극단값 ──────────────────────────────────────────────────────────────────
+console.log('\n[극단값] 100m 부터 울트라까지 표기가 안 깨지는지');
+{
+  const f = await bundle('src/lib/format.ts', 'fmt2.mjs');
+  const cases = [
+    ['100m 40초', 0.1, 40], ['풀코스 3시간', 42.195, 3 * 3600],
+    ['울트라 100km 12시간', 100, 12 * 3600], ['26시간', 160, 26 * 3600], ['0km 0초', 0, 0],
+  ];
+  let clean = true;
+  for (const [label, km, sec] of cases) {
+    const line = `${f.formatDistance(km)} · ${f.formatDuration(sec)} · ${f.formatPace(f.sanePace(km > 0 ? sec / km : null))}`;
+    console.log(`    ${label.padEnd(18)} → ${line}`);
+    if (/NaN|Infinity|undefined|null|-\d/.test(line)) clean = false;
+  }
+  check(clean, `극단값 ${cases.length}종에서 NaN·음수가 안 샌다`);
+  const { computeRunStats } = await bundle('src/lib/runStats.ts', 'rs2.mjs');
+  const many = [];
+  for (let i = 0; i < 400; i++)
+    many.push({ id: 'r' + i, name: 'x', createdAt: Date.now() - (i * 86400000) / 2, kind: 'recorded',
+      distanceKm: 3 + ((i * 7) % 15), ascentM: i % 80, maxGradePct: 5, source: 'gps',
+      coords: [[37, 127], [37.01, 127.01]], elevations: [40, 42], durationSec: 1800 });
+  const t0 = Date.now();
+  const big = computeRunStats(many);
+  const ms = Date.now() - t0;
+  console.log(`    기록 400건 → 누적 ${big.totalKm.toFixed(0)}km · ${ms}ms`);
+  check(ms < 300, `기록이 많아도 통계가 즉시 나온다 (${ms}ms)`);
+  const none = computeRunStats([]);
+  check(none.totalKm === 0 && Number.isFinite(none.runsPerWeekRecent), '기록이 없어도 값이 전부 0 (NaN 아님)');
+}
+
 // ── 숲길 캐시 ───────────────────────────────────────────────────────────────
 // 한 동네 결과가 실측 약 0.9MB 인데, TTL(10분)이 지나도 Map 에 남아 있었다.
 // 여러 동네를 옮겨 다니며 코스를 만들면 그만큼 계속 쌓인다.
