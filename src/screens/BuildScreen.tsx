@@ -1033,7 +1033,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
 
                   {/* 스타일 선택 — 가로 한 줄 칩. 2×2 카드(설명 포함)는 세로로 너무 커서
                     지도를 다 덮었다. 선택한 것의 설명만 아래 한 줄로 보여준다. */}
-                  <div className="no-scrollbar -mx-1 mt-2.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
+                  <div className="no-scrollbar -mx-1 mt-2.5 flex gap-1 overflow-x-auto px-1 pb-0.5">
                     {RUN_STYLE_CHOICES.map((s) => (
                       <button
                         key={s.id}
@@ -1041,7 +1041,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                           setStyle(s.id);
                           reset();
                         }}
-                        className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-[12.5px] font-bold transition active:scale-95 ${
+                        className={`flex shrink-0 items-center gap-1 rounded-full border px-2 py-2 text-[12.5px] font-bold transition active:scale-95 ${
                           style === s.id
                             ? 'border-coral bg-coral-50 text-coral-600'
                             : 'border-line bg-paper text-espresso-muted'
@@ -1056,7 +1056,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                   {/* 두 번째 취향 축 — 길 성격. 경사만으로는 대로변 5km 와
                       천변 5km 를 구분하지 못한다. ORS 가 같이 주는
                       waytype/surface 로 후보 순위를 조정한다. */}
-                  <div className="no-scrollbar -mx-1 mt-2.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
+                  <div className="no-scrollbar -mx-1 mt-2.5 flex gap-1 overflow-x-auto px-1 pb-0.5">
                     {PATH_PREFS.map((pp) => (
                       <button
                         key={pp.id}
@@ -1064,7 +1064,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                           setPathPref(pp.id);
                           reset();
                         }}
-                        className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-[12.5px] font-bold transition active:scale-95 ${
+                        className={`flex shrink-0 items-center gap-1 rounded-full border px-2 py-2 text-[12.5px] font-bold transition active:scale-95 ${
                           pathPref === pp.id
                             ? 'border-coral bg-coral-50 text-coral-600'
                             : 'border-line bg-paper text-espresso-muted'
@@ -1076,7 +1076,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                     ))}
                   </div>
                   {/* 취향 설명 줄은 뺐다. 노치·홈바가 있는 실기기에서는 그 한 줄이
-                      들어가면 길 성격 칩(산책로 위주·흙길 등)이 CTA 아래로 밀려나,
+                      들어가면 길 성격 칩(신호등 적은 길·흙길 등)이 CTA 아래로 밀려나,
                       이 앱의 차별점인 '길 종류로 고르기'를 첫 화면에서 아예 못 보고
                       지나쳤다. 칩 이름·이모지만으로 뜻이 통하므로 설명 없이 둔다. */}
 

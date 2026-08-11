@@ -58,8 +58,12 @@ export const PATH_PREFS: { id: PathPref; label: string; desc: string; emoji: str
   { id: 'any', label: '상관없음', desc: '길 종류는 따지지 않아요', emoji: '🧭' },
   {
     id: 'trail',
-    label: '산책로 위주',
-    desc: '신호등에 덜 걸리고 여름엔 가로수 그늘이 있어요',
+    // 화면에는 label 만 나온다(desc 는 의도 기록용). 예전 라벨 '산책로 위주'는
+    // 이 선택지가 무엇을 해주는지가 안 드러났다 — 실제로 채점하는 건
+    // trailPct(보행자 길 비율)이고, 러너가 체감하는 값은 '신호등에 안 걸린다'
+    // 는 쪽이다. 얻는 것을 라벨에 그대로 적는다.
+    label: '신호등 적은 길',
+    desc: '공원·천변 보행자 길 위주 — 여름엔 가로수 그늘도 있어요',
     emoji: '🌳',
   },
   { id: 'soft', label: '흙길·트레일', desc: '포장 대신 흙·자갈 노면으로', emoji: '🍂' },
