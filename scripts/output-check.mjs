@@ -1127,5 +1127,150 @@ console.log('\n[숲길 캐시] 오래된 값이 메모리를 붙잡고 있으면
   check(legacy.includes('<ele>'), 'elevationKnown 을 안 넘기면 기존 동작 유지');
 }
 
+// ---------------------------------------------------------------------------
+// 날씨 본문이 망가져 와도 지어낸 날씨를 '실시간'으로 내보내지 않는지
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[날씨 본문] 200 이어도 알맹이가 없으면 예시로 넘기는지');
+  const W = await bundle('src/lib/weather.ts', 'weather2.mjs');
+  const aqBody = { current: { pm2_5: 8, pm10: 15 } };
+
+  // current 블록이 통째로 없는 경우 (응답 형식 변경·에러 본문)
+  globalThis.fetch = async (url) => ({
+    ok: true,
+    json: async () => (String(url).includes('air-quality') ? aqBody : { hourly: {} }),
+  });
+  const empty = await W.getConditions([37.5665, 126.978]);
+  console.log(`    current 없음 → ${empty.tempC}° · source=${empty.source}`);
+  check(
+    empty.source === 'sample',
+    `본문이 비면 '예시'로 밝힌다 (13°·습도55%·바람8 을 live 로 내보내던 문제)`,
+  );
+
+  // 기온만 빠진 경우
+  globalThis.fetch = async (url) => ({
+    ok: true,
+    json: async () =>
+      String(url).includes('air-quality')
+        ? aqBody
+        : { current: { relative_humidity_2m: 60, weather_code: 0 }, hourly: {} },
+  });
+  const noTemp = await W.getConditions([37.5665, 126.978]);
+  check(noTemp.source === 'sample', `기온이 없으면 예시로 넘긴다 (source=${noTemp.source})`);
+
+  // 체감온도만 없으면 기온으로 대신한다 (지어내는 게 아니라 같은 뜻의 값)
+  globalThis.fetch = async (url) => ({
+    ok: true,
+    json: async () =>
+      String(url).includes('air-quality')
+        ? aqBody
+        : {
+            current: { temperature_2m: 21, relative_humidity_2m: 60, weather_code: 0 },
+            utc_offset_seconds: 32400,
+            hourly: {},
+          },
+  });
+  const noFeels = await W.getConditions([37.5665, 126.978]);
+  check(
+    noFeels.source === 'live' && noFeels.tempC === 21 && noFeels.feelsC === 21,
+    `체감만 없으면 기온으로 대신하고 live 유지 (${noFeels.tempC}°/${noFeels.feelsC}° ${noFeels.source})`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 진행률 최적화 — 빨라지되 값이 달라지면 안 된다
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[진행률 최적화] O(1) 로 바꾼 값이 이전과 같은지');
+  const RP = await bundle('src/lib/routeProgress.ts', 'routeProgress.mjs');
+  const n = 3000;
+  const path = Array.from({ length: n }, (_, i) => [
+    37.5 + i * 0.000045 + (i % 7) * 0.000004,
+    127.0 + Math.sin(i / 90) * 0.0012,
+  ]);
+  const cum = RP.cumulativeMeters(path);
+
+  let maxRemain = 0;
+  let maxRatio = 0;
+  for (const idx of [0, 1, 500, 1500, n - 1]) {
+    maxRemain = Math.max(
+      maxRemain,
+      Math.abs(RP.remainingMeters(path, idx) - RP.remainingFromCum(cum, idx)),
+    );
+    maxRatio = Math.max(
+      maxRatio,
+      Math.abs(RP.progressRatio(path, idx) - RP.ratioFromCum(cum, idx)),
+    );
+  }
+  console.log(
+    `    ${n}점 · 총 ${(cum[n - 1] / 1000).toFixed(2)}km · 최대 오차 ${maxRemain.toExponential(1)}m`,
+  );
+  check(maxRemain < 1e-6, `남은 거리가 이전과 같다 (오차 ${maxRemain.toExponential(1)}m)`);
+  check(maxRatio < 1e-9, `진행률이 이전과 같다 (오차 ${maxRatio.toExponential(1)})`);
+
+  // 범위 밖 인덱스에도 안 깨진다
+  check(RP.ratioFromCum(cum, -5) === 0, '음수 인덱스는 0%');
+  check(RP.ratioFromCum(cum, 99999) === 1, '끝을 넘는 인덱스는 100%');
+  check(RP.remainingFromCum(cum, 99999) === 0, '끝을 넘으면 남은 거리 0');
+  check(RP.ratioFromCum([0], 0) === 0, '점이 하나뿐이면 0% (0으로 안 나눈다)');
+
+  // 실제로 빨라졌는지 (검사가 헛돌지 않게)
+  const TICKS = 600;
+  let t0 = performance.now();
+  for (let k = 0; k < TICKS; k++) {
+    RP.remainingMeters(path, k % n);
+    RP.progressRatio(path, k % n);
+  }
+  const oldMs = performance.now() - t0;
+  t0 = performance.now();
+  for (let k = 0; k < TICKS; k++) {
+    RP.remainingFromCum(cum, k % n);
+    RP.ratioFromCum(cum, k % n);
+  }
+  const newMs = performance.now() - t0;
+  console.log(`    ${TICKS}틱: ${oldMs.toFixed(0)}ms → ${newMs.toFixed(1)}ms`);
+  check(newMs * 10 < oldMs, `최소 10배 빨라졌다 (${(oldMs / newMs).toFixed(0)}배)`);
+}
+
+// ---------------------------------------------------------------------------
+// 백업 파일에 계정 자격증명이 담기면 안 된다
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[백업 파일] Strava 토큰이 내려받는 파일에 안 담기는지');
+  const backup2 = await bundle('src/lib/backup.ts', 'backup2.mjs');
+  const TOKEN_KEY = 'run-app-strava-token-v1';
+
+  localStorage.setItem('run-app-routes-v1', JSON.stringify([]));
+  localStorage.setItem(
+    TOKEN_KEY,
+    JSON.stringify({ access: 'SECRET_ACCESS', refresh: 'SECRET_REFRESH', expiresAt: 1 }),
+  );
+
+  // 계정 백업(cloud)은 본인 인증된 자리라 토큰을 그대로 담는다
+  const cloudPayload = backup2.collectBackup();
+  check(TOKEN_KEY in cloudPayload.data, '계정 백업에는 토큰이 그대로 담긴다 (기기 이동용)');
+
+  // 파일로 내려받을 때는 빠져야 한다
+  let written = '';
+  globalThis.Blob = class {
+    constructor(parts) {
+      written = String(parts[0]);
+    }
+  };
+  globalThis.URL = { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} };
+  const el = { href: '', download: '', click() {}, remove() {} };
+  globalThis.document = {
+    createElement: () => el,
+    body: { appendChild() {} },
+  };
+  backup2.exportBackupFile();
+  check(written.length > 0, '파일 내용이 실제로 만들어졌다 (검사가 헛돌지 않게)');
+  check(!written.includes('SECRET_ACCESS'), '액세스 토큰이 파일에 없다');
+  check(!written.includes('SECRET_REFRESH'), '리프레시 토큰이 파일에 없다');
+  check(written.includes('run-app-routes-v1'), '나머지 데이터는 그대로 담긴다');
+
+  localStorage.removeItem(TOKEN_KEY);
+}
+
 console.log(`\n통과 ${ok.length} / 실패 ${bad.length}`);
 if (bad.length) process.exit(1);

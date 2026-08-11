@@ -309,10 +309,22 @@ export async function getConditions(loc: LatLng): Promise<RunConditions> {
     const aq = await aqP;
     const cw = wx.current ?? {};
     const ca = aq?.current ?? {};
+    // 200 을 받았다고 본문이 멀쩡한 건 아니다 — current 블록이 통째로 없거나
+    // 기온이 빠져 오는 경우가 있다(응답 형식 변경·에러 본문). 예전엔 그때
+    // 13°C·습도 55%·바람 8km/h 로 채웠는데, source 는 live 라 화면에 '예시'
+    // 표시도 없이 지어낸 날씨가 그대로 나갔다. 핵심 값이 없으면 응답 전체를
+    // 못 믿는 것으로 보고, '예시'라고 밝히는 폴백으로 넘긴다.
+    if (typeof cw.temperature_2m !== 'number' || !Number.isFinite(cw.temperature_2m)) {
+      throw new Error('weather payload missing temperature');
+    }
     return assemble(
       {
-        tempC: cw.temperature_2m ?? 13,
-        feelsC: cw.apparent_temperature ?? cw.temperature_2m ?? 13,
+        tempC: cw.temperature_2m,
+        // 체감온도는 기온으로 대신할 수 있다 — 지어내는 게 아니라 같은 뜻의 값이다
+        feelsC:
+          typeof cw.apparent_temperature === 'number'
+            ? cw.apparent_temperature
+            : cw.temperature_2m,
         humidity: cw.relative_humidity_2m ?? 55,
         windKmh: cw.wind_speed_10m ?? 8,
         precipMm: cw.precipitation ?? 0,

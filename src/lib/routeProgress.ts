@@ -30,6 +30,39 @@ export function advanceProgress(
   return idx;
 }
 
+/**
+ * 경로의 누적 거리 배열 (cum[i] = 시작점부터 i번째 점까지 m).
+ *
+ * 진행률과 남은 거리를 매 측위마다 전체 경로를 다시 훑어 계산하고 있었다.
+ * 15km 코스는 좌표가 1500~3000개라, 1Hz 로 들어오는 측위마다 삼각함수가
+ * 수천 번 돌았다 — 한 시간 뛰면 천만 번대다. 경로는 뛰는 동안 안 바뀌므로
+ * 한 번만 만들어 두고 아래 두 함수로 O(1) 에 뽑는다.
+ */
+export function cumulativeMeters(planned: LatLng[]): number[] {
+  const cum = new Array<number>(planned.length);
+  cum[0] = 0;
+  for (let i = 1; i < planned.length; i++) {
+    cum[i] = cum[i - 1] + haversineMeters(planned[i - 1], planned[i]);
+  }
+  return cum;
+}
+
+/** 남은 거리(m) — cumulativeMeters 결과로 O(1) */
+export function remainingFromCum(cum: number[], idx: number): number {
+  if (cum.length < 2) return 0;
+  const i = Math.max(0, Math.min(idx, cum.length - 1));
+  return Math.max(0, cum[cum.length - 1] - cum[i]);
+}
+
+/** 진행률 0~1 — cumulativeMeters 결과로 O(1) */
+export function ratioFromCum(cum: number[], idx: number): number {
+  if (cum.length < 2) return 0;
+  const total = cum[cum.length - 1];
+  if (!(total > 0)) return 0;
+  const i = Math.max(0, Math.min(idx, cum.length - 1));
+  return Math.max(0, Math.min(1, cum[i] / total));
+}
+
 /** 계획 경로에서 남은 거리(m) */
 export function remainingMeters(planned: LatLng[], idx: number): number {
   let m = 0;

@@ -1,7 +1,7 @@
 import 'leaflet/dist/leaflet.css';
 import '../lib/leafletPatch';
 import { MUTED } from '../ui/theme';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import L from 'leaflet';
 import { MapContainer, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import BaseTiles from './BaseTiles';
@@ -116,7 +116,12 @@ export default function LeafletRouteMap({
   plannedPath,
   fitInsets,
 }: RouteMapProps) {
-  const colored = coloredSegments(route);
+  // 둘 다 경로 전체를 훑는 계산이다(방향 화살표는 haversine 을 2회 순회).
+  // 렌더 본문에서 그냥 부르면 부모가 다시 그릴 때마다 — 카드 선택, 시트
+  // 열림, 숲길 값 도착 등 — 15km 경로 기준 삼각함수가 수천 번씩 다시 돈다.
+  // 경로가 바뀔 때만 계산한다.
+  const colored = useMemo(() => coloredSegments(route), [route]);
+  const arrows = useMemo(() => (route ? directionMarkers(route.coords) : []), [route]);
 
   return (
     <MapContainer
@@ -180,7 +185,7 @@ export default function LeafletRouteMap({
 
       {/* 진행 방향 — 어느 쪽으로 먼저 가는지 */}
       {route &&
-        directionMarkers(route.coords).map((m, i) => (
+        arrows.map((m, i) => (
           <Marker
             key={`dir${i}`}
             position={m.pos as [number, number]}

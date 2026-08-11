@@ -22,7 +22,12 @@ import { wakeLockSupported } from '../lib/wakeLock';
 import { buildResult } from '../lib/routing';
 import { formatClock, formatDistance, formatPace } from '../lib/format';
 import { coloredSegments } from '../lib/routeColor';
-import { advanceProgress, progressRatio, remainingMeters } from '../lib/routeProgress';
+import {
+  advanceProgress,
+  cumulativeMeters,
+  ratioFromCum,
+  remainingFromCum,
+} from '../lib/routeProgress';
 import { kmSplits, type Split } from '../lib/splits';
 import type { RouteResult } from '../lib/routing';
 import type { LatLng } from '../lib/types';
@@ -127,6 +132,13 @@ export default function RecordScreen({
     setIdx((prev) => advanceProgress(planned.route.coords, cur, prev));
   }, [planned, cur]);
 
+  // 경로는 뛰는 동안 안 바뀐다 — 누적 거리를 한 번만 만들어 두고, 매 측위마다
+  // 하던 전체 경로 재순회(15km 면 측위 1회당 삼각함수 수천 번)를 없앤다.
+  const plannedCum = useMemo(
+    () => (planned ? cumulativeMeters(planned.route.coords) : null),
+    [planned],
+  );
+
   // 지나온 구간은 경사 색상, 남은 구간은 눈금(점선)
   const { traveled, remainPath, remainM, ratio } = useMemo(() => {
     if (!planned) return { traveled: undefined, remainPath: undefined, remainM: 0, ratio: 0 };
@@ -138,10 +150,10 @@ export default function RecordScreen({
     return {
       traveled: idx > 0 ? coloredSegments(done) : [],
       remainPath: planned.route.coords.slice(Math.max(idx, 0)),
-      remainM: remainingMeters(planned.route.coords, idx),
-      ratio: progressRatio(planned.route.coords, idx),
+      remainM: plannedCum ? remainingFromCum(plannedCum, idx) : 0,
+      ratio: plannedCum ? ratioFromCum(plannedCum, idx) : 0,
     };
-  }, [planned, idx]);
+  }, [planned, plannedCum, idx]);
 
   // km 구간 기록 — 활성 시간 기준이라 신호 대기로 멈춘 시간이 섞이지 않는다
   const splits = useMemo(

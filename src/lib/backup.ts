@@ -35,8 +35,20 @@ export function collectBackup(): BackupFile {
   return { app: 'runcourse', version: 1, exportedAt: new Date().toISOString(), data };
 }
 
+/**
+ * 파일로 내려받을 때는 빼는 키.
+ *
+ * Strava 토큰은 액세스·리프레시 자격증명이다. 계정 백업(cloud.ts)은 본인
+ * 계정으로 인증된 자리에 들어가지만, 파일은 메일로 보내고 클라우드 드라이브에
+ * 올리고 남에게 넘기기도 하는 물건이다 — 그 안에 남의 계정에 접근할 수 있는
+ * 토큰이 평문으로 들어 있으면 안 된다. 파일로 복원한 뒤에는 Strava 연결만
+ * 한 번 다시 눌러주면 된다.
+ */
+const FILE_EXCLUDED_KEYS: readonly string[] = ['run-app-strava-token-v1'];
+
 export function exportBackupFile(): void {
   const backup = collectBackup();
+  for (const k of FILE_EXCLUDED_KEYS) delete backup.data[k];
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
