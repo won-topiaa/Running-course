@@ -95,3 +95,40 @@ export function wayMixLabel(mix: WayMix): string {
   if (mix.stepsM >= 30) parts.push(`계단 ${mix.stepsM}m`);
   return parts.join(' · ');
 }
+
+// --- 끊김 판단 — roadPct/trailPct/stepsM 으로 러닝 흐름을 추정 ---------------
+//
+// ORS waytype 은 OSM 도로 분류에서 나온다 — STATE_ROAD/ROAD/STREET 위를
+// 달리면 횡단보도·신호등에 걸리고, FOOTWAY/PATH/CYCLEWAY 위에서는 끊기지
+// 않는다. 이 구분만으로 '신호등 횟수'까지는 세지 못하지만, '끊김이 많을
+// 코스인지 아닌지'는 신뢰할 만하게 알 수 있다.
+//
+// 정확한 신호등 개수는 OSM 노드에 highway=traffic_signals 태그가 있어야
+// 세는데, 한국 OSM 에는 이 태그가 많이 빠져 있어 정확도가 낮다. 개수를
+// 지어내면 안 되므로 여기서는 비율만 쓴다.
+
+export interface FlowInfo {
+  /** 러너가 읽을 한 줄 */
+  text: string;
+  /** UI 색상 분기 */
+  level: 'smooth' | 'mixed' | 'choppy';
+}
+
+export function flowInfo(mix: WayMix): FlowInfo {
+  if (mix.stepsM >= 100) {
+    return { text: `계단 ${mix.stepsM}m — 뛰다 걸어야 해요`, level: 'choppy' };
+  }
+  if (mix.trailPct >= 80) {
+    return { text: '끊김 없이 달릴 수 있어요', level: 'smooth' };
+  }
+  if (mix.trailPct >= 50) {
+    return {
+      text: `차도 옆 ${mix.roadPct}% — 신호등에 가끔 걸려요`,
+      level: 'mixed',
+    };
+  }
+  return {
+    text: `차도 옆 ${mix.roadPct}% — 신호등에 자주 걸릴 수 있어요`,
+    level: 'choppy',
+  };
+}

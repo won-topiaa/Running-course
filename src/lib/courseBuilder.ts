@@ -29,6 +29,12 @@ export interface BuiltRoute {
   /** 종합 매칭 점수 0~100 */
   matchScore: number;
   label: string;
+  /** 숲길 비율(%) — 아직 없으면 undefined */
+  greenPct?: number;
+  /** 가중합 / 가중치 (여름 그늘 재채점용). 수역 감점 전 값 */
+  _rawSum: number;
+  _rawW: number;
+  _suspectGap: boolean;
 }
 
 function distanceScore(distanceKm: number, targetKm: number | null): number {
@@ -76,15 +82,20 @@ function toBuilt(
   // 한쪽만 세게 주면 '산책로 위주'를 골라도 순위가 안 움직이거나(0.5) 반대로
   // 경사 취향이 완전히 무시된다(0.9). 실측으로 0.7 이 두 축이 다 살아 있는 값이다.
   if (pathEval.score != null) parts.push({ w: 0.7, v: pathEval.score });
-  const totalW = parts.reduce((t, p) => t + p.w, 0);
-  let matchScore = Math.round((parts.reduce((t, p) => t + p.w * p.v, 0) / totalW) * 100);
+  const rawW = parts.reduce((t, p) => t + p.w, 0);
+  const rawSum = parts.reduce((t, p) => t + p.w * p.v, 0);
+  let matchScore = Math.round((rawSum / rawW) * 100);
 
   // 수역 위 의심 구간이 있는 후보는 순위를 크게 내린다.
   // 확신이 아니라 의심이므로 배제하진 않는다 — 깨끗한 후보가 있으면 그쪽이 이긴다.
-  if (maxAdjacentGapM(route.coords) > SUSPECT_GAP_M) {
+  const suspectGap = maxAdjacentGapM(route.coords) > SUSPECT_GAP_M;
+  if (suspectGap) {
     matchScore = Math.round(matchScore * 0.45);
   }
-  return { route, styleEval, pathEval, distanceScore: dScore, matchScore, label };
+  return {
+    route, styleEval, pathEval, distanceScore: dScore, matchScore, label,
+    _rawSum: rawSum, _rawW: rawW, _suspectGap: suspectGap,
+  };
 }
 
 /**
@@ -276,4 +287,49 @@ export async function buildFromDistance(
     opts.pathPref,
   );
   return dedupe(built).sort(byMatchThenDistance).slice(0, 3);
+}
+
+// --- 여름 그늘 재채점 -------------------------------------------------------
+//
+// Overpass 녹지 데이터(OSM 공원·숲 폴리곤)는 경로 생성보다 느려 결과가 뒤에
+// 온다. 여름(6~8월)에는 이 값을 순위에 반영한다 — 같은 5km 라도 한강공원
+// 안 코스와 대로변 코스는 체감이 완전히 다르기 때문이다.
+//
+// 데이터가 안 오면(Overpass 실패·타임아웃) 이 축을 빼고 원래 점수를 그대로
+// 쓴다 — 모르는 값으로 채점하면 거짓말이 된다.
+
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+
+/** 6~8월이면 true */
+export function isSummerSeason(): boolean {
+  const m = new Date().getMonth();
+  return m >= 5 && m <= 7;
+}
+
+/**
+ * 녹지 비율(greenPct)을 기존 점수에 합산해 재정렬한다.
+ * 여름이 아니면 greenPct 만 기록하고 순위는 건드리지 않는다.
+ *
+ * 가중치 0.3 — 경사 스타일(0.7)·길 취향(0.7) 보다 낮다. 그늘이 중요하긴 해도
+ * 사용자가 '언덕 훈련' 을 골랐는데 평지-공원 코스가 1위로 올라오면 안 된다.
+ * 실측: 여의도 5km 에서 숲길 31% 후보가 0% 후보를 3~5점 앞서는 정도다.
+ */
+export function rescoreWithGreen(
+  routes: BuiltRoute[],
+  greenPcts: (number | null)[],
+): BuiltRoute[] {
+  const summer = isSummerSeason();
+  const scored = routes.map((r, i) => {
+    const gp = greenPcts[i];
+    if (gp == null || !summer) return { ...r, greenPct: gp ?? undefined };
+
+    const greenScore = clamp01(gp / 50);
+    const newSum = r._rawSum + 0.3 * greenScore;
+    const newW = r._rawW + 0.3;
+    let matchScore = Math.round((newSum / newW) * 100);
+    if (r._suspectGap) matchScore = Math.round(matchScore * 0.45);
+    return { ...r, greenPct: gp, matchScore, _rawSum: newSum, _rawW: newW };
+  });
+  if (summer) scored.sort(byMatchThenDistance);
+  return scored;
 }

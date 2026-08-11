@@ -10,8 +10,9 @@
 // 느리고(1~5초) 호출 제한이 있으므로 경로 생성을 막지 않는다 — 코스를 먼저
 // 보여주고, 값이 오면 카드에 한 줄이 뒤늦게 채워진다. 실패하면 그냥 안 뜬다.
 //
-// 순위에는 넣지 않는다. 결과가 나온 뒤에 도착하는 값이라 여기서 재정렬하면
-// 사용자가 카드를 고르는 도중에 순서가 바뀐다.
+// 여름(6~8월)에는 순위에 넣는다 — 그늘이 경사만큼 중요하기 때문이다.
+// 경로 생성과 폴리곤 조회를 병렬로 돌려 둘 다 끝난 뒤에 한 번에 채점한다.
+// 비여름에는 장식 정보로만 쓴다.
 // ---------------------------------------------------------------------------
 
 import { haversineMeters } from './geo';
@@ -48,13 +49,14 @@ const AREA_GROUPS: [key: string, valuePattern: string][] = [
   ['natural', '^(wood)$'],
 ];
 
-interface Poly {
+export interface GreenPoly {
   pts: LatLng[];
   minLat: number;
   maxLat: number;
   minLng: number;
   maxLng: number;
 }
+type Poly = GreenPoly;
 
 // bbox 당 결과를 잠깐 기억한다. '다시 찾기'를 눌러도 같은 동네면 재조회하지 않는다.
 const cache = new Map<string, { at: number; polys: Poly[] }>();
@@ -247,6 +249,47 @@ export async function fetchGreenShares(routes: LatLng[][]): Promise<(number | nu
   }
   if (polys.length === 0) return routes.map(() => 0);
   return routes.map((r) => greenShareOf(r, polys));
+}
+
+/**
+ * 시작점 주변 영역의 녹지 폴리곤을 미리 받는다.
+ * 경로 생성과 병렬로 돌려, 둘 다 끝나면 greenShareOf 로 채점한다.
+ * 실패하면 null — 호출측은 이 축을 빼고 채점한다.
+ */
+export async function fetchGreenPolysForArea(
+  center: LatLng,
+  radiusKm: number,
+): Promise<Poly[] | null> {
+  const margin = radiusKm / 111;
+  const bbox: [number, number, number, number] = [
+    center[0] - margin - MARGIN_DEG,
+    center[1] - margin - MARGIN_DEG,
+    center[0] + margin + MARGIN_DEG,
+    center[1] + margin + MARGIN_DEG,
+  ];
+  if (bbox[2] - bbox[0] > MAX_SPAN_DEG || bbox[3] - bbox[1] > MAX_SPAN_DEG) return null;
+
+  const key = bbox.map((v) => v.toFixed(3)).join(',');
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.polys;
+
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  try {
+    let res = await postQuery(bbox, ac.signal);
+    if (res.status === 504 || res.status === 429) {
+      await new Promise((r) => setTimeout(r, 2000));
+      res = await postQuery(bbox, ac.signal);
+    }
+    if (!res.ok) return null;
+    const polys = parseGreenPolys(await res.json());
+    rememberPolys(key, polys);
+    return polys;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function postQuery(bbox: [number, number, number, number], signal: AbortSignal): Promise<Response> {

@@ -741,5 +741,84 @@ console.log('\n[숲길 캐시] 오래된 값이 메모리를 붙잡고 있으면
   check(peak <= 6, `그래도 무한정 늘지 않는다 (최대 ${peak}건)`);
 }
 
+// ---------------------------------------------------------------------------
+// 끊김 판단 (flowInfo) — ORS waytype 비율로 신호등 끊김을 추정
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[끊김 판단] ORS waytype 비율로 러닝 흐름을 추정하는지');
+  const { flowInfo } = await bundle('src/lib/wayMix.ts', 'wayMix.mjs');
+
+  const smooth = flowInfo({ trailPct: 85, roadPct: 10, softPct: 0, stepsM: 0 });
+  check(smooth.level === 'smooth', `산책로 85% → '${smooth.level}' (smooth)`);
+  check(smooth.text.includes('끊김 없이'), `텍스트: ${smooth.text}`);
+
+  const mixed = flowInfo({ trailPct: 55, roadPct: 40, softPct: 0, stepsM: 0 });
+  check(mixed.level === 'mixed', `산책로 55% → '${mixed.level}' (mixed)`);
+  check(mixed.text.includes('가끔'), `텍스트에 '가끔': ${mixed.text}`);
+
+  const choppy = flowInfo({ trailPct: 20, roadPct: 75, softPct: 0, stepsM: 0 });
+  check(choppy.level === 'choppy', `차도 75% → '${choppy.level}' (choppy)`);
+  check(choppy.text.includes('자주'), `텍스트에 '자주': ${choppy.text}`);
+
+  const steps = flowInfo({ trailPct: 90, roadPct: 5, softPct: 0, stepsM: 150 });
+  check(steps.level === 'choppy', `계단 150m → '${steps.level}' (choppy)`);
+  check(steps.text.includes('계단'), `텍스트에 '계단': ${steps.text}`);
+}
+
+// ---------------------------------------------------------------------------
+// 여름 그늘 재채점 (rescoreWithGreen) — OSM 녹지 데이터 반영
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[여름 그늘] rescoreWithGreen 이 정확히 동작하는지');
+  const { rescoreWithGreen, isSummerSeason } = await bundle(
+    'src/lib/courseBuilder.ts',
+    'courseBuilder2.mjs',
+  );
+
+  const fakeBuilt = (matchScore, rawSum = matchScore / 100, rawW = 1.0) => ({
+    route: { distanceKm: 5, ascentM: 50, coords: [] },
+    styleEval: { style: 'flat', score: matchScore / 100, metrics: {}, reason: '' },
+    pathEval: { pref: 'any', score: null, reason: null },
+    distanceScore: 1,
+    matchScore,
+    label: 'test',
+    _rawSum: rawSum,
+    _rawW: rawW,
+    _suspectGap: false,
+  });
+
+  // greenPct 가 null 이면 점수가 안 바뀐다
+  const unchanged = rescoreWithGreen([fakeBuilt(80)], [null]);
+  check(unchanged[0].matchScore === 80, `null greenPct → 점수 유지 (${unchanged[0].matchScore})`);
+
+  // greenPct 를 넣었을 때 (여름이면 점수 변동, 비여름이면 유지)
+  const withGreen = rescoreWithGreen([fakeBuilt(80), fakeBuilt(70)], [40, 10]);
+  if (isSummerSeason()) {
+    check(
+      withGreen[0].matchScore !== 80 || withGreen[1].matchScore !== 70,
+      '여름: greenPct 가 점수에 반영됐다',
+    );
+    check(
+      withGreen[0].matchScore >= withGreen[1].matchScore,
+      `여름: 숲길 40% 가 10% 보다 높다 (${withGreen[0].matchScore} ≥ ${withGreen[1].matchScore})`,
+    );
+  } else {
+    check(
+      withGreen[0].matchScore === 80 && withGreen[1].matchScore === 70,
+      '비여름: 점수 유지',
+    );
+  }
+
+  // greenPct 가 기록되는지
+  check(withGreen[0].greenPct != null, 'greenPct 가 결과에 기록된다');
+
+  // _suspectGap 이 있으면 감점
+  const suspect = { ...fakeBuilt(80), _suspectGap: true };
+  const rescored = rescoreWithGreen([suspect], [40]);
+  if (isSummerSeason()) {
+    check(rescored[0].matchScore < 50, `수역 의심 감점 적용됨 (${rescored[0].matchScore})`);
+  }
+}
+
 console.log(`\n통과 ${ok.length} / 실패 ${bad.length}`);
 if (bad.length) process.exit(1);

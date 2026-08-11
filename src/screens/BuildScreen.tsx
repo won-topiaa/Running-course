@@ -12,7 +12,13 @@ import {
 } from 'lucide-react';
 import RouteMap from '../components/RouteMap';
 import GradeElevationChart from '../components/GradeElevationChart';
-import { buildFromDistance, buildFromPins, type BuiltRoute } from '../lib/courseBuilder';
+import {
+  buildFromDistance,
+  buildFromPins,
+  isSummerSeason,
+  rescoreWithGreen,
+  type BuiltRoute,
+} from '../lib/courseBuilder';
 import { fallbackProvider, makeProvider, RoutingError, type RoutingProvider } from '../lib/routing';
 import {
   GRADE_LEGEND,
@@ -24,8 +30,12 @@ import {
   type RunStyle,
 } from '../lib/routeStyle';
 import { estimateTimeLabel, formatDistance } from '../lib/format';
-import { fetchGreenShares } from '../lib/greenShare';
-import { wayMixLabel } from '../lib/wayMix';
+import {
+  fetchGreenShares,
+  fetchGreenPolysForArea,
+  greenShareOf,
+} from '../lib/greenShare';
+import { flowInfo } from '../lib/wayMix';
 import { haversineMeters } from '../lib/geo';
 import { superlatives } from '../lib/compare';
 import type { LatLng } from '../lib/types';
@@ -244,19 +254,19 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   );
 
   // 숲길 비율 — 코스가 나온 뒤 뒤늦게 채워지는 부가 정보(greenShare.ts).
-  // 순위에는 안 넣는다. 결과가 뜬 다음 도착하는 값이라 여기서 재정렬하면
-  // 사용자가 카드를 고르는 중에 순서가 바뀐다.
+  // 여름에는 generate() 안에서 녹지를 채점한다(병렬 조회). 비여름에만 여기서
+  // 비동기로 채운다 — 결과가 나온 뒤 뒤늦게 도착하는 장식 정보.
   const [greenPct, setGreenPct] = useState<(number | null)[]>([]);
   useEffect(() => {
-    setGreenPct([]);
-    if (!results || results.length === 0) return;
+    if (!results || results.length === 0) { setGreenPct([]); return; }
+    // 여름에 generate 에서 이미 채웠으면 다시 부르지 않는다
+    if (greenPct.length === results.length && greenPct.some((v) => v != null)) return;
     let alive = true;
     void fetchGreenShares(results.map((r) => r.route.coords)).then((pcts) => {
       if (alive) setGreenPct(pcts);
     });
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [results]);
 
   // 후보끼리 비교해 붙이는 '이 코스만의 장점' 배지
@@ -340,10 +350,22 @@ export default function BuildScreen({ api }: { api: AppApi }) {
             pathPref,
           });
 
+    // 여름(6~8월)이면 녹지 폴리곤을 경로 생성과 병렬로 가져온다.
+    // Overpass(OSM 공원·숲 데이터)는 경로 서버보다 느리지만 병렬이라 대기는
+    // max(경로, 녹지) = 녹지 시간 ≈ 2.6~3초 정도다.
+    const summer = isSummerSeason();
+    const greenCenter = mode === 'pins' ? waypoints[0] : start;
+    const greenRadius = mode === 'pins' ? 8 : Math.max(targetKm * 1.2, 5);
+    const greenPolyP = summer ? fetchGreenPolysForArea(greenCenter, greenRadius) : null;
+
     // 오래 걸리면 이유를 말해준다. 경로 서버가 느린 날에는 결과가 나오기까지
     // 20초 넘게 걸리는데, 그동안 스피너만 돌면 사용자는 앱이 멈춘 줄 안다.
     const slowTimer = setTimeout(() => {
-      setNotice('경로 서버 응답이 느려요. 조금만 기다려 주세요…');
+      setNotice(
+        summer
+          ? '경로 서버 응답이 느려요. 그늘 정보도 확인하고 있어요…'
+          : '경로 서버 응답이 느려요. 조금만 기다려 주세요…',
+      );
     }, 7000);
 
     // ORS → OSRM(키 불필요) → 데모(직선) 순으로 내려가며 시도
@@ -352,8 +374,19 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     try {
       while (provider) {
         try {
-          const out = await build(provider);
+          let out = await build(provider);
           clearTimeout(slowTimer);
+
+          // 여름: 녹지 데이터가 도착하면 그늘 가중치를 반영해 재채점
+          if (summer && greenPolyP) {
+            const polys = await greenPolyP;
+            if (polys) {
+              const pcts = out.map((r) => greenShareOf(r.route.coords, polys));
+              out = rescoreWithGreen(out, pcts);
+              setGreenPct(pcts);
+            }
+          }
+
           setResults(out);
           setSelIdx(0);
           setNotice(null); // '느려요' 안내가 결과 화면까지 따라오지 않게
@@ -379,6 +412,8 @@ export default function BuildScreen({ api }: { api: AppApi }) {
             );
           } else if (styleNotice) {
             setNotice(styleNotice);
+          } else if (summer && out[0]?.greenPct != null && out[0].greenPct >= 20) {
+            setNotice('☀️ 여름이라 그늘(공원·숲) 비율도 반영해 골랐어요.');
           } else if (provider.id === 'osrm' && api.settings.orsKey) {
             // 왜 대체됐는지 말해준다. 분당 한도는 1분이면 풀리는 일시적 상황이라
             // '오류'가 아니라 '잠깐 대체'로 읽혀야 한다.
@@ -1211,8 +1246,8 @@ function CompareCard({
           {formatDistance(route.distanceKm)} · {estimateTimeLabel(route.distanceKm, paceSec)} · 최대{' '}
           {route.maxGradePct}%
         </span>
-        {/* 길 성격 + 숲길 + 이 코스만의 장점. 아무것도 없으면 줄을 안 만든다 —
-            모르는 값을 0% 로 적으면 거짓말이 된다. */}
+        {/* 끊김·숲길·배지. ORS waytype 으로 신호등 끊김을, OSM 녹지
+            데이터로 그늘 비율을 알려준다 — 둘 다 확인된 데이터다. */}
         {(route.way || greenPct != null || badge) && (
           <span className="mt-1 flex flex-wrap items-center gap-1">
             {badge && (
@@ -1220,17 +1255,28 @@ function CompareCard({
                 {badge}
               </span>
             )}
-            {/* 여름 러닝에서 그늘은 경사만큼 중요하다 — 높으면 눈에 띄게 */}
+            {route.way && (() => {
+              const fi = flowInfo(route.way);
+              const color =
+                fi.level === 'smooth'
+                  ? 'text-sage-600'
+                  : fi.level === 'mixed'
+                    ? 'text-espresso-muted'
+                    : 'text-coral-600';
+              return (
+                <span className={`text-[11px] font-medium ${color}`}>
+                  {fi.level === 'smooth' ? '🟢' : fi.level === 'mixed' ? '🟡' : '🔴'}{' '}
+                  {fi.text}
+                </span>
+              );
+            })()}
             {greenPct != null && greenPct >= 25 && (
               <span className="rounded-full bg-sage-100 px-1.5 py-0.5 text-[10px] font-bold text-sage-600">
                 🌳 숲길 {greenPct}%
               </span>
             )}
-            {greenPct != null && greenPct < 25 && (
+            {greenPct != null && greenPct > 0 && greenPct < 25 && (
               <span className="text-[11px] text-espresso-soft">🌳 숲길 {greenPct}%</span>
-            )}
-            {route.way && (
-              <span className="truncate text-[11px] text-espresso-soft">{wayMixLabel(route.way)}</span>
             )}
           </span>
         )}
