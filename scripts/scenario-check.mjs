@@ -279,6 +279,28 @@ await scenario('종료 연타(중복 저장 방지)', { geolocation: { latitude:
   expect(!!saved && saved.distanceKm > 0, `저장된 거리가 0 (${saved?.distanceKm})`);
 });
 
+// 13) 러닝 도중 위치 권한이 끊겨도 그때까지 뛴 기록을 잃지 않는지
+//     (설정에서 끄거나 OS 가 회수하는 경우. 예전엔 시작 화면으로 되돌아가
+//      화면에서 기록이 사라졌다 — 안전망에는 남지만 앱을 껐다 켜야 보였다)
+await scenario('러닝 중 위치 권한 취소', { geolocation: { latitude: 37.5665, longitude: 126.978, accuracy: 8 } },
+  async (page, ctx, expect) => {
+  await page.goto(base, { waitUntil: 'load' }); await settle(page);
+  await page.getByRole('button', { name: '뛰기', exact: true }).first().click();
+  await page.waitForTimeout(600);
+  await page.getByRole('button', { name: 'START' }).click();
+  await page.waitForTimeout(1000);
+  for (let i = 1; i <= 8; i++) {
+    await ctx.setGeolocation({ latitude: 37.5665 + i * 0.00018, longitude: 126.978, accuracy: 8 });
+    await page.waitForTimeout(400);
+  }
+  // 뛰는 도중 권한 회수
+  await ctx.clearPermissions();
+  await page.waitForTimeout(3000);
+  const summary = await page.getByText(/러닝 완료|기록할 만큼/).first().isVisible().catch(() => false);
+  const backToStart = await page.getByRole('button', { name: 'START' }).isVisible().catch(() => false);
+  expect(summary || !backToStart, '권한이 끊기자 시작 화면으로 돌아가 기록이 화면에서 사라졌다');
+});
+
 // 12) 오프라인 재로드 (SW 캐시로 다시 열리는지)
 await scenario('오프라인 재로드(PWA)', {}, async (page, ctx, expect) => {
   await page.goto(base, { waitUntil: 'load' });

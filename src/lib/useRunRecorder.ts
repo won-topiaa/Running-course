@@ -41,6 +41,15 @@ export interface RecorderState {
   accuracyM: number | null;
   /** 오차가 너무 커서 거리 적산을 멈춘 상태 — 사용자에게 알려야 한다 */
   weakSignal: boolean;
+  /**
+   * 마지막 측위 이후 흐른 초 (기록 중일 때만 갱신).
+   *
+   * weakSignal 은 '측위가 왔는데 오차가 크다'는 신호라, 측위가 아예 안 오면
+   * false 인 채로 멈춰 있다. 배터리 절약 모드가 GPS 를 끊거나 실내로 들어가면
+   * 화면은 켜져 있으니 gapSec(화면 꺼짐 감지)도 안 잡는다 — 시계만 돌고
+   * 거리는 안 늘어 평균 페이스가 조용히 부풀려진다. 그걸 말해주기 위한 값.
+   */
+  noFixSec: number;
   /** 서 있는 게 확인돼 시계를 자동으로 멈춘 상태 (신호 대기 등) */
   autoPaused: boolean;
 }
@@ -86,6 +95,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     gapSec: 0,
     accuracyM: null,
     weakSignal: false,
+    noFixSec: 0,
     autoPaused: false,
   });
 
@@ -205,6 +215,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
           distanceKm: distMRef.current / 1000,
           accuracyM: accuracy ?? null,
           weakSignal: v.weak,
+          noFixSec: 0,
           autoPaused: still,
           currentPaceSec: livePace(coordsRef.current, activeTimesRef.current),
         });
@@ -231,6 +242,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         distanceKm: distMRef.current / 1000,
         accuracyM: accuracy ?? null,
         weakSignal: false,
+        noFixSec: 0,
         autoPaused: still,
         currentPaceSec: livePace(coordsRef.current, activeTimesRef.current),
       });
@@ -251,10 +263,12 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       // 다시 계산되므로, 터널·백그라운드로 신호가 끊긴 채 5'12" 가 계속 떠
       // 있게 된다 — 사용자는 그걸 지금 자기 페이스로 믿는다. 한동안 측위가
       // 없으면 숫자를 거둔다(거리·시간은 그대로 두고 페이스만).
-      const staleFix = Date.now() - lastFixAtRef.current > 8_000;
+      const sinceFixMs = Date.now() - lastFixAtRef.current;
+      const staleFix = sinceFixMs > 8_000;
       sync({
         elapsedSec,
         avgPaceSec: km >= 0.05 ? sanePace(elapsedSec / km) : null,
+        noFixSec: Math.round(sinceFixMs / 1000),
         ...(staleFix ? { currentPaceSec: null } : {}),
       });
     }, 1000);
@@ -315,6 +329,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         gapSec: 0,
         accuracyM: null,
         weakSignal: false,
+        noFixSec: 0,
         autoPaused: false,
       });
       startTick();
@@ -346,9 +361,27 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         // 있으니 그대로 둔다.
         if (err.code === err.PERMISSION_DENIED) {
           stopSources();
-          statusRef.current = 'idle';
           void wakeRef.current?.disable();
-          sync({ status: 'idle', error: 'denied' });
+          // 뛰던 중에 권한이 끊기는 경우가 있다(설정에서 껐거나 OS 가 회수).
+          // 그때 시작 화면으로 되돌리면 그때까지 뛴 기록이 화면에서 사라진다
+          // — 안전망(runRecovery)에는 남지만 앱을 껐다 켜야 다시 보인다.
+          // 남길 게 있으면 요약 화면으로 넘겨 바로 저장할 수 있게 한다.
+          if (coordsRef.current.length > 1) {
+            if (statusRef.current === 'recording') {
+              activeMsRef.current = activeNow(Date.now());
+            }
+            statusRef.current = 'finished';
+            sync({
+              status: 'finished',
+              error: 'denied',
+              elapsedSec: activeMsRef.current / 1000,
+              distanceKm: distMRef.current / 1000,
+              autoPaused: false,
+            });
+          } else {
+            statusRef.current = 'idle';
+            sync({ status: 'idle', error: 'denied' });
+          }
         }
       },
       // maximumAge 는 반드시 0. 1000 으로 두면 브라우저가 최대 1초 묵은 좌표를
@@ -357,7 +390,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       // 실시간 기록에서는 항상 새 측위만 받는다.
       { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 },
     );
-  }, [beginSession, ingest, sync, stopSources]);
+  }, [beginSession, ingest, sync, stopSources, activeNow]);
 
   const startDemo = useCallback(
     (path?: LatLng[]) => {
@@ -427,6 +460,11 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     segStartRef.current = Date.now();
     autoPausedMsRef.current = 0;
     stillSinceRef.current = null;
+    // 멈춰 있는 동안 들어온 측위는 ingest 가 버리므로 lastFixAt 이 그대로 멈춰
+    // 있다. 이걸 안 되돌리면 쉰 시간이 'GPS 공백'으로 집계돼, 5분 쉬고 재개한
+    // 사람에게 '화면이 꺼진 사이 5분 동안 위치가 기록되지 않았어요' 라고
+    // 엉뚱한 안내가 나간다(그리고 신호 끊김 배너도 즉시 뜬다).
+    lastFixAtRef.current = Date.now();
     statusRef.current = 'recording';
     void wakeRef.current?.enable();
     sync({ status: 'recording' });
@@ -503,6 +541,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       gapSec: 0,
       accuracyM: null,
       weakSignal: false,
+      noFixSec: 0,
       autoPaused: false,
     });
   }, [cleanup]);

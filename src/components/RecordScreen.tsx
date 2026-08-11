@@ -397,6 +397,21 @@ export default function RecordScreen({
               </p>
             )}
 
+            {/* 화면은 켜져 있는데 측위가 아예 안 들어오는 상태.
+                weakSignal 은 '측위가 왔는데 오차가 크다'라 이 경우를 못 잡고,
+                gapSec 은 화면이 꺼졌다 켜질 때만 센다 — 그 사이 시계만 돌아
+                평균 페이스가 조용히 부풀려지므로 여기서 말해준다.
+                25초는 다리 밑·터널에서 흔한 5~15초 끊김에는 안 뜨는 값이다. */}
+            {rec.status === 'recording' && !rec.demo && rec.noFixSec >= 25 && (
+              <p className="mt-4 rounded-2xl border border-amber/50 bg-amber-100 px-3 py-2.5 text-[11.5px] leading-relaxed text-white/80">
+                <b className="text-amber-600">
+                  위치 신호가 {formatClock(rec.noFixSec)}째 안 잡혀요.
+                </b>{' '}
+                그동안 거리가 안 쌓여요 — 배터리 절약 모드가 켜져 있거나 실내는 아닌지 확인해
+                주세요.
+              </p>
+            )}
+
             {rec.gapSec > 0 && (
               <p className="mt-4 rounded-2xl border border-coral/50 bg-coral-50 px-3 py-2.5 text-[11.5px] leading-relaxed text-espresso">
                 <b className="text-coral-600">
