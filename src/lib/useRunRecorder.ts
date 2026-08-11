@@ -52,6 +52,14 @@ export interface RecorderState {
   noFixSec: number;
   /** 서 있는 게 확인돼 시계를 자동으로 멈춘 상태 (신호 대기 등) */
   autoPaused: boolean;
+  /**
+   * 기기가 고도를 한 번이라도 줬는지.
+   *
+   * 안 주는 기기가 있는데, 그때 elevations 는 첫 점의 syntheticElevation
+   * (사인파로 지어낸 값)이 끝까지 이어진 배열이다. 이걸 잰 값처럼 GPX 로
+   * 내보내면 Strava·가민에 영구로 남는다 — 화면의 '상승 0m' 도 근거가 없다.
+   */
+  altitudeKnown: boolean;
 }
 
 export interface Recorder extends RecorderState {
@@ -97,6 +105,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     weakSignal: false,
     noFixSec: 0,
     autoPaused: false,
+    altitudeKnown: false,
   });
 
   const coordsRef = useRef<LatLng[]>([]);
@@ -105,6 +114,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
   const activeTimesRef = useRef<number[]>([]);
   const cumDistRef = useRef<number[]>([]);
   const lastFixAtRef = useRef(0); //   마지막 GPS 수신 시각
+  const sawAltRef = useRef(false); //  기기가 고도를 한 번이라도 줬는지
   const gapMsRef = useRef(0); //       백그라운드에서 놓친 누적 시간
   const distMRef = useRef(0);
   const activeMsRef = useRef(0); // 누적 활성 시간
@@ -223,8 +233,10 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       }
 
       coordsRef.current.push(v.point);
+      const hasAlt = alt != null && !Number.isNaN(alt);
+      if (hasAlt) sawAltRef.current = true;
       const elevation =
-        alt != null && !Number.isNaN(alt)
+        hasAlt
           ? alt
           : elevRef.current.length
             ? elevRef.current[elevRef.current.length - 1]
@@ -244,6 +256,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         weakSignal: false,
         noFixSec: 0,
         autoPaused: still,
+        altitudeKnown: sawAltRef.current,
         currentPaceSec: livePace(coordsRef.current, activeTimesRef.current),
       });
     },
@@ -331,6 +344,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
         weakSignal: false,
         noFixSec: 0,
         autoPaused: false,
+        altitudeKnown: false,
       });
       startTick();
       void wakeRef.current?.enable(); // 뛰는 동안 화면 유지
@@ -543,6 +557,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       weakSignal: false,
       noFixSec: 0,
       autoPaused: false,
+      altitudeKnown: false,
     });
   }, [cleanup]);
 

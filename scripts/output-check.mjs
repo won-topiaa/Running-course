@@ -1040,5 +1040,92 @@ console.log('\n[숲길 캐시] 오래된 값이 메모리를 붙잡고 있으면
   );
 }
 
+// ---------------------------------------------------------------------------
+// 미세먼지 — 못 받은 값을 '좋음'으로 단정하면 안 된다 (건강 판단에 쓰인다)
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[미세먼지] 대기질 서버만 죽었을 때 지어낸 값을 안 내놓는지');
+  const W = await bundle('src/lib/weather.ts', 'weather.mjs');
+  const wxBody = {
+    current: {
+      temperature_2m: 31,
+      apparent_temperature: 35,
+      relative_humidity_2m: 78,
+      weather_code: 0,
+      wind_speed_10m: 6,
+      precipitation: 0,
+      uv_index: 9,
+    },
+    utc_offset_seconds: 32400,
+    hourly: { time: [], apparent_temperature: [] },
+  };
+
+  // 날씨는 성공, 대기질만 실패 (다른 호스트라 실제로 흔하다)
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('air-quality')) throw new Error('down');
+    return { ok: true, json: async () => wxBody };
+  };
+  const c = await W.getConditions([37.5665, 126.978]);
+  console.log(`    pm2.5=${c.pm25} · 표기 "미세먼지 ${c.aqiLabel}" · ${c.runScore}점`);
+  check(c.pm25 === null, `못 받은 pm2.5 는 null (12㎍/㎥ 로 채워 '좋음' 이라던 문제)`);
+  check(c.aqiLevel === null, '등급도 null');
+  check(c.aqiLabel === '정보 없음', `화면 표기가 '정보 없음' (${c.aqiLabel})`);
+  check(
+    !/딱 좋은 날/.test(c.headline),
+    `모르는 날 '딱 좋은 날' 이라고 안 한다 — "${c.headline}"`,
+  );
+  check(/미세먼지/.test(c.headline), '헤드라인이 미세먼지를 모른다고 알린다');
+
+  // 대기질이 나쁠 때는 그대로 경고해야 한다 (검사가 헛돌지 않게)
+  globalThis.fetch = async (url) => ({
+    ok: true,
+    json: async () =>
+      String(url).includes('air-quality') ? { current: { pm2_5: 82, pm10: 130 } } : wxBody,
+  });
+  const bad2 = await W.getConditions([37.5665, 126.978]);
+  console.log(`    pm2.5=${bad2.pm25} → "${bad2.aqiLabel}" · ${bad2.runScore}점`);
+  check(bad2.aqiLabel === '매우 나쁨', `나쁜 날은 그대로 경고한다 (${bad2.aqiLabel})`);
+  check(bad2.runScore < c.runScore, `감점도 살아 있다 (${bad2.runScore} < ${c.runScore})`);
+}
+
+// ---------------------------------------------------------------------------
+// GPX — 잰 적 없는 고도를 밖으로 내보내면 안 된다 (Strava·가민에 영구 기록)
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[GPX 내보내기] 모르는 고도를 <ele> 로 내보내지 않는지');
+  const { buildGpx } = await bundle('src/lib/gpx.ts', 'gpx2.mjs');
+  const coords = [
+    [37.5, 127.0],
+    [37.501, 127.001],
+    [37.502, 127.002],
+  ];
+  const times = [1, 2, 3].map((i) => 1700000000000 + i * 1000);
+
+  const unknown = buildGpx({
+    name: '고도 못 받은 코스',
+    coords,
+    elevations: coords.map(() => 0),
+    times,
+    elevationKnown: false,
+  });
+  check(!unknown.includes('<ele>'), '고도를 모르면 <ele> 를 아예 안 쓴다');
+  check(unknown.includes('<time>'), '시각은 그대로 나간다 (Strava 가 요구)');
+  check((unknown.match(/<trkpt/g) ?? []).length === 3, '좌표는 전부 나간다 (3점)');
+
+  const known = buildGpx({
+    name: '정상 코스',
+    coords,
+    elevations: [12.5, 18.25, 24],
+    times,
+    elevationKnown: true,
+  });
+  check(known.includes('<ele>12.5</ele>'), '아는 고도는 그대로 나간다 (검사가 헛돌지 않게)');
+  check((known.match(/<ele>/g) ?? []).length === 3, '3점 전부 고도가 붙는다');
+
+  // 기본값은 지금까지처럼 '안다' (예전 호출부가 안 깨지게)
+  const legacy = buildGpx({ name: 'x', coords, elevations: [1, 2, 3] });
+  check(legacy.includes('<ele>'), 'elevationKnown 을 안 넘기면 기존 동작 유지');
+}
+
 console.log(`\n통과 ${ok.length} / 실패 ${bad.length}`);
 if (bad.length) process.exit(1);

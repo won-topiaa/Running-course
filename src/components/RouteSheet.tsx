@@ -133,6 +133,8 @@ export default function RouteSheet({
       coords: route.coords,
       elevations: route.elevations,
       times: view.times,
+      // 못 받은 고도를 <ele> 로 내보내면 Strava·가민에 영구로 남는다
+      elevationKnown: !elevUnknown,
     });
 
   const doGpx = () => {
@@ -160,6 +162,7 @@ export default function RouteSheet({
       coords: route.coords,
       elevations: route.elevations,
       times,
+      elevationKnown: !elevUnknown,
     });
   };
 

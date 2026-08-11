@@ -33,9 +33,12 @@ export interface RunConditions {
   precipMm: number;
   condition: string;
   emoji: string;
-  pm25: number;
-  pm10: number;
-  aqiLevel: AqiLevel;
+  /** 미세먼지 — 못 받았으면 null. 숫자를 지어내지 않는다 */
+  pm25: number | null;
+  pm10: number | null;
+  /** 못 받았으면 null (색상 분기용) */
+  aqiLevel: AqiLevel | null;
+  /** 못 받았으면 '정보 없음' — 화면에 그대로 쓰인다 */
   aqiLabel: string;
   runScore: number; // 0~100 러닝 적합도
   headline: string;
@@ -86,20 +89,25 @@ function scoreConditions(c: {
   windKmh: number;
   precipMm: number;
   rainy: boolean;
-  aqi: AqiLevel;
+  aqi: AqiLevel | null;
 }): number {
   // 기온: 12°C 부근이 러닝 최적
   const tempPenalty = Math.min(40, Math.abs(c.tempC - 12) * 1.6);
   const windPenalty = Math.min(20, Math.max(0, c.windKmh - 15) * 1.2);
   const rainPenalty = c.rainy ? Math.min(30, 12 + c.precipMm * 6) : 0;
-  const aqiPenalty = { good: 0, moderate: 12, bad: 30, verybad: 55 }[c.aqi];
+  // 미세먼지를 모르면 감점도 가점도 하지 않는다 — 모르는 걸 '좋음'으로
+  // 쳐서 점수를 올려주면, 실제로 매우 나쁜 날에 높은 점수가 나간다.
+  const aqiPenalty = c.aqi == null ? 0 : { good: 0, moderate: 12, bad: 30, verybad: 55 }[c.aqi];
   return Math.round(Math.max(0, 100 - tempPenalty - windPenalty - rainPenalty - aqiPenalty));
 }
 
-function headlineFor(score: number, aqi: AqiLevel, rainy: boolean): string {
+function headlineFor(score: number, aqi: AqiLevel | null, rainy: boolean): string {
   if (aqi === 'verybad') return '미세먼지 매우 나쁨 — 오늘은 실내 러닝을 권해요';
   if (aqi === 'bad') return '미세먼지 나쁨 — 짧게 뛰거나 마스크를 챙기세요';
   if (rainy) return '비 소식 있어요 — 방수 챙기고 미끄럼 주의';
+  // 미세먼지를 못 받은 날 '딱 좋은 날' 이라고 하면, 정작 매우 나쁜 날에
+  // 그 말을 믿고 나가게 된다. 모른다고 말하고 확인을 권한다.
+  if (aqi == null) return '미세먼지 정보를 못 받았어요 — 뛰기 전에 확인해 주세요';
   if (score >= 80) return '오늘은 달리기 딱 좋은 날이에요 🌿';
   if (score >= 60) return '무난하게 뛰기 좋은 컨디션이에요';
   return '컨디션이 아주 좋진 않아요 — 무리하지 마세요';
@@ -113,21 +121,21 @@ function assemble(
     windKmh: number;
     precipMm: number;
     code: number;
-    pm25: number;
-    pm10: number;
+    pm25: number | null;
+    pm10: number | null;
     uvIndex: number;
   },
   source: 'live' | 'sample',
   hourly?: HourlyPoint[],
 ): RunConditions {
   const w = wmo(raw.code);
-  const aqi = aqiFromPm25(raw.pm25);
+  const aqi = raw.pm25 == null ? null : aqiFromPm25(raw.pm25);
   const runScore = scoreConditions({
     tempC: raw.tempC,
     windKmh: raw.windKmh,
     precipMm: raw.precipMm,
     rainy: w.rainy,
-    aqi: aqi.level,
+    aqi: aqi?.level ?? null,
   });
   const heatRisk = heatRiskOf(raw.feelsC, raw.uvIndex);
   const betterHour = heatRisk === 'none' ? null : findBetterHour(raw.feelsC, hourly);
@@ -139,12 +147,12 @@ function assemble(
     precipMm: raw.precipMm,
     condition: w.label,
     emoji: w.emoji,
-    pm25: Math.round(raw.pm25),
-    pm10: Math.round(raw.pm10),
-    aqiLevel: aqi.level,
-    aqiLabel: aqi.label,
+    pm25: raw.pm25 == null ? null : Math.round(raw.pm25),
+    pm10: raw.pm10 == null ? null : Math.round(raw.pm10),
+    aqiLevel: aqi?.level ?? null,
+    aqiLabel: aqi?.label ?? '정보 없음',
     runScore,
-    headline: headlineFor(runScore, aqi.level, w.rainy),
+    headline: headlineFor(runScore, aqi?.level ?? null, w.rainy),
     outfit: outfitFor(raw.tempC, w.rainy),
     source,
     uvIndex: Math.round(raw.uvIndex * 10) / 10,
@@ -309,8 +317,12 @@ export async function getConditions(loc: LatLng): Promise<RunConditions> {
         windKmh: cw.wind_speed_10m ?? 8,
         precipMm: cw.precipitation ?? 0,
         code: cw.weather_code ?? 1,
-        pm25: ca.pm2_5 ?? 12,
-        pm10: ca.pm10 ?? 24,
+        // 대기질 서버(다른 호스트)만 죽는 일이 흔하다. 예전엔 여기서 12·24 로
+        // 채웠는데, 그러면 화면이 '미세먼지 좋음' 이라고 단정한다 — 받은 적
+        // 없는 값이고 source 는 live 라 '예시' 표시도 안 붙는다. 실제로 매우
+        // 나쁜 날에도 좋음이라고 나갈 수 있었다. 모르면 null 로 둔다.
+        pm25: typeof ca.pm2_5 === 'number' ? ca.pm2_5 : null,
+        pm10: typeof ca.pm10 === 'number' ? ca.pm10 : null,
         uvIndex: cw.uv_index ?? 0,
       },
       'live',

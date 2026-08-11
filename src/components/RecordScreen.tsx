@@ -155,9 +155,14 @@ export default function RecordScreen({
    * 이동한 거리)이 되살아나서, 뛰는 동안 본 거리와 저장된 거리가 달라진다.
    */
   const buildRecorded = (elevOverride?: number[] | null): RouteResult => {
-    const elev = elevOverride ?? demElev ?? rec.elevations;
+    const dem = elevOverride ?? demElev;
+    const elev = dem ?? rec.elevations;
     const r = buildResult(rec.coords, elev, 'offline', [rec.coords[0]]);
-    return rec.distanceKm > 0 ? { ...r, distanceKm: rec.distanceKm } : r;
+    const withDist = rec.distanceKm > 0 ? { ...r, distanceKm: rec.distanceKm } : r;
+    // 기기가 고도를 안 주고 지형 고도(DEM)도 못 받았으면, elevations 는 첫
+    // 점의 지어낸 값이 끝까지 이어진 배열이다. '상승 0m' 라고 단정하지 않고
+    // 모른다고 표시한다 — 저장·공유·GPX 가 이 표시를 따라간다.
+    return dem == null && !rec.altitudeKnown ? { ...withDist, elevationKnown: false } : withDist;
   };
 
   // 기록 종료 → 요약 시트

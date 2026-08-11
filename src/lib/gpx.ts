@@ -11,15 +11,33 @@ export interface GpxOptions {
   elevations?: number[];
   /** 각 좌표의 시각(epoch ms) — 기록한 러닝에만 */
   times?: number[];
+  /**
+   * 고도가 실제로 잰 값인지. false 면 <ele> 를 아예 안 쓴다.
+   *
+   * 고도를 못 받은 코스는 elevations 가 전부 0 이거나 한 값으로 채워져 있다.
+   * 그대로 내보내면 '해발 0m 를 계속 달렸다'는 기록이 Strava·가민에 영구로
+   * 남는다 — 우리가 잰 적 없는 값이다. GPX 1.1 에서 <ele> 는 선택 항목이라
+   * 빼면 받는 쪽이 자기 지형 데이터로 채운다. 그게 지어낸 값보다 정확하다.
+   */
+  elevationKnown?: boolean;
 }
 
-export function buildGpx({ name, coords, elevations, times }: GpxOptions): string {
+export function buildGpx({
+  name,
+  coords,
+  elevations,
+  times,
+  elevationKnown = true,
+}: GpxOptions): string {
   const esc = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   const pts = coords
     .map(([lat, lng], i) => {
-      const ele = elevations?.[i] != null ? `<ele>${elevations[i].toFixed(1)}</ele>` : '';
+      const ele =
+        elevationKnown && elevations?.[i] != null
+          ? `<ele>${elevations[i].toFixed(1)}</ele>`
+          : '';
       const time = times?.[i] != null ? `<time>${new Date(times[i]).toISOString()}</time>` : '';
       return `      <trkpt lat="${lat.toFixed(6)}" lon="${lng.toFixed(6)}">${ele}${time}</trkpt>`;
     })
