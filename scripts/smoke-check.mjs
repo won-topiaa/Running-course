@@ -114,6 +114,28 @@ if (asc && km) {
 await page.getByRole('button', { name: '닫기' }).first().click().catch(() => {});
 await page.waitForTimeout(1000);
 
+// 손가락으로 누를 수 있는 크기인지 — 실측으로 잡은 문제라 검사로 묶어 둔다.
+// 거리 슬라이더는 요소가 6px 라 트랙 중심에서 13px 만 벗어나도 탭이 무시됐고,
+// 주간 목표 ± 는 20px 라 ±10px 밖이면 안 먹었다. 보이는 모양은 그대로 두고
+// 눌리는 영역만 넓혔으므로, 그 영역이 다시 좁아지면 여기서 걸린다.
+await page.goto(base, { waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(2500);
+const sliderH = await page.evaluate(() => {
+  const el = document.querySelector('input[type=range].coral');
+  return el ? Math.round(el.getBoundingClientRect().height) : 0;
+});
+step(sliderH >= 24, `거리 슬라이더를 손가락으로 잡을 수 있다 (${sliderH}px)`);
+// 슬라이더 바로 아래(넓힌 터치 영역과 겹치는 자리)를 눌렀을 때 실제로 무엇이
+// 잡히는지 본다. 눈금 글자가 잡히면 그 탭은 슬라이더에 닿지 않는다.
+const belowHitsSlider = await page.evaluate(() => {
+  const el = document.querySelector('input[type=range].coral');
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width * 0.6, r.bottom - 2);
+  return hit === el;
+});
+step(belowHitsSlider, '트랙 아래쪽을 눌러도 슬라이더가 잡힌다 (눈금이 안 가로챈다)');
+
 step(errors.length === 0, `앱 자체 오류 ${errors.length}건`);
 errors.slice(0, 8).forEach((e) => console.log('     · ' + e));
 

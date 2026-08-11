@@ -135,13 +135,15 @@ export default function MyScreen({ api }: { api: AppApi }) {
         <>
           {/* 이번 주 목표 — 목표는 ± 로 조절 */}
           <div className="mt-4 rounded-3xl border border-line bg-paper p-4 shadow-soft">
+            {/* ± 는 보이는 원이 20px 이라 실측에서 중심 ±10px 을 벗어나면 탭이
+                무시됐다. before 로 눌리는 영역만 36px 로 넓힌다 (모양은 그대로). */}
             <div className="flex items-center justify-between">
               <span className="text-[13px] font-bold text-espresso">이번 주 러닝</span>
               <span className="flex items-center gap-1.5 text-[12.5px] text-espresso-muted">
                 <b className="text-coral-600">{stats.weekKm.toFixed(1)}km</b> /
                 <button
                   onClick={() => setGoal(-5)}
-                  className="grid h-5 w-5 place-items-center rounded-full bg-tint font-bold active:scale-90"
+                  className="relative grid h-5 w-5 place-items-center rounded-full bg-tint font-bold active:scale-90 before:absolute before:-inset-2 before:content-['']"
                   aria-label="목표 줄이기"
                 >
                   −
@@ -149,7 +151,7 @@ export default function MyScreen({ api }: { api: AppApi }) {
                 {goal}km
                 <button
                   onClick={() => setGoal(5)}
-                  className="grid h-5 w-5 place-items-center rounded-full bg-tint font-bold active:scale-90"
+                  className="relative grid h-5 w-5 place-items-center rounded-full bg-tint font-bold active:scale-90 before:absolute before:-inset-2 before:content-['']"
                   aria-label="목표 늘리기"
                 >
                   +

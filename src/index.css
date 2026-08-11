@@ -83,17 +83,35 @@
 
 /* 슬라이더(레인지) — 어두운 트랙 + 볼트 손잡이.
    클래스명 .coral 은 호출부가 그대로 쓰고 있어 유지한다(의미는 '주요 강조색'). */
+/* 슬라이더(레인지) — 어두운 트랙 + 볼트 손잡이.
+   클래스명 .coral 은 호출부가 그대로 쓰고 있어 유지한다(의미는 '주요 강조색').
+
+   보이는 트랙은 6px 이지만 손가락이 닿는 영역은 위아래 9px 씩 넓혀 24px 로
+   둔다. 예전엔 요소 자체가 6px 라, 트랙 중심에서 13px 만 벗어나도 탭이
+   먹히지 않았다(실측). 뛰기 전에 거리를 맞추는 주 컨트롤이라 여유가 필요하다.
+   - padding 으로 넓히고 background-clip 으로 색은 가운데 6px 에만 칠한다
+   - 음수 margin 으로 '차지하는 자리'는 예전과 똑같이 6px 로 되돌린다
+     (안 그러면 슬라이더가 옆의 '거리'·'5km' 글자보다 위로 떠 보인다) */
 input[type='range'].coral {
   -webkit-appearance: none;
   appearance: none;
+  box-sizing: content-box;
+  /* input 은 기본이 inline 이라 음수 margin 을 줘도 부모 높이가 그대로
+     24px 로 잡힌다(실측: 부모 42px). block 이어야 자리를 6px 로 되돌린다. */
+  display: block;
   height: 6px;
+  padding: 9px 0;
+  margin-top: -9px;
+  margin-bottom: -9px;
   border-radius: 999px;
   background: #2a2a2f;
+  background-clip: content-box;
   outline: none;
 }
 input[type='range'].coral::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
+  box-sizing: border-box;
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -103,8 +121,9 @@ input[type='range'].coral::-webkit-slider-thumb {
   cursor: pointer;
 }
 input[type='range'].coral::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: #d8ff3e;
   border: 4px solid #0b0b0c;

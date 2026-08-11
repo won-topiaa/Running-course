@@ -578,7 +578,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
               <button
                 onClick={dismissHint}
                 aria-label="안내 닫기"
-                className="-mr-1 -mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-coral-600 active:scale-90"
+                className="relative -mr-1 -mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-coral-600 active:scale-90 before:absolute before:-inset-2 before:content-['']"
               >
                 <X size={15} />
               </button>
@@ -861,8 +861,13 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                           className="coral w-full"
                           list="km-ticks"
                         />
-                        {/* 눈금 — 1·5·10·15km 위치 표시 */}
-                        <div className="relative mt-1 h-3.5">
+                        {/* 눈금 — 1·5·10·15km 위치 표시.
+                            슬라이더가 손가락 여유를 아래로 9px 넓혀 두는데,
+                            이 줄이 그 위에 겹쳐 탭을 가로챘다(여유가 6px 로
+                            줄었다). 읽기만 하는 글자라 터치는 통과시킨다. */}
+                        {/* mt 는 13px: 슬라이더가 음수 margin 으로 9px 을 당겨 올리므로
+                            실제 간격은 예전과 같은 4px 이 된다. */}
+                        <div className="pointer-events-none relative mt-[13px] h-3.5">
                           {[1, 5, 10, 15].map((v) => (
                             <span
                               key={v}
