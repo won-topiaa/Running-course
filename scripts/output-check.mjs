@@ -1272,5 +1272,53 @@ console.log('\n[숲길 캐시] 오래된 값이 메모리를 붙잡고 있으면
   localStorage.removeItem(TOKEN_KEY);
 }
 
+// ---------------------------------------------------------------------------
+// 공유 링크는 '남이 보내는 데이터'다 — 어떤 값이 와도 앱이 죽으면 안 된다
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[공유 링크 방어] 조작된 payload 로 앱이 깨지지 않는지');
+  const sr3 = await bundle('src/lib/savedRoutes.ts', 'savedRoutes3.mjs');
+  const coords = Array.from({ length: 20 }, (_, i) => [37.5 + i * 0.0004, 127.0 + i * 0.0004]);
+  const token = sr3.buildShareToken({
+    name: '한강 러닝',
+    distanceKm: 5,
+    ascentM: 30,
+    maxGradePct: 4,
+    source: 'ors',
+    coords,
+    elevations: coords.map(() => 10),
+  });
+  const b64 = (s) =>
+    Buffer.from(s, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const base = JSON.parse(
+    Buffer.from(token.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'),
+  );
+  const parse = (patch) => sr3.parseSharedFromHash('#course=' + b64(JSON.stringify({ ...base, ...patch })));
+
+  // 이름이 객체면 React 가 렌더 중 던져 앱이 오류 화면으로 넘어갔다
+  for (const [label, n] of [
+    ['객체', { evil: 1 }],
+    ['배열', ['a']],
+    ['숫자', 123],
+    ['없음', undefined],
+    ['공백만', '   '],
+  ]) {
+    const r = parse({ n });
+    check(
+      typeof r?.name === 'string' && r.name.length > 0,
+      `이름이 ${label} 이어도 문자열로 나온다 (${JSON.stringify(r?.name)})`,
+    );
+  }
+
+  const long = parse({ n: '가'.repeat(100000) });
+  console.log(`    10만자 이름 → ${long.name.length}자`);
+  check(long.name.length <= 61, `긴 이름은 잘린다 (${long.name.length}자 — 화면·저장소 보호)`);
+
+  check(parse({ s: { x: 1 } })?.style === undefined, '스타일이 객체면 버린다');
+  check(parse({ s: 'flat' })?.style === 'flat', '정상 스타일은 그대로 (검사가 헛돌지 않게)');
+  check(typeof parse({ src: { x: 1 } })?.source === 'string', 'source 가 객체여도 문자열로 나온다');
+  check(parse({})?.name === '한강 러닝', '정상 링크는 이름이 그대로 (검사가 헛돌지 않게)');
+}
+
 console.log(`\n통과 ${ok.length} / 실패 ${bad.length}`);
 if (bad.length) process.exit(1);

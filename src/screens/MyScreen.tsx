@@ -247,6 +247,7 @@ export default function MyScreen({ api }: { api: AppApi }) {
             value={shoeName}
             onChange={(e) => setShoeName(e.target.value)}
             placeholder="신발 이름 (예: 페가수스 41)"
+            aria-label="신발 이름"
             className="min-w-0 flex-1 rounded-full border border-line bg-cream px-3.5 py-2 text-[12.5px] text-espresso outline-none focus:border-coral"
           />
           <button
@@ -303,6 +304,8 @@ export default function MyScreen({ api }: { api: AppApi }) {
           value={pace}
           onChange={(e) => setPace(Number(e.target.value))}
           className="coral mt-3 w-full"
+          aria-label="목표 페이스"
+          aria-valuetext={`1km당 ${formatPace(pace)}`}
         />
         <div className="mt-3 grid grid-cols-3 gap-2 text-center">
           {[
@@ -389,7 +392,9 @@ function FeedbackSection({ api }: { api: AppApi }) {
       </button>
       <button
         onClick={copyInfo}
-        className="mt-2 w-full text-center text-[11.5px] font-semibold text-espresso-soft underline decoration-line underline-offset-4"
+        /* 글자만 있는 줄이라 실제 높이가 17px 였다. 손가락으로 누르기엔 작아
+           세로 여백으로 44px 까지 넓힌다 — 보이는 모습은 그대로다. */
+        className="mt-1 w-full py-3.5 text-center text-[11.5px] font-semibold text-espresso-soft underline decoration-line underline-offset-4"
       >
         {copied ? '복사했어요 — 폼에 붙여넣어 주세요' : '버그 제보용 기기 정보 복사'}
       </button>
@@ -587,6 +592,7 @@ function CloudSection({ api }: { api: AppApi }) {
               type="email"
               autoComplete="email"
               placeholder="이메일"
+              aria-label="이메일"
               className="w-full rounded-full border border-line bg-cream px-4 py-2.5 text-[13px] text-espresso outline-none focus:border-coral"
             />
             <input
@@ -595,6 +601,7 @@ function CloudSection({ api }: { api: AppApi }) {
               type="password"
               autoComplete="current-password"
               placeholder="비밀번호 (6자 이상)"
+              aria-label="비밀번호"
               className="w-full rounded-full border border-line bg-cream px-4 py-2.5 text-[13px] text-espresso outline-none focus:border-coral"
             />
           </div>

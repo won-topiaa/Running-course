@@ -11,7 +11,7 @@ import {
   type SharePayload,
 } from './polyline';
 import { buildResult, type RouteResult } from './routing';
-import type { RunStyle } from './routeStyle';
+import { RUN_STYLES, type RunStyle } from './routeStyle';
 import type { LatLng } from './types';
 
 const KEY = 'run-app-routes-v1';
@@ -298,14 +298,30 @@ export function parseSharedFromHash(hash: string): SharedRoute | null {
     ...(payload.k === 0 ? { elevationKnown: false } : {}),
   };
   return {
-    name: payload.n,
-    style: payload.s,
+    // 이름·스타일·출처는 '남이 보낸 링크'에서 온 값이다. JSON 이라 어떤 타입도
+    // 들어올 수 있는데, 예전엔 그대로 내보냈다:
+    //   · 이름이 객체면 React 가 렌더 중 던져 앱이 오류 화면으로 넘어간다
+    //     (Objects are not valid as a React child) — 링크 하나로 앱이 죽는다
+    //   · 이름이 10만 자여도 통과해 화면이 깨지고, 저장하면 그대로 쌓인다
+    // 타입과 길이를 여기서 확정한다. 이 함수 밖으로는 늘 안전한 값만 나간다.
+    name: safeName(payload.n),
+    style: RUN_STYLES.some((s) => s.id === payload.s) ? payload.s : undefined,
     distanceKm: route.distanceKm,
     ascentM: route.ascentM,
     maxGradePct: route.maxGradePct,
-    source: payload.src,
+    source: typeof payload.src === 'string' ? payload.src : 'offline',
     route,
   };
+}
+
+/** 코스 이름 한도 — 저장 목록·시트 제목이 한 줄로 읽히는 길이 */
+const MAX_NAME_LEN = 60;
+
+function safeName(v: unknown): string {
+  if (typeof v !== 'string') return '공유받은 코스';
+  const t = v.trim();
+  if (!t) return '공유받은 코스';
+  return t.length > MAX_NAME_LEN ? `${t.slice(0, MAX_NAME_LEN)}…` : t;
 }
 
 function resample(values: number[], n: number): number[] {

@@ -67,6 +67,8 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
             value={prefs.targetDistanceKm}
             onChange={(e) => set({ targetDistanceKm: Number(e.target.value) })}
             className="coral w-full"
+            aria-label="목표 거리"
+            aria-valuetext={`${prefs.targetDistanceKm}km`}
           />
         </div>
 
