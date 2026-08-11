@@ -67,7 +67,10 @@ function toBuilt(
   // 축별 가중치. 길 성격은 정보가 있을 때만 끼워 넣고, 없으면 나머지 축의
   // 비중을 그대로 키운다 — 모르는 축을 0점으로 두면 OSRM 폴백 경로가
   // 이유 없이 밀린다.
-  const parts: { w: number; v: number }[] = [{ w: 0.7, v: styleEval.score }];
+  const parts: { w: number; v: number }[] = [];
+  // 경사 취향은 고도를 실제로 받았을 때만 센다 — 못 받은 경로를 평지로 쳐서
+  // '평지 위주' 만점을 주면, 조회가 실패한 후보가 부당하게 1위가 된다.
+  if (styleEval.score != null) parts.push({ w: 0.7, v: styleEval.score });
   if (targetKm != null) parts.push({ w: 0.3, v: dScore });
   // 길 취향은 경사 취향과 같은 무게로 둔다. 둘 다 사용자가 직접 고른 축이고,
   // 한쪽만 세게 주면 '산책로 위주'를 골라도 순위가 안 움직이거나(0.5) 반대로
@@ -246,16 +249,30 @@ export async function buildFromDistance(
     return dedupe(built).sort(byMatchThenDistance).slice(0, 3);
   }
 
-  // 굴곡/경사 스타일은 경유 지점을 늘려 더 다양한 기복을 유도
-  const points = style === 'rolling' || style === 'hilly' ? 6 : 4;
+  // 후보 풀은 스타일과 무관하게 같은 것을 쓴다.
+  //
+  // 예전엔 언덕·굴곡 스타일만 꼭짓점을 6개로 늘려, 스타일마다 아예 다른 4개를
+  // 보고 골랐다. 그래서 순위가 뒤집히는 일이 실제로 났다 — 남산 5km 에서
+  // '언덕 훈련'은 km당 상승 8m 짜리 평지를 1위로, '완만한 언덕'은 km당 43m
+  // 최대경사 35% 짜리를 1위로 골랐다(실측). 사용자가 고른 축과 정반대다.
+  //
+  // 꼭짓점 수를 후보마다 섞어 한 풀 안에 완만한 것과 굴곡진 것이 같이 있게
+  // 한다. 요청 수는 예전과 같은 4개라 무료 한도에도 영향이 없다.
   const base = (opts.seedBase ?? 0) * 101; // 시도마다 겹치지 않는 시드 대역
-  const seeds = [11, 42, 73, 128].map((s) => s + base);
+  const plan = [
+    { seed: 11, points: 4 }, //  넓게 도는 단순한 고리
+    { seed: 42, points: 4 },
+    { seed: 73, points: 6 }, //  더 꺾여 기복이 생기기 쉬운 고리
+    { seed: 128, points: 6 },
+  ];
 
   const built = await settleBuilt(
-    seeds.map((seed) => provider.roundTrip(start, targetKm, { points, seed })),
+    plan.map(({ seed, points }) =>
+      provider.roundTrip(start, targetKm, { points, seed: seed + base }),
+    ),
     style,
     targetKm,
-    seeds.map((_, i) => `코스 ${i + 1}`),
+    plan.map((_, i) => `코스 ${i + 1}`),
     opts.pathPref,
   );
   return dedupe(built).sort(byMatchThenDistance).slice(0, 3);

@@ -67,6 +67,8 @@ export default function RouteSheet({
   };
 
   const { route } = view;
+  // 지형 고도를 못 받은 경로 — 상승·경사 숫자를 내놓으면 안 된다
+  const elevUnknown = route.elevationKnown === false;
   const styleLabel = view.style ? RUN_STYLES.find((s) => s.id === view.style)?.label : null;
   const paceSec =
     view.durationSec && route.distanceKm > 0
@@ -242,18 +244,29 @@ export default function RouteSheet({
             ))}
           </div>
 
-          {/* 스탯 */}
+          {/* 스탯 — 지형 고도를 못 받았으면 '0m'이 아니라 '—'다.
+              0 이라고 적으면 사용자는 평지 코스라고 믿는다. */}
           <div className="mt-3 grid grid-cols-3 gap-2">
             <Metric icon={<Timer size={15} />} value={timeLabel.replace('약 ', '')} label="시간" />
-            <Metric icon={<TrendingUp size={15} />} value={`${route.ascentM}m`} label="총 오르막" />
+            <Metric
+              icon={<TrendingUp size={15} />}
+              value={elevUnknown ? '—' : `${route.ascentM}m`}
+              label="총 오르막"
+            />
             <Metric
               icon={<Mountain size={15} />}
-              value={`${route.maxGradePct}%`}
+              value={elevUnknown ? '—' : `${route.maxGradePct}%`}
               label="최대 경사"
             />
           </div>
+          {elevUnknown && (
+            <p className="mt-2 text-[11.5px] leading-relaxed text-espresso-soft">
+              지형 고도를 받지 못해 오르막·경사는 표시하지 않아요. 잠시 뒤 다시 열면 나와요.
+            </p>
+          )}
 
-          {/* 고도 */}
+          {/* 고도 — 값을 모르면 그래프도 그리지 않는다 (평평한 선이 '평지'로 읽힌다) */}
+          {!elevUnknown && (
           <div className="mt-3 rounded-3xl border border-line bg-paper p-4 shadow-soft">
             <GradeElevationChart
               elevations={route.elevations}
@@ -262,6 +275,7 @@ export default function RouteSheet({
               ascentM={route.ascentM}
             />
           </div>
+          )}
 
           {/* 구간 기록 — 방금 뛴 러닝의 km 별 페이스 (활성 시간 기준) */}
           {mode === 'summary' &&

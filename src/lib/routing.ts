@@ -60,6 +60,12 @@ export interface RouteResult {
    * 폴백은 이 정보를 안 주므로 undefined 이고, UI 는 그때 표시를 생략한다.
    */
   way?: WayMix;
+  /**
+   * 고도가 '실제로 조회된 값'인지. false 면 지형 고도를 못 받아 평평하게
+   * 둔 상태다 — 상승·경사를 숫자로 내놓으면 안 되고, 스타일 점수도 이 축을
+   * 빼고 매겨야 한다. 없으면(=undefined) 실제 값으로 본다.
+   */
+  elevationKnown?: boolean;
 }
 
 export type RoutingErrorCode =
@@ -426,15 +432,28 @@ export class OsrmProvider implements RoutingProvider {
     return line.map((c) => [c[1], c[0]] as LatLng);
   }
 
-  /** 좌표열에 실제 고도를 입힌 RouteResult (고도 조회 실패 시 합성 고도) */
+  /**
+   * 좌표열에 실제 지형 고도를 입힌 RouteResult.
+   *
+   * 조회에 실패하면 예전엔 합성 고도(데모용 사인파)를 대신 넣었다. 그런데
+   * 그건 실제 지형과 아무 상관이 없어서, 상승 20m 인 코스가 368m 로 뜨거나
+   * 북한산 입구(실제 751m)가 42m 로 뜨는 일이 실제로 있었다 — 게다가
+   * 스타일 점수까지 그 가짜 값으로 매겨져 '언덕 훈련'이 평지를 골랐다.
+   * 지어낸 숫자를 진짜처럼 보여주느니 '모른다'고 하는 편이 낫다.
+   */
   private async withElevation(coords: LatLng[], waypoints: LatLng[]): Promise<RouteResult> {
-    let elev: number[];
     try {
-      elev = await elevationsForPath(coords);
+      const elev = await elevationsForPath(coords);
+      return buildResult(coords, elev, 'osrm', waypoints);
     } catch {
-      elev = coords.map(([lat, lng]) => syntheticElevation(lat, lng));
+      const flat = buildResult(
+        coords,
+        coords.map(() => 0),
+        'osrm',
+        waypoints,
+      );
+      return { ...flat, elevationKnown: false };
     }
-    return buildResult(coords, elev, 'osrm', waypoints);
   }
 
   async route(waypoints: LatLng[]): Promise<RouteResult> {

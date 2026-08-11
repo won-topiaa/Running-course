@@ -38,6 +38,13 @@ type Mode = 'pins' | 'distance';
 const HINT_KEY = 'run-app-hint-v1';
 
 /**
+ * 이 값보다 스타일 점수가 낮으면 '원하는 대로 못 만들었다'고 말한다.
+ * 실측 기준: 남산 5km 평지 요청이 0.35(1km당 오르막 43m), 여의도 평지 요청이
+ * 0.77~0.88 이다. 0.45 면 '동네에 그런 길이 없는' 경우만 걸러진다.
+ */
+const STYLE_FIT_MIN = 0.45;
+
+/**
  * 탭을 옮겼다 돌아와도 만들던 코스가 남아 있게 하는 세션 캐시.
  *
  * 화면 컴포넌트는 탭을 바꿀 때마다 언마운트되므로 useState 만으로는 찾아둔
@@ -350,10 +357,28 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           setResults(out);
           setSelIdx(0);
           setNotice(null); // '느려요' 안내가 결과 화면까지 따라오지 않게
+          // 고른 스타일과 결과가 얼마나 맞는지 솔직히 말한다.
+          //
+          // 서울에는 원하는 스타일이 아예 없는 동네가 있다 — 남산 5km 는 어느
+          // 방향으로 돌아도 1km당 오르막 43m 라 '평지 위주'를 만들 수 없다.
+          // 그런데도 그냥 코스만 내놓으면 사용자는 이걸 평지 코스로 믿는다.
+          // 안 되는 건 안 된다고 말하고, 대신 무엇을 골랐는지 알려준다.
+          const top = out[0];
+          const styleLabel = RUN_STYLES.find((x) => x.id === style)?.label ?? '';
+          const styleFit = top?.styleEval.score;
+          const styleNotice =
+            styleFit == null
+              ? '지형 고도를 받지 못해 경사는 빼고 골랐어요. 오르막 수치는 표시하지 않아요.'
+              : styleFit < STYLE_FIT_MIN
+                ? `이 근처에선 '${styleLabel}' 코스를 만들기 어려워요 — 가장 가까운 걸로 골랐어요 (1km당 오르막 ${top.styleEval.metrics.ascentPerKm.toFixed(0)}m).`
+                : null;
+
           if (!provider.realRoads) {
             setNotice(
               '실제 경로 서버에 연결할 수 없어 직선 데모로 그렸어요. 이 경로는 실제 도로가 아닙니다.',
             );
+          } else if (styleNotice) {
+            setNotice(styleNotice);
           } else if (provider.id === 'osrm' && api.settings.orsKey) {
             // 왜 대체됐는지 말해준다. 분당 한도는 1분이면 풀리는 일시적 상황이라
             // '오류'가 아니라 '잠깐 대체'로 읽혀야 한다.

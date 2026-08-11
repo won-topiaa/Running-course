@@ -505,6 +505,93 @@ console.log('\n[코스 만들기] 요청 거리 · 왕복과 편도의 차이');
   }
 }
 
+// ── 코스 스타일 기준 ────────────────────────────────────────────────────────
+// 사용자가 고른 '평지/완만/언덕'이 결과에 실제로 반영되는지, 그리고 고도를
+// 못 받았을 때 지어낸 값으로 점수를 매기지 않는지 본다.
+console.log('\n[스타일 기준] 고른 경사가 결과에 반영되는지');
+{
+  const rs = await bundle('src/lib/routeStyle.ts', 'rs3.mjs');
+  const routing2 = await bundle('src/lib/routing.ts', 'rt3.mjs');
+  const mkRoute = (ascentPerKm, maxGrade, flatPct) => {
+    // 5km 코스를 흉내 낸 최소 RouteResult (evaluateStyle 이 보는 필드만)
+    const segs = [];
+    const flatLen = 5000 * (flatPct / 100);
+    segs.push({ gradePct: 0, lengthM: flatLen });
+    segs.push({ gradePct: maxGrade, lengthM: 5000 - flatLen });
+    return { coords: [], elevations: [], distanceKm: 5, ascentM: ascentPerKm * 5,
+      descentM: 0, maxGradePct: maxGrade, segments: segs, source: 'osrm', waypoints: [] };
+  };
+  const flatRoute = mkRoute(4, 4, 92);
+  const hillRoute = mkRoute(55, 20, 20);
+  const fFlat = rs.evaluateStyle(flatRoute, 'flat').score;
+  const fHill = rs.evaluateStyle(hillRoute, 'flat').score;
+  const hFlat = rs.evaluateStyle(flatRoute, 'hilly').score;
+  const hHill = rs.evaluateStyle(hillRoute, 'hilly').score;
+  console.log(`    평지 코스 → 평지점수 ${fFlat.toFixed(2)} / 언덕점수 ${hFlat.toFixed(2)}`);
+  console.log(`    언덕 코스 → 평지점수 ${fHill.toFixed(2)} / 언덕점수 ${hHill.toFixed(2)}`);
+  check(fFlat > fHill, "'평지 위주'는 평평한 코스에 더 높은 점수를 준다");
+  check(hHill > hFlat, "'언덕 훈련'은 언덕 코스에 더 높은 점수를 준다");
+
+  // 고도를 못 받은 경로는 채점하지 않는다. 예전엔 조회가 실패하면 데모용
+  // 사인파 고도를 대신 넣어, 실제 상승 20m 코스가 368m 로 뜨고 그 가짜 값으로
+  // 스타일 점수까지 매겨졌다(북한산 입구 실제 751m 를 42m 로 표시).
+  const unknown = { ...flatRoute, elevationKnown: false };
+  const ev = rs.evaluateStyle(unknown, 'flat');
+  console.log(`    고도 모름 → 점수 ${ev.score} · "${ev.reason}"`);
+  check(ev.score === null, '고도를 못 받았으면 경사 점수를 매기지 않는다 (평지 만점 방지)');
+  check(/고도/.test(ev.reason), '왜 점수가 없는지 사람이 읽을 수 있게 말한다');
+
+  // 채점에서 그 축이 실제로 빠지는지 (courseBuilder 쪽)
+  const cb2 = await bundle('src/lib/courseBuilder.ts', 'cb2.mjs');
+  Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+  const offline = routing2.makeProvider(null);
+  const both = await cb2.buildFromDistance([37.5665, 126.978], 5, 'flat', offline, { seedBase: 2 });
+  check(both.every((b) => Number.isFinite(b.matchScore) && b.matchScore >= 0 && b.matchScore <= 100),
+    `매칭 점수가 0~100 안에 있다 (${both.map((b) => b.matchScore).join(',')})`);
+}
+
+// ── 고도 조회 요청량 ────────────────────────────────────────────────────────
+// Open-Meteo 무료 한도는 분당 좌표 약 600개다. 예전엔 경로마다 200개를 뽑아
+// 후보 4개면 800개 — 추천받기 한 번에 한도를 넘겨 뒤쪽 후보가 전부 가짜
+// 고도를 받았다. 경로 길이에 맞춰 100m 에 한 점, 최대 100개로 줄였다.
+console.log('\n[고도] 한 번의 추천받기가 쓰는 좌표 수');
+{
+  let asked = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const n = String(url).split('latitude=')[1]?.split('&')[0]?.split(',').length ?? 0;
+    asked += n;
+    return { ok: true, status: 200, json: async () => ({ elevation: new Array(n).fill(50) }) };
+  };
+  const elev = await bundle('src/lib/elevation.ts', 'ev.mjs');
+  // 5km 코스 4개 (후보 풀 크기와 같게)
+  for (let c = 0; c < 4; c++) {
+    const path = [];
+    let la = 37.5 + c * 0.02;
+    let ln = 127.0 + c * 0.02;
+    for (let i = 0; i < 400; i++) { la += 0.0001; ln += 0.00008; path.push([la, ln]); }
+    await elev.elevationsForPath(path);
+  }
+  globalThis.fetch = realFetch;
+  console.log(`    후보 4개 × 5km → 좌표 ${asked}개 조회 (한도 분당 600)`);
+  check(asked <= 600, `추천받기 한 번이 분당 한도 안에 들어온다 (${asked}개)`);
+  check(asked > 0, '조회를 아예 안 하는 건 아니다');
+  // 같은 경로를 다시 물으면 캐시로 요청이 안 나가야 한다
+  const before = asked;
+  globalThis.fetch = async (url) => {
+    const n = String(url).split('latitude=')[1]?.split('&')[0]?.split(',').length ?? 0;
+    asked += n;
+    return { ok: true, status: 200, json: async () => ({ elevation: new Array(n).fill(50) }) };
+  };
+  const same = [];
+  let la2 = 37.5, ln2 = 127.0;
+  for (let i = 0; i < 400; i++) { la2 += 0.0001; ln2 += 0.00008; same.push([la2, ln2]); }
+  await elev.elevationsForPath(same);
+  globalThis.fetch = realFetch;
+  console.log(`    같은 경로 재조회 → 추가 좌표 ${asked - before}개`);
+  check(asked - before === 0, '이미 물어본 지점은 다시 안 묻는다 (캐시)');
+}
+
 // ── 백업/복원 ───────────────────────────────────────────────────────────────
 // 기록을 통째로 잃을 수 있는 경로다. 내보낸 그대로 돌아오는지, 남이 준 이상한
 // 파일에 저장소가 덮어써지지 않는지 본다.

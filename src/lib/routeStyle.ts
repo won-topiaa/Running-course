@@ -39,7 +39,8 @@ export interface StyleMetrics {
 
 export interface StyleEval {
   style: RunStyle;
-  score: number; // 0~1
+  /** 0~1 — 고도를 못 받았으면 null (호출측이 이 축을 빼고 계산한다) */
+  score: number | null;
   metrics: StyleMetrics;
   reason: string;
 }
@@ -129,6 +130,12 @@ function computeMetrics(route: RouteResult): StyleMetrics {
 
 export function evaluateStyle(route: RouteResult, style: RunStyle): StyleEval {
   const m = computeMetrics(route);
+  // 고도를 못 받은 경로는 전부 평평해 보인다. 그대로 채점하면 '평지 위주'가
+  // 만점을 받고 '언덕 훈련'이 0점을 받는데, 둘 다 근거 없는 점수다.
+  // 길 성격(evaluatePath)과 같은 규칙으로 이 축을 아예 뺀다.
+  if (route.elevationKnown === false) {
+    return { style, score: null, metrics: m, reason: '이 코스는 지형 고도를 받지 못했어요.' };
+  }
   let score = 0;
   let reason = '';
 
