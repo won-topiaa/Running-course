@@ -139,6 +139,8 @@ export function distToRoute(
 
 /** 직진 안내를 하는 최소 구간 거리(m) — 이보다 짧으면 굳이 말 안 한다 */
 const STRAIGHT_MIN_M = 300;
+/** 긴 직진 구간에서 반복 안내 간격(m) */
+const STRAIGHT_REMIND_M = 500;
 
 // ── 음성 엔진 ───────────────────────────────────────────────────────────────
 
@@ -162,6 +164,8 @@ export interface VoiceNavState {
   lastStraightAfterTurn: number;
   /** 50m 직전 확인 안내한 마지막 턴 인덱스 */
   lastConfirmTurn: number;
+  /** 마지막 직진 반복 안내 시점(누적 m) */
+  lastStraightRemindM: number;
   /** 이탈 연속 틱 카운터 */
   offRouteTicks: number;
   /** 마지막 이탈 경고 시각(epoch ms) */
@@ -188,6 +192,7 @@ export function initVoiceNav(
     completionAnnounced: false,
     lastStraightAfterTurn: -1,
     lastConfirmTurn: -1,
+    lastStraightRemindM: 0,
     offRouteTicks: 0,
     lastOffRouteAt: 0,
     wasOffRoute: false,
@@ -339,17 +344,32 @@ export function tickVoiceNav(
         if (nextTurn && ti > next.lastStraightAfterTurn) {
           const gap = nextTurn.cumM - turn.cumM;
           if (gap >= STRAIGHT_MIN_M) {
-            setTimeout(() => speak('쭉 직진', false), 2500);
+            setTimeout(() => speak('쭉 직진하세요', false), 2500);
             next.lastStraightAfterTurn = ti;
+            next.lastStraightRemindM = currentM;
           }
         } else if (!nextTurn && ti > next.lastStraightAfterTurn) {
           const remain = totalDistM - turn.cumM;
           if (remain >= STRAIGHT_MIN_M) {
             setTimeout(() => speak('직진하면 도착', false), 2500);
             next.lastStraightAfterTurn = ti;
+            next.lastStraightRemindM = currentM;
           }
         }
         break;
+      }
+    }
+
+    // ── 직진 반복 안내: 다음 턴까지 먼 구간에서 500m마다 ────────
+    if (!offRoute && state.startAnnounced) {
+      const nextTurnM = state.turns.find((t) => t.cumM - currentM > WARN_AHEAD_M)?.cumM;
+      const aheadToTurn = nextTurnM != null ? nextTurnM - currentM : totalDistM - currentM;
+      if (
+        aheadToTurn > STRAIGHT_MIN_M &&
+        currentM - next.lastStraightRemindM >= STRAIGHT_REMIND_M
+      ) {
+        speak('쭉 직진하세요', false);
+        next.lastStraightRemindM = currentM;
       }
     }
   }
