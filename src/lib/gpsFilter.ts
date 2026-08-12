@@ -109,15 +109,21 @@ const WEAK_AFTER = 3;
 /**
  * 도플러 교정 기준.
  *
- * 일부 기기/브라우저가 coords.speed 를 실제보다 크게 보고한다. 이때 도플러
- * 적분 거리가 haversine 경로 거리의 1.5배를 넘으면, 도플러를 더 이상 믿지
- * 않고 haversine 으로 되돌린다. pathCum 은 매 측위마다 평활 좌표 간 거리를
- * 잇는다(게이트를 통과한 점만이 아니라) — 그래야 코너를 건너뛰는 현(chord)
- * 효과 없이 실제 경로 길이에 가까운 기준선이 나온다.
- * 교정 판정에 최소 100m 경로가 필요하다.
+ * 일부 기기/브라우저가 coords.speed 를 실제보다 크게 보고한다. 두 가지
+ * 감시로 잡는다:
+ *  1) 누적 비율 — dopplerCum/pathCum 이 1.5배를 넘으면 차단 (최소 100m)
+ *  2) 60초 롤링 창 — 최근 60초의 비율이 1.5배를 넘으면 차단 (최소 50m)
+ * 누적 비율만으로는 러닝 중간에 부풀기 시작한 경우 이전 정상 데이터에
+ * 묻혀 반응이 느리다(5km 정상 후 2배 부풀림이면 다시 5km를 달려야 비율이
+ * 1.5에 도달). 60초 창은 최대 60초 만에 잡아낸다.
+ * pathCum 은 매 측위마다 평활 좌표 간 거리를 잇는다(게이트를 통과한 점만이
+ * 아니라) — 그래야 코너를 건너뛰는 현(chord) 효과 없이 실제 경로 길이에
+ * 가까운 기준선이 나온다.
  */
 const DOPPLER_CALIB_MIN_M = 100;
 const DOPPLER_CALIB_RATIO = 1.5;
+const CALIB_WINDOW_MS = 60_000;
+const CALIB_WINDOW_MIN_PATH = 50;
 
 export function createGpsFilter() {
   let smooth: LatLng | null = null; // 평활된 현재 좌표
@@ -136,6 +142,7 @@ export function createGpsFilter() {
   let pathCum = 0;
   let prevSmooth: LatLng | null = null;
   let dopplerOK = true;
+  let calibBuf: { t: number; dop: number; path: number }[] = [];
 
   return {
     reset() {
@@ -152,6 +159,7 @@ export function createGpsFilter() {
       pathCum = 0;
       prevSmooth = null;
       dopplerOK = true;
+      calibBuf = [];
     },
 
     /** 일시정지 후 재개 — 멈춰 있던 사이의 이동이 한 번에 더해지지 않게 끊는다 */
@@ -261,8 +269,25 @@ export function createGpsFilter() {
           : [smooth[0] + alpha * (raw[0] - smooth[0]), smooth[1] + alpha * (raw[1] - smooth[1])];
 
       if (byDoppler && moved > 0) dopplerCum += moved;
-      if (prevSmooth) pathCum += haversineMeters(prevSmooth, smooth);
+      const pathDelta = prevSmooth ? haversineMeters(prevSmooth, smooth) : 0;
+      pathCum += pathDelta;
       prevSmooth = smooth;
+
+      calibBuf.push({ t: fix.t, dop: byDoppler && moved > 0 ? moved : 0, path: pathDelta });
+      while (calibBuf.length > 1 && fix.t - calibBuf[0].t > CALIB_WINDOW_MS) calibBuf.shift();
+      if (dopplerOK && byDoppler) {
+        const cumBad = pathCum >= DOPPLER_CALIB_MIN_M && dopplerCum > pathCum * DOPPLER_CALIB_RATIO;
+        let winBad = false;
+        if (calibBuf.length >= 10) {
+          const wDop = calibBuf.reduce((s, c) => s + c.dop, 0);
+          const wPath = calibBuf.reduce((s, c) => s + c.path, 0);
+          winBad = wPath >= CALIB_WINDOW_MIN_PATH && wDop > wPath * DOPPLER_CALIB_RATIO;
+        }
+        if (cumBad || winBad) {
+          dopplerOK = false;
+          moved = 0;
+        }
+      }
 
       if (anchor == null) {
         anchor = smooth;
@@ -312,16 +337,7 @@ export function createGpsFilter() {
       anchor = smooth;
       anchorT = fix.t;
 
-      const addM = byDoppler ? moved : d;
-      if (byDoppler) {
-        if (
-          pathCum >= DOPPLER_CALIB_MIN_M &&
-          dopplerCum > pathCum * DOPPLER_CALIB_RATIO
-        ) {
-          dopplerOK = false;
-          return { accept: true, point: smooth, addM: d, weak: false, speed: spd };
-        }
-      }
+      const addM = (byDoppler && dopplerOK) ? moved : d;
       return { accept: true, point: smooth, addM, weak: false, speed: spd };
     },
   };

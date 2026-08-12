@@ -431,6 +431,28 @@ console.log('\n [도플러 교정] 부풀려진 speed 를 감지해 haversine �
   if (Math.abs(err3) > 10) calibFails.push(`정확도 간헐 초과에서 정상 도플러가 교정에 걸려 오차 ${err3.toFixed(1)}% (한도 ±10%)`);
   else console.log('  ✅ 정확도가 자주 나빠도 정상 도플러는 교정에 안 걸린다');
 
+  // 중간 부풀림: 처음 5분 정상, 이후 5분 2배 — 롤링 창이 ~60초 안에 잡아야 한다
+  const f4 = createGpsFilter();
+  let dist4 = 0;
+  for (let k = 1; k <= 600; k++) {
+    const inflated = k > 300;
+    const v = f4.push({
+      lat: LAT0 + (realSpeed * k) / MPD_LAT,
+      lng: LNG0,
+      accuracy: 10,
+      speed: Math.max(0, (inflated ? realSpeed * 2 : realSpeed) + gauss() * 0.3),
+      t: t0 + k * 1000,
+    });
+    dist4 += v.addM;
+  }
+  const truth4 = realSpeed * 600;
+  const err4 = ((dist4 - truth4) / truth4) * 100;
+  console.log(
+    `  중간 부풀림(300초부터 2배) → ${(dist4 / 1000).toFixed(2)}km (실제 ${(truth4 / 1000).toFixed(2)}km) 오차 ${err4 >= 0 ? '+' : ''}${err4.toFixed(1)}%`,
+  );
+  if (Math.abs(err4) > 15) calibFails.push(`중간 부풀림에서 오차 ${err4.toFixed(1)}% (한도 ±15%)`);
+  else console.log('  ✅ 러닝 중간 부풀림도 롤링 창이 잡아낸다');
+
   if (calibFails.length) {
     calibFails.forEach((x) => console.log('  ❌ ' + x));
     process.exit(1);
