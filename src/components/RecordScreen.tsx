@@ -238,7 +238,6 @@ export default function RecordScreen({
     );
   }
 
-  const keepAwake = wakeLockSupported();
   const live = rec.status === 'recording' || rec.status === 'paused';
   // START 를 눌렀지만 아직 쓸 만한 위치를 한 번도 못 잡은 상태.
   // 권한 거부·실내·GPS 지연 어느 쪽이든 여기로 모인다. 이때 라이브 화면으로
@@ -315,7 +314,13 @@ export default function RecordScreen({
   return (
     <div className="fixed inset-0 z-[2000] flex flex-col bg-ink text-white">
       {/* 지도 — 코스를 따라 뛸 때는 넓게, 자유 러닝일 때는 숫자에 자리를 내준다 */}
-      <div className={`relative ${live ? (planned ? 'h-[46%]' : 'h-[38%]') : 'flex-1'}`}>
+      {/* 지도가 남는 세로를 전부 가져간다.
+          예전엔 지도 높이를 46%/38% 로 못박아 뒀는데, 구간 기록이 아직
+          없을 때(=대부분의 러닝 초반) 아래 패널의 절반이 빈 채로 화면을
+          차지했다 — 뛰면서 정작 보고 싶은 건 지도인데. 패널을 내용만큼만
+          쓰게 하고 나머지를 지도에 준다. 구간 기록이 쌓이면 그만큼만
+          패널이 자라고 지도가 줄어든다. */}
+      <div className={`relative min-h-0 flex-1`}>
         <LiveMap
           coords={rec.coords}
           center={planned?.route.coords[0] ?? api.settings.homeLocation}
@@ -348,7 +353,7 @@ export default function RecordScreen({
       </div>
 
       {/* 지표 · 컨트롤 */}
-      <div className="flex flex-1 flex-col px-6 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] pt-2">
+      <div className={`flex flex-col px-5 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-1 ${live && !acquiring ? 'shrink-0' : 'flex-1'}`}>
         {!live || acquiring ? (
           <StartPanel
             rec={rec}
@@ -366,18 +371,19 @@ export default function RecordScreen({
         ) : (
           <>
             {/* 거리 — 이 화면의 주인공 */}
-            <div className="flex flex-col pt-3">
-              <Label>DISTANCE</Label>
+            <div className="flex flex-col pt-1">
+              {/* 라벨을 뺐다 — 옆의 'KM' 이 이미 무슨 숫자인지 말한다.
+                  뛰는 중에는 한 줄이라도 지도에 내주는 편이 낫다. */}
               <div className="flex items-baseline gap-2">
-                <span className="font-black leading-[0.85] tracking-[-0.045em] tabular-nums text-[clamp(64px,22vw,104px)]">
+                <span className="font-black leading-[0.85] tracking-[-0.045em] tabular-nums text-[clamp(52px,17vw,80px)]">
                   {rec.distanceKm.toFixed(2)}
                 </span>
                 <span className="text-[20px] font-black tracking-[0.06em] text-ink-muted">KM</span>
               </div>
 
               {planned && (
-                <div className="mt-5">
-                  <div className="mb-2 flex items-baseline justify-between">
+                <div className="mt-3">
+                  <div className="mb-1.5 flex items-baseline justify-between">
                     <Label>COURSE</Label>
                     <span className="text-[12px] font-bold tabular-nums text-white">
                       {Math.round(ratio * 100)}% · 남은 {formatDistance(remainM / 1000)}
@@ -392,7 +398,7 @@ export default function RecordScreen({
                 </div>
               )}
 
-              <div className="mt-6 grid grid-cols-3 gap-3 border-t border-ink-line pt-5">
+              <div className="mt-4 grid grid-cols-3 gap-3 border-t border-ink-line pt-3">
                 <Stat label="TIME" value={formatClock(rec.elapsedSec)} />
                 <Stat label="AVG PACE" value={rec.avgPaceSec ? formatPace(rec.avgPaceSec) : '--'} />
                 <Stat
@@ -441,11 +447,11 @@ export default function RecordScreen({
             <SplitList splits={splits} />
 
             {/* 컨트롤 — 볼트는 '계속 간다', 흰 테두리는 '멈춘다' */}
-            <div className="mt-auto flex items-center gap-3 pt-5">
+            <div className="flex items-center gap-3 pt-4">
               {rec.status === 'recording' ? (
                 <button
                   onClick={rec.pause}
-                  className="grid h-[68px] w-[68px] shrink-0 place-items-center rounded-full border-2 border-ink-line text-white active:scale-95"
+                  className="grid h-[58px] w-[58px] shrink-0 place-items-center rounded-full border-2 border-ink-line text-white active:scale-95"
                   aria-label="일시정지"
                 >
                   <Pause size={26} fill="currentColor" />
@@ -453,7 +459,7 @@ export default function RecordScreen({
               ) : (
                 <button
                   onClick={rec.resume}
-                  className="grid h-[68px] w-[68px] shrink-0 place-items-center rounded-full bg-volt text-ink shadow-[0_0_28px_rgba(216,255,62,0.35)] active:scale-95"
+                  className="grid h-[58px] w-[58px] shrink-0 place-items-center rounded-full bg-volt text-ink shadow-[0_0_28px_rgba(216,255,62,0.35)] active:scale-95"
                   aria-label="재개"
                 >
                   <Play size={26} fill="currentColor" />
@@ -462,21 +468,19 @@ export default function RecordScreen({
               <button
                 onClick={finish}
                 disabled={saving}
-                className="flex h-[68px] flex-1 items-center justify-center gap-2 rounded-full bg-white text-[15px] font-black uppercase tracking-[0.08em] text-ink active:scale-[0.98] disabled:opacity-70"
+                className="flex h-[58px] flex-1 items-center justify-center gap-2 rounded-full bg-white text-[15px] font-black uppercase tracking-[0.08em] text-ink active:scale-[0.98] disabled:opacity-70"
               >
                 <Square size={17} fill="currentColor" /> {saving ? '저장 중…' : '종료 · 저장'}
               </button>
             </div>
 
-            <p className="mt-3 h-4 text-center text-[11px] font-bold uppercase tracking-[0.14em]">
+            <p className="mt-2 h-4 text-center text-[11px] font-bold uppercase tracking-[0.14em]">
               {rec.status === 'paused' ? (
                 <span className="text-volt">PAUSED</span>
               ) : rec.autoPaused ? (
                 /* 서 있는 게 확인돼 시계를 멈춘 상태. 알려주지 않으면 시간이
                    안 가는 걸 고장으로 오해한다(신호 대기에서 매번 겪는다). */
                 <span className="text-volt">멈춤 감지 — 시간·거리 정지 중</span>
-              ) : keepAwake ? (
-                <span className="text-ink-muted">화면 꺼짐 방지 중</span>
               ) : null}
             </p>
           </>
@@ -607,20 +611,16 @@ function StartPanel({
  */
 function SplitList({ splits }: { splits: Split[] }) {
   const done = splits.filter((s) => !s.partial);
-  if (!done.length) {
-    return (
-      <p className="mt-6 text-[11.5px] leading-relaxed text-ink-muted">
-        1km 를 채우면 구간 기록이 여기에 쌓여요.
-      </p>
-    );
-  }
+  // 아직 한 구간도 못 채웠으면 아무것도 그리지 않는다. '곧 생긴다'는 안내가
+  // 뛰는 내내 한 줄을 차지할 이유가 없다 — 그 자리는 지도에 준다.
+  if (!done.length) return null;
   const slowest = Math.max(...done.map((s) => s.sec));
   const fastest = Math.min(...done.map((s) => s.sec));
   // 최근 구간이 위로 오게 — 화면이 좁으면 스크롤
   const rows = [...splits].reverse();
 
   return (
-    <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
+    <div className="mt-3 max-h-[20vh] overflow-y-auto">
       <Label>SPLITS</Label>
       <ul className="mt-2 space-y-1.5">
         {rows.map((s) => {
