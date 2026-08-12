@@ -143,6 +143,7 @@ const STRAIGHT_MIN_M = 300;
 // ── 음성 엔진 ───────────────────────────────────────────────────────────────
 
 const WARN_AHEAD_M = 150;
+const CONFIRM_AHEAD_M = 50;
 const AT_TURN_M = 30;
 
 /** 복귀 판정 기준(m) — 이탈(50m)보다 안쪽이어야 경계 진동에 안 흔들린다 */
@@ -159,6 +160,8 @@ export interface VoiceNavState {
   completionAnnounced: boolean;
   /** 마지막으로 직진 안내한 턴 인덱스 (턴 통과 후 직진 안내) */
   lastStraightAfterTurn: number;
+  /** 50m 직전 확인 안내한 마지막 턴 인덱스 */
+  lastConfirmTurn: number;
   /** 이탈 연속 틱 카운터 */
   offRouteTicks: number;
   /** 마지막 이탈 경고 시각(epoch ms) */
@@ -184,6 +187,7 @@ export function initVoiceNav(
     startAnnounced: false,
     completionAnnounced: false,
     lastStraightAfterTurn: -1,
+    lastConfirmTurn: -1,
     offRouteTicks: 0,
     lastOffRouteAt: 0,
     wasOffRoute: false,
@@ -195,7 +199,7 @@ function speak(text: string, vibrate = true) {
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'ko-KR';
-  u.rate = 1.15;
+  u.rate = 1.05;
   u.pitch = 1.0;
   const voices = speechSynthesis.getVoices();
   const ko = voices.find((v) => v.lang.startsWith('ko'));
@@ -275,13 +279,9 @@ export function tickVoiceNav(
     const firstTurn = state.turns[0];
     if (firstTurn) {
       const toFirst = firstTurn.cumM - currentM;
-      if (toFirst > STRAIGHT_MIN_M) {
-        speak(`코스를 시작합니다. ${distLabel(Math.round(toFirst))} 직진 후 ${turnLabel(firstTurn.kind)}.`);
-      } else {
-        speak(`코스를 시작합니다. ${distLabel(Math.round(toFirst))} 앞에서 ${turnLabel(firstTurn.kind)}.`);
-      }
+      speak(`출발. ${distLabel(Math.round(toFirst))} 앞 ${turnLabel(firstTurn.kind)}`);
     } else {
-      speak(`코스를 시작합니다. 다음 안내가 나올 때까지 쭉 직진하세요.`);
+      speak(`출발. 쭉 직진`);
     }
     next.startAnnounced = true;
   }
@@ -296,20 +296,33 @@ export function tickVoiceNav(
 
       // 예고 안내 (150m 전)
       if (
-        ahead > AT_TURN_M &&
+        ahead > CONFIRM_AHEAD_M &&
         ahead <= WARN_AHEAD_M &&
         ti > next.lastWarnedTurn
       ) {
+        speak(`${distLabel(Math.round(ahead))} 앞 ${turnLabel(turn.kind)}`);
+        next.lastWarnedTurn = ti;
+
+        // 연속 턴은 별도 발화로 분리 (2초 뒤)
         const nextTurn = state.turns[ti + 1];
-        let msg = `${distLabel(Math.round(ahead))} 앞에서 ${turnLabel(turn.kind)}`;
         if (nextTurn) {
           const gap = nextTurn.cumM - turn.cumM;
           if (gap < 200) {
-            msg += `, 이어서 ${turnLabel(nextTurn.kind)}`;
+            const nk = turnLabel(nextTurn.kind);
+            setTimeout(() => speak(`이후 ${nk}`, false), 2000);
           }
         }
-        speak(msg);
-        next.lastWarnedTurn = ti;
+        break;
+      }
+
+      // 확인 안내 (50m 전)
+      if (
+        ahead > AT_TURN_M &&
+        ahead <= CONFIRM_AHEAD_M &&
+        ti > next.lastConfirmTurn
+      ) {
+        speak(`잠시 후 ${turnLabel(turn.kind)}`);
+        next.lastConfirmTurn = ti;
         break;
       }
 
@@ -326,20 +339,13 @@ export function tickVoiceNav(
         if (nextTurn && ti > next.lastStraightAfterTurn) {
           const gap = nextTurn.cumM - turn.cumM;
           if (gap >= STRAIGHT_MIN_M) {
-            setTimeout(() => {
-              speak(
-                `다음 안내가 나올 때까지 ${distLabel(Math.round(gap))} 직진하세요.`,
-                false,
-              );
-            }, 2500);
+            setTimeout(() => speak('쭉 직진', false), 2500);
             next.lastStraightAfterTurn = ti;
           }
         } else if (!nextTurn && ti > next.lastStraightAfterTurn) {
           const remain = totalDistM - turn.cumM;
           if (remain >= STRAIGHT_MIN_M) {
-            setTimeout(() => {
-              speak(`마지막 턴이에요. ${distLabel(Math.round(remain))} 직진하면 도착합니다.`, false);
-            }, 2500);
+            setTimeout(() => speak('직진하면 도착', false), 2500);
             next.lastStraightAfterTurn = ti;
           }
         }
