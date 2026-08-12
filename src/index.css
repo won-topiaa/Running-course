@@ -55,6 +55,10 @@
   filter: saturate(0.55) brightness(0.78) contrast(1.05);
 }
 
+/* 카카오맵: 브라우저 기본 핀치 줌 차단 — 지도 자체 줌만 작동하게 */
+.kakao-soft {
+  touch-action: none;
+}
 /* 카카오맵 타일만 채도를 낮춰 연회색 톤으로.
    경로(SVG)·핀(HTML 오버레이)은 영향을 받지 않아 색이 그대로 살아난다. */
 .kakao-soft img {
