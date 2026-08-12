@@ -101,11 +101,19 @@ export function loadSettings(): Settings {
           ? saved.paceSecPerKm
           : base.paceSecPerKm;
 
+      const weekGoal =
+        typeof saved.weekGoalKm === 'number' &&
+        Number.isFinite(saved.weekGoalKm) &&
+        saved.weekGoalKm > 0
+          ? saved.weekGoalKm
+          : base.weekGoalKm;
+
       return {
         ...base,
         ...saved,
         homeLocation: home,
         paceSecPerKm: pace,
+        weekGoalKm: weekGoal,
         // env 값이 있으면 항상 우선 (배포 환경 주입값)
         kakaoJsKey: ENV_KAKAO ?? savedKakao ?? KAKAO_DEFAULT,
         orsKey: ENV_ORS ?? saved.orsKey ?? ORS_DEFAULT,

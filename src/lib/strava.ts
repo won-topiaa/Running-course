@@ -20,7 +20,17 @@ export interface StravaToken {
 export function loadToken(): StravaToken | null {
   try {
     const raw = localStorage.getItem(TOKEN_KEY);
-    if (raw) return JSON.parse(raw) as StravaToken;
+    if (!raw) return null;
+    const t = JSON.parse(raw);
+    if (
+      t &&
+      typeof t.access === 'string' &&
+      typeof t.refresh === 'string' &&
+      typeof t.expiresAt === 'number' &&
+      Number.isFinite(t.expiresAt)
+    ) {
+      return t as StravaToken;
+    }
   } catch {
     /* 무시 */
   }

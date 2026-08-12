@@ -80,7 +80,7 @@ async function fetchElevations(points: LatLng[]): Promise<number[]> {
     const json = await res.json();
     if (!Array.isArray(json?.elevation)) throw new Error('elevation malformed');
     json.elevation.forEach((v: unknown, k: number) => {
-      if (typeof v === 'number' && chunk[k]) remember(chunk[k], v);
+      if (typeof v === 'number' && Number.isFinite(v) && chunk[k]) remember(chunk[k], v);
     });
   }
 

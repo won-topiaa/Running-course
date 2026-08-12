@@ -18,11 +18,13 @@ export function wakeLockSupported(): boolean {
 export function createWakeLock() {
   let sentinel: Sentinel = null;
   let wanted = false;
+  let acquiring = false;
 
   let retryTimer: ReturnType<typeof setInterval> | null = null;
 
   const acquire = async () => {
-    if (!wanted || !wakeLockSupported() || sentinel) return;
+    if (!wanted || !wakeLockSupported() || sentinel || acquiring) return;
+    acquiring = true;
     try {
       sentinel = await (navigator as any).wakeLock.request('screen');
       sentinel?.addEventListener?.('release', () => {
@@ -34,8 +36,9 @@ export function createWakeLock() {
         if (wanted && document.visibilityState === 'visible') void acquire();
       });
     } catch {
-      // 사용자 제스처 없이 요청하거나 배터리 절약 모드면 실패할 수 있다 — 무시
       sentinel = null;
+    } finally {
+      acquiring = false;
     }
   };
 

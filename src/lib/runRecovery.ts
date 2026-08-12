@@ -79,17 +79,20 @@ export function loadInProgress(): InProgressRun | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const v = JSON.parse(raw) as InProgressRun;
+    const n = Array.isArray(v.coords) ? v.coords.length : 0;
     const ok =
       v &&
       typeof v.at === 'number' &&
       Date.now() - v.at < MAX_AGE_MS &&
-      Array.isArray(v.coords) &&
-      v.coords.length >= 2 &&
+      n >= 2 &&
       v.coords.every(
-        (c) => Array.isArray(c) && c.length === 2 && c.every((n) => Number.isFinite(n)),
+        (c) => Array.isArray(c) && c.length === 2 && c.every((x) => Number.isFinite(x)),
       ) &&
       typeof v.distanceKm === 'number' &&
-      Number.isFinite(v.distanceKm);
+      Number.isFinite(v.distanceKm) &&
+      Array.isArray(v.elevations) && v.elevations.length === n &&
+      Array.isArray(v.times) && v.times.length === n &&
+      Array.isArray(v.cumDist) && v.cumDist.length === n;
     if (!ok) {
       clearInProgress();
       return null;

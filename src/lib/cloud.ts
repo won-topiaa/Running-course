@@ -78,7 +78,17 @@ export function localRunCount(): number {
 export function loadCloudSession(): CloudSession | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
-    if (raw) return JSON.parse(raw) as CloudSession;
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (
+      s &&
+      typeof s.access === 'string' &&
+      typeof s.refresh === 'string' &&
+      typeof s.expiresAt === 'number' &&
+      Number.isFinite(s.expiresAt)
+    ) {
+      return s as CloudSession;
+    }
   } catch {
     /* 무시 */
   }
@@ -205,7 +215,13 @@ async function doRefresh(cfg: CloudConfig, s: CloudSession): Promise<CloudSessio
     saveCloudSession(null);
     return null;
   }
-  const next = toSession(await res.json());
+  let next: CloudSession;
+  try {
+    next = toSession(await res.json());
+  } catch {
+    saveCloudSession(null);
+    return null;
+  }
   if (!next.email) next.email = s.email;
   if (!next.userId) next.userId = s.userId;
   saveCloudSession(next);
