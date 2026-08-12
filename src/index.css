@@ -55,7 +55,7 @@
   filter: saturate(0.55) brightness(0.78) contrast(1.05);
 }
 
-/* 카카오맵: 브라우저 기본 핀치 줌 차단 — 지도 자체 줌만 작동하게 */
+/* 카카오맵: 브라우저 핀치 줌 차단 — 지도 JS가 터치를 직접 처리 */
 .kakao-soft {
   touch-action: none;
 }
