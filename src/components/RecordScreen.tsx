@@ -278,22 +278,25 @@ export default function RecordScreen({
     const r = recovered;
     if (!r || saving) return;
     setSaving(true);
-    const dem = await realElevations(r.coords);
-    const route = buildResult(r.coords, dem ?? r.elevations, 'offline', [r.coords[0]]);
-    api.addSavedRoute(
-      savedFromView({
-        name: r.name,
-        route: r.distanceKm > 0 ? { ...route, distanceKm: r.distanceKm } : route,
-        kind: 'recorded',
-        source: 'gps',
-        durationSec: r.elapsedSec,
-      }),
-    );
-    clearInProgress();
-    setRecovered(null);
-    setSaving(false);
-    api.nav('saved');
-    onClose();
+    try {
+      const dem = await realElevations(r.coords);
+      const route = buildResult(r.coords, dem ?? r.elevations, 'offline', [r.coords[0]]);
+      api.addSavedRoute(
+        savedFromView({
+          name: r.name,
+          route: r.distanceKm > 0 ? { ...route, distanceKm: r.distanceKm } : route,
+          kind: 'recorded',
+          source: 'gps',
+          durationSec: r.elapsedSec,
+        }),
+      );
+      clearInProgress();
+      setRecovered(null);
+      api.nav('saved');
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const finish = async () => {

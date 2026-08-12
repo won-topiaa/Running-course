@@ -429,10 +429,13 @@ function CloudSection({ api }: { api: AppApi }) {
   const [remoteAt, setRemoteAt] = useState<string | null | undefined>(undefined);
   // 계정 기록과 기기 기록이 둘 다 있어 방향을 못 정한 상태. 정할 때까지 자동 백업은 멈춘다.
   const [conflict, setConflict] = useState(() => !!session && !isReconciled(session.userId));
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
 
   const flash = (m: string) => {
+    clearTimeout(flashTimer.current);
     setMsg(m);
-    setTimeout(() => setMsg(null), 4000);
+    flashTimer.current = setTimeout(() => setMsg(null), 4000);
   };
 
   // 로그인 상태면 서버 백업 시각 조회
@@ -647,10 +650,13 @@ function CloudSection({ api }: { api: AppApi }) {
 function SyncSection() {
   const [msg, setMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
 
   const flash = (m: string) => {
+    clearTimeout(flashTimer.current);
     setMsg(m);
-    setTimeout(() => setMsg(null), 3200);
+    flashTimer.current = setTimeout(() => setMsg(null), 3200);
   };
 
   const onImportFile = async (f: File | null) => {

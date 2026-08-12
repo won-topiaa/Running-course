@@ -314,7 +314,9 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const elevRange = useMemo(() => {
     const e = selected?.route.elevations ?? [];
     if (e.length === 0) return null;
-    return { lo: Math.round(Math.min(...e)), hi: Math.round(Math.max(...e)) };
+    let lo = Infinity, hi = -Infinity;
+    for (const v of e) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    return { lo: Math.round(lo), hi: Math.round(hi) };
   }, [selected]);
 
   // 선택되지 않은 후보는 지도에 흐린 점선으로 함께 그려 비교를 돕는다

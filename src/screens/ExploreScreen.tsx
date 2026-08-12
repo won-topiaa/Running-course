@@ -121,10 +121,10 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
             type="checkbox"
             checked={prefs.nightRun}
             onChange={(e) => set({ nightRun: e.target.checked })}
-            className="peer sr-only"
+            className="sr-only"
           />
-          <span className="relative h-6 w-11 rounded-full bg-line transition peer-checked:bg-coral">
-            <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-espresso-muted shadow transition peer-checked:translate-x-5 peer-checked:bg-ink" />
+          <span className={`relative h-6 w-11 rounded-full transition ${prefs.nightRun ? 'bg-coral' : 'bg-line'}`}>
+            <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full shadow transition ${prefs.nightRun ? 'translate-x-5 bg-ink' : 'bg-espresso-muted'}`} />
           </span>
         </label>
 
