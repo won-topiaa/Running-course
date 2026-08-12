@@ -172,7 +172,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     if (f?.speedTrusted && v != null && v < 0.5) return null;
     const win = sanePace(winPaceRef.current);
     if (win != null) return win;
-    if (f?.speedTrusted && v != null) {
+    if (f?.speedTrusted && f?.dopplerCalibrated && v != null) {
       return sanePace(v > 0 ? 1000 / v : null);
     }
     return sanePace(paceFromPath(coords, activeTimes));

@@ -453,6 +453,36 @@ console.log('\n [도플러 교정] 부풀려진 speed 를 감지해 haversine �
   if (Math.abs(err4) > 15) calibFails.push(`중간 부풀림에서 오차 ${err4.toFixed(1)}% (한도 ±15%)`);
   else console.log('  ✅ 러닝 중간 부풀림도 롤링 창이 잡아낸다');
 
+  // 시작 직후 2배 부풀림 — 처음 30m 동안 haversine으로 방어해야 한다
+  const f5 = createGpsFilter();
+  let dist5 = 0;
+  let first30mDist = 0;
+  let hitStartup = false;
+  for (let k = 1; k <= 60; k++) {
+    const v = f5.push({
+      lat: LAT0 + (realSpeed * k) / MPD_LAT,
+      lng: LNG0,
+      accuracy: 10,
+      speed: Math.max(0, realSpeed * 2.5 + gauss() * 0.3),
+      t: t0 + k * 1000,
+    });
+    dist5 += v.addM;
+    if (!hitStartup && k <= 30) first30mDist = dist5;
+    if (k === 30) hitStartup = true;
+  }
+  const truth5 = realSpeed * 60;
+  const err5 = ((dist5 - truth5) / truth5) * 100;
+  const first30mExpected = realSpeed * 30;
+  const first30mErr = ((first30mDist - first30mExpected) / first30mExpected) * 100;
+  console.log(
+    `  시작 직후 2.5배 부풀림 · 60초 → ${dist5.toFixed(0)}m (실제 ${truth5.toFixed(0)}m) 오차 ${err5 >= 0 ? '+' : ''}${err5.toFixed(1)}%`,
+  );
+  console.log(
+    `    첫 30초: ${first30mDist.toFixed(0)}m (실제 ${first30mExpected.toFixed(0)}m) 오차 ${first30mErr >= 0 ? '+' : ''}${first30mErr.toFixed(1)}%`,
+  );
+  if (Math.abs(first30mErr) > 30) calibFails.push(`시작 직후 30초 오차 ${first30mErr.toFixed(1)}% (한도 ±30%)`);
+  else console.log('  ✅ 시작 직후에도 부풀려진 페이스가 안 나온다');
+
   if (calibFails.length) {
     calibFails.forEach((x) => console.log('  ❌ ' + x));
     process.exit(1);

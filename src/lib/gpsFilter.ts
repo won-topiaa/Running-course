@@ -124,6 +124,7 @@ const DOPPLER_CALIB_MIN_M = 100;
 const DOPPLER_CALIB_RATIO = 1.5;
 const CALIB_WINDOW_MS = 60_000;
 const CALIB_WINDOW_MIN_PATH = 50;
+const DOPPLER_STARTUP_M = 30;
 
 export function createGpsFilter() {
   let smooth: LatLng | null = null; // 평활된 현재 좌표
@@ -186,6 +187,10 @@ export function createGpsFilter() {
       return sawMotion;
     },
 
+    get dopplerCalibrated() {
+      return pathCum >= DOPPLER_STARTUP_M;
+    },
+
     /**
      * 지금 '확정 정지' 상태인지 (저속이 STILL_TICKS 만큼 이어짐).
      * 거리는 이 동안 안 쌓이므로, 시계도 같이 멈춰야 페이스가 안 부풀려진다.
@@ -227,20 +232,13 @@ export function createGpsFilter() {
       // 가로지르지도 않는다 — 실제로 움직인 만큼이 매 초 그대로 쌓인다.
       const byDoppler = dopplerOK && sawMotion && spd != null;
       let moved = 0;
+      let dopplerDist = 0;
       if (byDoppler) {
         const dt = lastT == null ? 0 : (fix.t - lastT) / 1000;
         if (dt > 0 && dt <= MAX_INTEGRATE_SEC) {
-          // 정지는 저속이 STILL_TICKS 만큼 이어졌을 때만 확정한다 — 위쪽
-          // 평활값과 같은 기준이다. 도시 협곡에서는 뛰는 중에도 도플러가
-          // 1~3틱씩 0 으로 끊기는데, 그 틱을 정지로 보면 그 구간 거리가
-          // 통째로 빠진다(합성 검증에서 -19.7%). 끊김 동안에는 직전 속도를
-          // 유지한 평활값으로 적분한다.
           const confirmedStill = stillTicks >= STILL_TICKS;
-          // 확정 정지일 때만 0. 'v < STILL_MS 면 0' 조건까지 걸면 잡음으로
-          // 순간 낮게 읽힌 틱이 통째로 깎여 — 위쪽만 자르는 비대칭이라 —
-          // 거리가 늘 부족한 쪽으로 치우친다. 평활 속도는 정지가 확정되기
-          // 전에는 어차피 달리던 값 근처에 있다.
-          moved = confirmedStill ? 0 : Math.min(spd as number, MAX_SPEED_MS) * dt;
+          dopplerDist = confirmedStill ? 0 : Math.min(spd as number, MAX_SPEED_MS) * dt;
+          moved = pathCum >= DOPPLER_STARTUP_M ? dopplerDist : 0;
         }
       }
       lastT = fix.t;
@@ -268,12 +266,12 @@ export function createGpsFilter() {
           ? raw
           : [smooth[0] + alpha * (raw[0] - smooth[0]), smooth[1] + alpha * (raw[1] - smooth[1])];
 
-      if (byDoppler && moved > 0) dopplerCum += moved;
+      if (byDoppler && dopplerDist > 0) dopplerCum += dopplerDist;
       const pathDelta = prevSmooth ? haversineMeters(prevSmooth, smooth) : 0;
       pathCum += pathDelta;
       prevSmooth = smooth;
 
-      calibBuf.push({ t: fix.t, dop: byDoppler && moved > 0 ? moved : 0, path: pathDelta });
+      calibBuf.push({ t: fix.t, dop: byDoppler && dopplerDist > 0 ? dopplerDist : 0, path: pathDelta });
       while (calibBuf.length > 1 && fix.t - calibBuf[0].t > CALIB_WINDOW_MS) calibBuf.shift();
       if (dopplerOK && byDoppler) {
         const cumBad = pathCum >= DOPPLER_CALIB_MIN_M && dopplerCum > pathCum * DOPPLER_CALIB_RATIO;
