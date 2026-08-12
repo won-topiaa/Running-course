@@ -106,6 +106,19 @@ const LONG_GAP_SEC = 10;
 /** 오차 초과를 이만큼 연속으로 만나면 '신호 약함'을 알린다 */
 const WEAK_AFTER = 3;
 
+/**
+ * 도플러 교정 기준.
+ *
+ * 일부 기기/브라우저가 coords.speed 를 실제보다 크게 보고한다. 이때 도플러
+ * 적분 거리가 haversine 경로 거리의 1.5배를 넘으면, 도플러를 더 이상 믿지
+ * 않고 haversine 으로 되돌린다. pathCum 은 매 측위마다 평활 좌표 간 거리를
+ * 잇는다(게이트를 통과한 점만이 아니라) — 그래야 코너를 건너뛰는 현(chord)
+ * 효과 없이 실제 경로 길이에 가까운 기준선이 나온다.
+ * 교정 판정에 최소 100m 경로가 필요하다.
+ */
+const DOPPLER_CALIB_MIN_M = 100;
+const DOPPLER_CALIB_RATIO = 1.5;
+
 export function createGpsFilter() {
   let smooth: LatLng | null = null; // 평활된 현재 좌표
   let anchor: LatLng | null = null; // 마지막으로 인정한 지점
@@ -119,6 +132,10 @@ export function createGpsFilter() {
   // 일부 안드로이드 브라우저는 speed 를 항상 0 으로 준다 — 그걸 믿으면
   // 아무리 뛰어도 거리가 0 으로 남는다.
   let sawMotion = false;
+  let dopplerCum = 0;
+  let pathCum = 0;
+  let prevSmooth: LatLng | null = null;
+  let dopplerOK = true;
 
   return {
     reset() {
@@ -131,6 +148,10 @@ export function createGpsFilter() {
       stillTicks = 0;
       sawMotion = false;
       lastT = null;
+      dopplerCum = 0;
+      pathCum = 0;
+      prevSmooth = null;
+      dopplerOK = true;
     },
 
     /** 일시정지 후 재개 — 멈춰 있던 사이의 이동이 한 번에 더해지지 않게 끊는다 */
@@ -141,6 +162,7 @@ export function createGpsFilter() {
       jumps = 0;
       stillTicks = 0;
       lastT = null;
+      prevSmooth = null;
     },
 
     get speed() {
@@ -195,7 +217,7 @@ export function createGpsFilter() {
       // 위성 도플러로 잰 속도는 위치를 미분한 값과 달리 위치 오차의 영향을
       // 거의 받지 않는다(러닝 워치가 거리를 이렇게 내는 이유다). 곡선을
       // 가로지르지도 않는다 — 실제로 움직인 만큼이 매 초 그대로 쌓인다.
-      const byDoppler = sawMotion && spd != null;
+      const byDoppler = dopplerOK && sawMotion && spd != null;
       let moved = 0;
       if (byDoppler) {
         const dt = lastT == null ? 0 : (fix.t - lastT) / 1000;
@@ -213,6 +235,7 @@ export function createGpsFilter() {
           moved = confirmedStill ? 0 : Math.min(spd as number, MAX_SPEED_MS) * dt;
         }
       }
+      if (byDoppler && moved > 0) dopplerCum += moved;
       lastT = fix.t;
 
       const raw: LatLng = [fix.lat, fix.lng];
@@ -237,6 +260,9 @@ export function createGpsFilter() {
         smooth == null
           ? raw
           : [smooth[0] + alpha * (raw[0] - smooth[0]), smooth[1] + alpha * (raw[1] - smooth[1])];
+
+      if (prevSmooth) pathCum += haversineMeters(prevSmooth, smooth);
+      prevSmooth = smooth;
 
       if (anchor == null) {
         anchor = smooth;
@@ -273,6 +299,7 @@ export function createGpsFilter() {
           anchor = raw;
           anchorT = fix.t;
           jumps = 0;
+          prevSmooth = raw;
           return { accept: true, point: raw, addM: moved, reason: 'stale', weak: false, speed: spd };
         }
         if (jumps < MAX_JUMP_SKIPS) {
@@ -284,7 +311,18 @@ export function createGpsFilter() {
 
       anchor = smooth;
       anchorT = fix.t;
-      return { accept: true, point: smooth, addM: byDoppler ? moved : d, weak: false, speed: spd };
+
+      const addM = byDoppler ? moved : d;
+      if (byDoppler) {
+        if (
+          pathCum >= DOPPLER_CALIB_MIN_M &&
+          dopplerCum > pathCum * DOPPLER_CALIB_RATIO
+        ) {
+          dopplerOK = false;
+          return { accept: true, point: smooth, addM: d, weak: false, speed: spd };
+        }
+      }
+      return { accept: true, point: smooth, addM, weak: false, speed: spd };
     },
   };
 }

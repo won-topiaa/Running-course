@@ -357,4 +357,61 @@ if (gapFails.length) {
   gapFails.forEach((f) => console.log('  ❌ ' + f));
   process.exit(1);
 }
+
+// ── 도플러 교정 ────────────────────────────────────────────────────────────
+// 일부 기기/브라우저가 coords.speed 를 실제보다 크게 보고한다. 이때 도플러
+// 적분 거리가 haversine 경로 거리의 1.5배를 넘으면 haversine 으로 되돌린다.
+console.log('\n [도플러 교정] 부풀려진 speed 를 감지해 haversine 으로 전환');
+{
+  const calibFails = [];
+  const f = createGpsFilter();
+  const t0 = Date.now();
+  let dist = 0;
+  const rnd = seeded(77);
+  const gauss = gaussFrom(rnd);
+  const realSpeed = 3.0;
+  const inflated = 2.0; // 기기가 실제의 2배 속도를 보고
+  for (let k = 1; k <= 600; k++) {
+    const v = f.push({
+      lat: LAT0 + (realSpeed * k) / MPD_LAT,
+      lng: LNG0,
+      accuracy: 8,
+      speed: Math.max(0, realSpeed * inflated + gauss() * 0.3),
+      t: t0 + k * 1000,
+    });
+    dist += v.addM;
+  }
+  const truth = realSpeed * 600;
+  const err = ((dist - truth) / truth) * 100;
+  console.log(
+    `  실제 3.0m/s · 기기 보고 6.0m/s · 10분 → ${(dist / 1000).toFixed(2)}km (실제 ${(truth / 1000).toFixed(2)}km) 오차 ${err >= 0 ? '+' : ''}${err.toFixed(1)}%`,
+  );
+  if (Math.abs(err) > 15) calibFails.push(`교정 후에도 거리 오차 ${err.toFixed(1)}% (한도 ±15%)`);
+  else console.log('  ✅ 부풀려진 도플러를 감지해 교정했다');
+
+  // 정상 기기는 교정에 안 걸려야 한다
+  const f2 = createGpsFilter();
+  let dist2 = 0;
+  for (let k = 1; k <= 600; k++) {
+    const v = f2.push({
+      lat: LAT0 + (realSpeed * k) / MPD_LAT,
+      lng: LNG0,
+      accuracy: 8,
+      speed: Math.max(0, realSpeed + gauss() * 0.3),
+      t: t0 + k * 1000,
+    });
+    dist2 += v.addM;
+  }
+  const err2 = ((dist2 - truth) / truth) * 100;
+  console.log(
+    `  정상 기기 3.0m/s · 10분 → ${(dist2 / 1000).toFixed(2)}km 오차 ${err2 >= 0 ? '+' : ''}${err2.toFixed(1)}%`,
+  );
+  if (Math.abs(err2) > 6) calibFails.push(`정상 기기가 교정에 걸려 오차 ${err2.toFixed(1)}% (한도 ±6%)`);
+  else console.log('  ✅ 정상 기기는 교정에 안 걸린다');
+
+  if (calibFails.length) {
+    calibFails.forEach((x) => console.log('  ❌ ' + x));
+    process.exit(1);
+  }
+}
 console.log('');

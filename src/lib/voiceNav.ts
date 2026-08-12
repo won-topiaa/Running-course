@@ -145,6 +145,9 @@ const STRAIGHT_MIN_M = 300;
 const WARN_AHEAD_M = 150;
 const AT_TURN_M = 30;
 
+/** 복귀 판정 기준(m) — 이탈(50m)보다 안쪽이어야 경계 진동에 안 흔들린다 */
+const OFF_ROUTE_RETURN_M = 35;
+
 export interface VoiceNavState {
   enabled: boolean;
   supported: boolean;
@@ -153,6 +156,7 @@ export interface VoiceNavState {
   lastAtTurn: number;
   lastKmAnnounced: number;
   startAnnounced: boolean;
+  completionAnnounced: boolean;
   /** 마지막으로 직진 안내한 턴 인덱스 (턴 통과 후 직진 안내) */
   lastStraightAfterTurn: number;
   /** 이탈 연속 틱 카운터 */
@@ -163,10 +167,13 @@ export interface VoiceNavState {
   wasOffRoute: boolean;
 }
 
+let voiceActive = false;
+
 export function initVoiceNav(
   coords: LatLng[],
   cum: number[],
 ): VoiceNavState {
+  voiceActive = true;
   return {
     enabled: true,
     supported: typeof speechSynthesis !== 'undefined',
@@ -175,6 +182,7 @@ export function initVoiceNav(
     lastAtTurn: -1,
     lastKmAnnounced: 0,
     startAnnounced: false,
+    completionAnnounced: false,
     lastStraightAfterTurn: -1,
     offRouteTicks: 0,
     lastOffRouteAt: 0,
@@ -183,7 +191,7 @@ export function initVoiceNav(
 }
 
 function speak(text: string, vibrate = true) {
-  if (typeof speechSynthesis === 'undefined') return;
+  if (!voiceActive || typeof speechSynthesis === 'undefined') return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'ko-KR';
@@ -200,7 +208,7 @@ function speak(text: string, vibrate = true) {
 }
 
 function speakUrgent(text: string) {
-  if (typeof speechSynthesis === 'undefined') return;
+  if (!voiceActive || typeof speechSynthesis === 'undefined') return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'ko-KR';
@@ -235,9 +243,11 @@ export function tickVoiceNav(
   let next = { ...state };
 
   // ── 이탈 감지 ──────────────────────────────────────────────────
+  let offRoute = false;
   if (current && planned && planned.length > 1) {
     const dist = distToRoute(current, planned, progressIdx);
     if (dist > OFF_ROUTE_M) {
+      offRoute = true;
       next.offRouteTicks = state.offRouteTicks + 1;
       if (
         next.offRouteTicks >= OFF_ROUTE_TICKS &&
@@ -249,18 +259,19 @@ export function tickVoiceNav(
         next.lastOffRouteAt = Date.now();
         next.wasOffRoute = true;
       }
-      return next;
-    } else {
+    } else if (dist <= OFF_ROUTE_RETURN_M) {
       next.offRouteTicks = 0;
       if (state.wasOffRoute) {
         speak('경로로 돌아왔어요. 계속 진행하세요.', false);
         next.wasOffRoute = false;
       }
+    } else {
+      next.offRouteTicks = 0;
     }
   }
 
   // ── 출발 안내 ──────────────────────────────────────────────────
-  if (!state.startAnnounced && progressIdx > 0) {
+  if (!offRoute && !state.startAnnounced && progressIdx > 0) {
     const firstTurn = state.turns[0];
     if (firstTurn) {
       const toFirst = firstTurn.cumM - currentM;
@@ -276,62 +287,64 @@ export function tickVoiceNav(
   }
 
   // ── 턴 안내 ────────────────────────────────────────────────────
-  for (let ti = 0; ti < state.turns.length; ti++) {
-    const turn = state.turns[ti];
-    const ahead = turn.cumM - currentM;
+  if (!offRoute) {
+    for (let ti = 0; ti < state.turns.length; ti++) {
+      const turn = state.turns[ti];
+      const ahead = turn.cumM - currentM;
 
-    if (ahead < -AT_TURN_M) continue;
+      if (ahead < -AT_TURN_M) continue;
 
-    // 예고 안내 (150m 전)
-    if (
-      ahead > AT_TURN_M &&
-      ahead <= WARN_AHEAD_M &&
-      ti > next.lastWarnedTurn
-    ) {
-      const nextTurn = state.turns[ti + 1];
-      let msg = `${distLabel(Math.round(ahead))} 앞에서 ${turnLabel(turn.kind)}`;
-      if (nextTurn) {
-        const gap = nextTurn.cumM - turn.cumM;
-        if (gap < 200) {
-          msg += `, 이어서 ${turnLabel(nextTurn.kind)}`;
+      // 예고 안내 (150m 전)
+      if (
+        ahead > AT_TURN_M &&
+        ahead <= WARN_AHEAD_M &&
+        ti > next.lastWarnedTurn
+      ) {
+        const nextTurn = state.turns[ti + 1];
+        let msg = `${distLabel(Math.round(ahead))} 앞에서 ${turnLabel(turn.kind)}`;
+        if (nextTurn) {
+          const gap = nextTurn.cumM - turn.cumM;
+          if (gap < 200) {
+            msg += `, 이어서 ${turnLabel(nextTurn.kind)}`;
+          }
         }
+        speak(msg);
+        next.lastWarnedTurn = ti;
+        break;
       }
-      speak(msg);
-      next.lastWarnedTurn = ti;
-      break;
-    }
 
-    // 턴 도착 안내 (30m 이내)
-    if (
-      Math.abs(ahead) <= AT_TURN_M &&
-      ti > next.lastAtTurn
-    ) {
-      speak(`지금 ${turnLabel(turn.kind)}`);
-      next.lastAtTurn = ti;
+      // 턴 도착 안내 (30m 이내)
+      if (
+        Math.abs(ahead) <= AT_TURN_M &&
+        ti > next.lastAtTurn
+      ) {
+        speak(`지금 ${turnLabel(turn.kind)}`);
+        next.lastAtTurn = ti;
 
-      // ── 직진 안내: 턴 통과 직후, 다음 턴까지 먼 경우 ──────────
-      const nextTurn = state.turns[ti + 1];
-      if (nextTurn && ti > next.lastStraightAfterTurn) {
-        const gap = nextTurn.cumM - turn.cumM;
-        if (gap >= STRAIGHT_MIN_M) {
-          setTimeout(() => {
-            speak(
-              `다음 안내가 나올 때까지 ${distLabel(Math.round(gap))} 직진하세요.`,
-              false,
-            );
-          }, 2500);
-          next.lastStraightAfterTurn = ti;
+        // ── 직진 안내: 턴 통과 직후, 다음 턴까지 먼 경우 ──────────
+        const nextTurn = state.turns[ti + 1];
+        if (nextTurn && ti > next.lastStraightAfterTurn) {
+          const gap = nextTurn.cumM - turn.cumM;
+          if (gap >= STRAIGHT_MIN_M) {
+            setTimeout(() => {
+              speak(
+                `다음 안내가 나올 때까지 ${distLabel(Math.round(gap))} 직진하세요.`,
+                false,
+              );
+            }, 2500);
+            next.lastStraightAfterTurn = ti;
+          }
+        } else if (!nextTurn && ti > next.lastStraightAfterTurn) {
+          const remain = totalDistM - turn.cumM;
+          if (remain >= STRAIGHT_MIN_M) {
+            setTimeout(() => {
+              speak(`마지막 턴이에요. ${distLabel(Math.round(remain))} 직진하면 도착합니다.`, false);
+            }, 2500);
+            next.lastStraightAfterTurn = ti;
+          }
         }
-      } else if (!nextTurn && ti > next.lastStraightAfterTurn) {
-        const remain = totalDistM - turn.cumM;
-        if (remain >= STRAIGHT_MIN_M) {
-          setTimeout(() => {
-            speak(`마지막 턴이에요. ${distLabel(Math.round(remain))} 직진하면 도착합니다.`, false);
-          }, 2500);
-          next.lastStraightAfterTurn = ti;
-        }
+        break;
       }
-      break;
     }
   }
 
@@ -348,9 +361,9 @@ export function tickVoiceNav(
   // ── 완주 안내 ──────────────────────────────────────────────────
   const remainM = totalDistM - currentM;
   if (remainM <= 30 && totalDistM > 100 && currentM > totalDistM * 0.8) {
-    if (state.lastKmAnnounced !== -999) {
+    if (!state.completionAnnounced) {
       speak('코스 완주! 수고했어요.');
-      next.lastKmAnnounced = -999;
+      next.completionAnnounced = true;
     }
   }
 
@@ -371,6 +384,7 @@ export function toggleVoice(state: VoiceNavState): VoiceNavState {
 
 /** 정리 — 컴포넌트 언마운트 시 */
 export function stopVoiceNav() {
+  voiceActive = false;
   if (typeof speechSynthesis !== 'undefined') {
     speechSynthesis.cancel();
   }

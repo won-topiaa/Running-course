@@ -1384,6 +1384,7 @@ console.log('\n[숲길 캐시] 오래된 값이 메모리를 붙잡고 있으면
   check(stateNoSpeech.offRouteTicks === 0, '이탈 틱 초기값 0');
   check(stateNoSpeech.lastOffRouteAt === 0, '이탈 경고 시각 초기값 0');
   check(stateNoSpeech.wasOffRoute === false, '이탈 복귀 플래그 초기값 false');
+  check(stateNoSpeech.completionAnnounced === false, '완주 안내 플래그 초기값 false');
 
   // distToRoute — 경로 위 점은 거리 0, 멀리 떨어진 점은 큰 값
   const routeForDist = Array.from({ length: 50 }, (_, i) => [37.5, 127.0 + i * 0.0005]);
