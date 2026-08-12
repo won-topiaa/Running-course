@@ -457,7 +457,6 @@ console.log('\n [도플러 교정] 부풀려진 speed 를 감지해 haversine �
   const f5 = createGpsFilter();
   let dist5 = 0;
   let first30mDist = 0;
-  let hitStartup = false;
   for (let k = 1; k <= 60; k++) {
     const v = f5.push({
       lat: LAT0 + (realSpeed * k) / MPD_LAT,
@@ -467,8 +466,7 @@ console.log('\n [도플러 교정] 부풀려진 speed 를 감지해 haversine �
       t: t0 + k * 1000,
     });
     dist5 += v.addM;
-    if (!hitStartup && k <= 30) first30mDist = dist5;
-    if (k === 30) hitStartup = true;
+    if (k <= 30) first30mDist = dist5;
   }
   const truth5 = realSpeed * 60;
   const err5 = ((dist5 - truth5) / truth5) * 100;

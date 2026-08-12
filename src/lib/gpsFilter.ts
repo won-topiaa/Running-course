@@ -335,7 +335,7 @@ export function createGpsFilter() {
       anchor = smooth;
       anchorT = fix.t;
 
-      const addM = (byDoppler && dopplerOK) ? moved : d;
+      const addM = moved > 0 ? moved : d;
       return { accept: true, point: smooth, addM, weak: false, speed: spd };
     },
   };
