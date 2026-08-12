@@ -158,6 +158,8 @@ export interface VoiceNavState {
   lastWarnedTurn: number;
   lastAtTurn: number;
   lastKmAnnounced: number;
+  /** 출발 카운트다운 발화 시각(epoch ms). 0이면 아직 안 함 */
+  startCountdownAt: number;
   startAnnounced: boolean;
   completionAnnounced: boolean;
   /** 마지막으로 직진 안내한 턴 인덱스 (턴 통과 후 직진 안내) */
@@ -188,6 +190,7 @@ export function initVoiceNav(
     lastWarnedTurn: -1,
     lastAtTurn: -1,
     lastKmAnnounced: 0,
+    startCountdownAt: 0,
     startAnnounced: false,
     completionAnnounced: false,
     lastStraightAfterTurn: -1,
@@ -279,16 +282,21 @@ export function tickVoiceNav(
     }
   }
 
-  // ── 출발 안내 ──────────────────────────────────────────────────
+  // ── 출발 안내 (카운트다운 → 5초 뒤 출발 안내) ─────────────────
   if (!offRoute && !state.startAnnounced && progressIdx > 0) {
-    const firstTurn = state.turns[0];
-    if (firstTurn) {
-      const toFirst = firstTurn.cumM - currentM;
-      speak(`출발. ${distLabel(Math.round(toFirst))} 앞 ${turnLabel(firstTurn.kind)}`);
-    } else {
-      speak(`출발. 쭉 직진`);
+    if (state.startCountdownAt === 0) {
+      speak('5초 뒤 코스 출발합니다', false);
+      next.startCountdownAt = Date.now();
+    } else if (Date.now() - state.startCountdownAt >= 5000) {
+      const firstTurn = state.turns[0];
+      if (firstTurn) {
+        const toFirst = firstTurn.cumM - currentM;
+        speak(`출발. ${distLabel(Math.round(toFirst))} 앞 ${turnLabel(firstTurn.kind)}`);
+      } else {
+        speak(`출발. 쭉 직진`);
+      }
+      next.startAnnounced = true;
     }
-    next.startAnnounced = true;
   }
 
   // ── 턴 안내 ────────────────────────────────────────────────────
