@@ -118,6 +118,9 @@ async function authError(res: Response): Promise<string> {
 }
 
 function toSession(t: any): CloudSession {
+  if (!t.access_token || !t.refresh_token) {
+    throw new Error(t.error_description || t.error || '인증에 실패했어요. 다시 시도해 주세요.');
+  }
   return {
     access: t.access_token,
     refresh: t.refresh_token,

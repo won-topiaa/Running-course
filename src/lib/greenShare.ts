@@ -230,12 +230,10 @@ export async function fetchGreenShares(routes: LatLng[][]): Promise<(number | nu
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
     try {
-      // 서버가 '지금 밀린다'(504/429)고 답하면 딱 한 번만 다시 묻는다.
-      // 실측에서 3번 중 1번은 504 가 났는데, 그때마다 줄이 통째로 사라지면
-      // 기능이 있으나 마나다. 두 번까지가 공용 서버에 대한 예의의 한계다.
       let res = await postQuery(bbox, ac.signal);
       if (res.status === 504 || res.status === 429) {
         await new Promise((r) => setTimeout(r, 2000));
+        if (ac.signal.aborted) return empty;
         res = await postQuery(bbox, ac.signal);
       }
       if (!res.ok) return empty;
@@ -310,6 +308,7 @@ export async function fetchGreenPolysForArea(
     let res = await postQuery(bbox, ac.signal);
     if (res.status === 504 || res.status === 429) {
       await new Promise((r) => setTimeout(r, 2000));
+      if (ac.signal.aborted) return null;
       res = await postQuery(bbox, ac.signal);
     }
     if (!res.ok) return null;

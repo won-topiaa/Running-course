@@ -70,6 +70,7 @@ export async function ensureFresh(
   });
   if (!res.ok) throw new Error('토큰 갱신에 실패했어요. 다시 연결해 주세요.');
   const t = await res.json();
+  if (!t.access_token) throw new Error('토큰 갱신에 실패했어요. 다시 연결해 주세요.');
   const next: StravaToken = {
     access: t.access_token,
     refresh: t.refresh_token ?? token.refresh,

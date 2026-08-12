@@ -649,7 +649,7 @@ function SplitList({ splits }: { splits: Split[] }) {
   // 아직 한 구간도 못 채웠으면 아무것도 그리지 않는다. '곧 생긴다'는 안내가
   // 뛰는 내내 한 줄을 차지할 이유가 없다 — 그 자리는 지도에 준다.
   if (!done.length) return null;
-  const slowest = Math.max(...done.map((s) => s.sec));
+  const slowest = Math.max(...done.map((s) => s.sec)) || 1;
   const fastest = Math.min(...done.map((s) => s.sec));
   // 최근 구간이 위로 오게 — 화면이 좁으면 스크롤
   const rows = [...splits].reverse();

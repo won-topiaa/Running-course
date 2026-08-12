@@ -99,7 +99,7 @@ function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose:
 
   const saved = api.isSaved(course.id);
   const n = course.elevation.profile.length;
-  const segLen = (course.distanceKm * 1000) / (n - 1);
+  const segLen = n > 1 ? (course.distanceKm * 1000) / (n - 1) : 0;
   const lengthsM = Array.from({ length: n - 1 }, () => segLen);
   const paceTime = estimateTimeLabel(course.distanceKm, api.settings.paceSecPerKm);
 

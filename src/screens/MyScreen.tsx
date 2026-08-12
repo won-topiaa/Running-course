@@ -54,8 +54,8 @@ function loadShoes(): Shoe[] {
             typeof x === 'object' &&
             typeof x.id === 'string' &&
             typeof x.name === 'string' &&
-            typeof x.km === 'number' &&
-            Number.isFinite(x.km),
+            typeof x.sinceMs === 'number' &&
+            Number.isFinite(x.sinceMs),
         );
       }
     }
@@ -367,7 +367,19 @@ function FeedbackSection({ api }: { api: AppApi }) {
 
   const copyInfo = async () => {
     try {
-      await navigator.clipboard.writeText(diagnostics());
+      const text = diagnostics();
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {

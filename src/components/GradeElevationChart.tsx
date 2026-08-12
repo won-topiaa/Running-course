@@ -37,8 +37,8 @@ export default function GradeElevationChart({
   }
   const X = (i: number) => (xs[i] / (totalLen || 1)) * W;
 
-  const min = Math.min(...elevations);
-  const max = Math.max(...elevations);
+  let min = Infinity, max = -Infinity;
+  for (const e of elevations) { if (e < min) min = e; if (e > max) max = e; }
   const visualRange = Math.max(max - min, 20); // 평지 과장 방지
   const Y = (h: number) =>
     padTop + (1 - (h - min) / visualRange) * (height - padTop - 4);

@@ -125,7 +125,7 @@ export function distToRoute(
   planned: LatLng[],
   progressIdx: number,
 ): number {
-  const lo = Math.max(0, progressIdx - 10);
+  const lo = Math.max(0, progressIdx - SCAN_RANGE);
   const hi = Math.min(planned.length - 1, progressIdx + SCAN_RANGE);
   let minD = Infinity;
   for (let i = lo; i <= hi; i++) {
@@ -177,6 +177,7 @@ export interface VoiceNavState {
 }
 
 let voiceActive = false;
+const pendingTimers: ReturnType<typeof setTimeout>[] = [];
 
 export function initVoiceNav(
   coords: LatLng[],
@@ -322,7 +323,7 @@ export function tickVoiceNav(
           const gap = nextTurn.cumM - turn.cumM;
           if (gap < 200) {
             const nk = turnLabel(nextTurn.kind);
-            setTimeout(() => speak(`이후 ${nk}`, false), 2000);
+            pendingTimers.push(setTimeout(() => speak(`이후 ${nk}`, false), 2000));
           }
         }
         break;
@@ -352,14 +353,14 @@ export function tickVoiceNav(
         if (nextTurn && ti > next.lastStraightAfterTurn) {
           const gap = nextTurn.cumM - turn.cumM;
           if (gap >= STRAIGHT_MIN_M) {
-            setTimeout(() => speak('쭉 직진하세요', false), 2500);
+            pendingTimers.push(setTimeout(() => speak('쭉 직진하세요', false), 2500));
             next.lastStraightAfterTurn = ti;
             next.lastStraightRemindM = currentM;
           }
         } else if (!nextTurn && ti > next.lastStraightAfterTurn) {
           const remain = totalDistM - turn.cumM;
           if (remain >= STRAIGHT_MIN_M) {
-            setTimeout(() => speak('직진하면 도착', false), 2500);
+            pendingTimers.push(setTimeout(() => speak('직진하면 도착', false), 2500));
             next.lastStraightAfterTurn = ti;
             next.lastStraightRemindM = currentM;
           }
@@ -419,6 +420,8 @@ export function toggleVoice(state: VoiceNavState): VoiceNavState {
 /** 정리 — 컴포넌트 언마운트 시 */
 export function stopVoiceNav() {
   voiceActive = false;
+  pendingTimers.forEach(clearTimeout);
+  pendingTimers.length = 0;
   if (typeof speechSynthesis !== 'undefined') {
     speechSynthesis.cancel();
   }

@@ -99,5 +99,11 @@ export function applyBackup(obj: unknown): number {
 
 export async function importBackupFile(file: File): Promise<number> {
   const text = await file.text();
-  return applyBackup(JSON.parse(text));
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error('백업 파일을 읽을 수 없어요. 올바른 JSON 파일인지 확인해 주세요.');
+  }
+  return applyBackup(data);
 }
