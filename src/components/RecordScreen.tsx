@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Pause, Play, Square, X, Zap } from 'lucide-react';
+import { Loader2, Pause, Play, Square, Volume2, VolumeX, X, Zap } from 'lucide-react';
 import LiveMap from './LiveMap';
 import RouteSheet from './RouteSheet';
 import { savedFromView } from '../lib/savedRoutes';
@@ -31,6 +31,13 @@ import {
 import { kmSplits, type Split } from '../lib/splits';
 import type { RouteResult } from '../lib/routing';
 import type { LatLng } from '../lib/types';
+import {
+  initVoiceNav,
+  tickVoiceNav,
+  toggleVoice,
+  stopVoiceNav,
+  type VoiceNavState,
+} from '../lib/voiceNav';
 import type { AppApi, RouteView } from '../ui/appApi';
 
 /**
@@ -138,6 +145,21 @@ export default function RecordScreen({
     () => (planned ? cumulativeMeters(planned.route.coords) : null),
     [planned],
   );
+
+  // ── 음성 턴바이턴 내비게이션 ────────────────────────────────
+  const [voiceNav, setVoiceNav] = useState<VoiceNavState | null>(null);
+  useEffect(() => {
+    if (!planned || !plannedCum) return;
+    setVoiceNav(initVoiceNav(planned.route.coords, plannedCum));
+    return () => stopVoiceNav();
+  }, [planned, plannedCum]);
+
+  useEffect(() => {
+    if (!voiceNav || !plannedCum || !planned) return;
+    const totalM = plannedCum[plannedCum.length - 1] ?? 0;
+    const next = tickVoiceNav(voiceNav, idx, plannedCum, rec.distanceKm, totalM);
+    if (next !== voiceNav) setVoiceNav(next);
+  }, [idx, rec.distanceKm]);
 
   // 지나온 구간은 경사 색상, 남은 구간은 눈금(점선)
   const { traveled, remainPath, remainM, ratio } = useMemo(() => {
@@ -349,6 +371,19 @@ export default function RecordScreen({
           <span className="absolute right-4 top-[calc(env(safe-area-inset-top,0px)+0.75rem)] z-[1000] inline-flex items-center gap-1 rounded-full bg-ink/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-volt backdrop-blur">
             <Zap size={12} /> DEMO
           </span>
+        )}
+        {planned && voiceNav?.supported && live && !acquiring && (
+          <button
+            onClick={() => setVoiceNav((v) => v ? toggleVoice(v) : v)}
+            className={`absolute z-[1000] grid h-11 w-11 place-items-center rounded-full backdrop-blur active:scale-90 ${
+              rec.demo
+                ? 'right-4 top-[calc(env(safe-area-inset-top,0px)+3.5rem)]'
+                : 'right-4 top-[calc(env(safe-area-inset-top,0px)+0.75rem)]'
+            } ${voiceNav.enabled ? 'bg-volt/90 text-ink' : 'bg-ink/80 text-white'}`}
+            aria-label={voiceNav.enabled ? '음성 안내 끄기' : '음성 안내 켜기'}
+          >
+            {voiceNav.enabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
+          </button>
         )}
       </div>
 

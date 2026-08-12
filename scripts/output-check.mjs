@@ -1320,5 +1320,65 @@ console.log('\n[숲길 캐시] 오래된 값이 메모리를 붙잡고 있으면
   check(parse({})?.name === '한강 러닝', '정상 링크는 이름이 그대로 (검사가 헛돌지 않게)');
 }
 
+// ---------------------------------------------------------------------------
+// 음성 턴바이턴 내비게이션 — 턴 감지 + 안내 상태 전이
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[음성 내비] 턴 감지와 안내 상태가 정확한지');
+  const VN = await bundle('src/lib/voiceNav.ts', 'voiceNav.mjs');
+  const { cumulativeMeters } = await bundle('src/lib/routeProgress.ts', 'routeProgress2.mjs');
+
+  // 직진 경로 — 턴이 없어야 한다
+  const straight = Array.from({ length: 100 }, (_, i) => [37.5 + i * 0.0005, 127.0]);
+  const cumStr = cumulativeMeters(straight);
+  const turnsStr = VN.detectTurns(straight, cumStr);
+  check(turnsStr.length === 0, `직진 경로는 턴이 없다 (감지 ${turnsStr.length}개)`);
+
+  // L자 경로 — 직진 후 90도 우회전
+  const lRoute = [];
+  for (let i = 0; i < 30; i++) lRoute.push([37.5, 127.0 + i * 0.0005]);
+  for (let i = 1; i <= 30; i++) lRoute.push([37.5 + i * 0.0005, 127.0 + 29 * 0.0005]);
+  const cumL = cumulativeMeters(lRoute);
+  const turnsL = VN.detectTurns(lRoute, cumL);
+  check(turnsL.length >= 1, `L자 경로에서 턴 감지 (${turnsL.length}개)`);
+  if (turnsL.length > 0) {
+    // 동쪽→북쪽은 좌회전
+    check(
+      turnsL[0].kind === 'left' || turnsL[0].kind === 'sharp-left',
+      `L자 좌회전 → kind=${turnsL[0].kind}`,
+    );
+  }
+
+  // U자 경로 — 직진 후 180도 유턴
+  const uRoute = [];
+  for (let i = 0; i < 30; i++) uRoute.push([37.5 + i * 0.0005, 127.0]);
+  for (let i = 1; i <= 5; i++) uRoute.push([37.5 + 29 * 0.0005, 127.0 + i * 0.0003]);
+  for (let i = 1; i <= 30; i++) uRoute.push([37.5 + (29 - i) * 0.0005, 127.0 + 5 * 0.0003]);
+  const cumU = cumulativeMeters(uRoute);
+  const turnsU = VN.detectTurns(uRoute, cumU);
+  check(turnsU.length >= 1, `U자 경로에서 턴 감지 (${turnsU.length}개)`);
+
+  // initVoiceNav — speechSynthesis 가 없으면 supported=false
+  const stateNoSpeech = VN.initVoiceNav(straight, cumStr);
+  check(stateNoSpeech.supported === false, 'Node.js 환경에서는 supported=false');
+  check(stateNoSpeech.enabled === true, '기본값은 enabled=true');
+
+  // tickVoiceNav — supported=false 면 상태가 변하지 않는다
+  const same = VN.tickVoiceNav(stateNoSpeech, 10, cumStr, 0.5, cumStr[cumStr.length - 1]);
+  check(same === stateNoSpeech, 'unsupported 환경에서 tick 은 동일 객체 반환');
+
+  // toggleVoice — 토글이 동작한다
+  const toggled = VN.toggleVoice(stateNoSpeech);
+  check(toggled.enabled === false, 'toggleVoice → enabled=false');
+  const toggledBack = VN.toggleVoice(toggled);
+  check(toggledBack.enabled === true, '다시 toggleVoice → enabled=true');
+
+  // 짧은 경로 (4점 미만) — 턴 감지가 에러 없이 빈 배열
+  const tiny = [[37.5, 127.0], [37.501, 127.0]];
+  const cumTiny = cumulativeMeters(tiny);
+  const turnsTiny = VN.detectTurns(tiny, cumTiny);
+  check(turnsTiny.length === 0, '2점 경로는 안 깨지고 빈 배열');
+}
+
 console.log(`\n통과 ${ok.length} / 실패 ${bad.length}`);
 if (bad.length) process.exit(1);
