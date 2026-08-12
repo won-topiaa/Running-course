@@ -54,7 +54,6 @@ export function detectTurns(
   let lastTurnCumM = 0;
 
   for (let i = 2; i < coords.length - 2; i++) {
-    // smoothM 만큼 뒤·앞의 점을 찾는다
     let back = i - 1;
     while (back > 0 && cum[i] - cum[back] < smoothM) back--;
     let fwd = i + 1;
@@ -67,7 +66,6 @@ export function detectTurns(
     const delta = normalizeAngle(bOut - bIn);
 
     if (Math.abs(delta) < TURN_THRESHOLD_DEG) continue;
-    // 너무 가까운 턴은 하나로 (40m 이내)
     if (cum[i] - lastTurnCumM < 40) continue;
 
     turns.push({
@@ -100,6 +98,48 @@ function distLabel(m: number): string {
   return `${Math.round(m)}미터`;
 }
 
+// ── 이탈 감지 ───────────────────────────────────────────────────────────────
+
+/**
+ * 이탈 판정 기준(m).
+ *
+ * 휴대폰 GPS 오차: 하늘 열린 곳 5~10m, 도심 건물 사이 15~30m,
+ * 앱의 MAX_ACCURACY_M = 50m (그 이상은 측위 자체를 버림).
+ * 50m 로 잡으면 GPS 오차만으로 이탈이 뜰 확률은 거의 없고,
+ * 진짜 길을 잘못 들었을 때(교차로 하나 = 보통 50~80m) 잡아낸다.
+ */
+const OFF_ROUTE_M = 50;
+/** 연속 이탈 확인 횟수 — 순간 튀는 GPS 1회에 울리지 않게 */
+const OFF_ROUTE_TICKS = 3;
+/** 이탈 경고 재발화 최소 간격(ms) — 10초에 한 번만 */
+const OFF_ROUTE_COOLDOWN_MS = 10_000;
+
+/**
+ * 현재 위치에서 계획 경로까지 최소 거리를 구한다.
+ * 전체 경로를 훑지 않고 progressIdx 주변 ±SCAN 범위만 본다.
+ */
+const SCAN_RANGE = 80;
+
+export function distToRoute(
+  current: LatLng,
+  planned: LatLng[],
+  progressIdx: number,
+): number {
+  const lo = Math.max(0, progressIdx - 10);
+  const hi = Math.min(planned.length - 1, progressIdx + SCAN_RANGE);
+  let minD = Infinity;
+  for (let i = lo; i <= hi; i++) {
+    const d = haversineMeters(current, planned[i]);
+    if (d < minD) minD = d;
+  }
+  return minD;
+}
+
+// ── 직진 안내 ───────────────────────────────────────────────────────────────
+
+/** 직진 안내를 하는 최소 구간 거리(m) — 이보다 짧으면 굳이 말 안 한다 */
+const STRAIGHT_MIN_M = 300;
+
 // ── 음성 엔진 ───────────────────────────────────────────────────────────────
 
 const WARN_AHEAD_M = 150;
@@ -109,13 +149,18 @@ export interface VoiceNavState {
   enabled: boolean;
   supported: boolean;
   turns: TurnPoint[];
-  /** 마지막으로 안내한 턴 인덱스 (-1 = 아직 없음) */
   lastWarnedTurn: number;
   lastAtTurn: number;
-  /** 마지막으로 안내한 km 이정표 */
   lastKmAnnounced: number;
-  /** 출발 안내 했는지 */
   startAnnounced: boolean;
+  /** 마지막으로 직진 안내한 턴 인덱스 (턴 통과 후 직진 안내) */
+  lastStraightAfterTurn: number;
+  /** 이탈 연속 틱 카운터 */
+  offRouteTicks: number;
+  /** 마지막 이탈 경고 시각(epoch ms) */
+  lastOffRouteAt: number;
+  /** 이탈 복귀 안내 발화 여부 (이탈→복귀 시 한 번만) */
+  wasOffRoute: boolean;
 }
 
 export function initVoiceNav(
@@ -130,6 +175,10 @@ export function initVoiceNav(
     lastAtTurn: -1,
     lastKmAnnounced: 0,
     startAnnounced: false,
+    lastStraightAfterTurn: -1,
+    offRouteTicks: 0,
+    lastOffRouteAt: 0,
+    wasOffRoute: false,
   };
 }
 
@@ -140,14 +189,30 @@ function speak(text: string, vibrate = true) {
   u.lang = 'ko-KR';
   u.rate = 1.15;
   u.pitch = 1.0;
-  // 한국어 음성 선호
   const voices = speechSynthesis.getVoices();
   const ko = voices.find((v) => v.lang.startsWith('ko'));
   if (ko) u.voice = ko;
   speechSynthesis.speak(u);
 
   if (vibrate && navigator.vibrate) {
-    navigator.vibrate([200, 100, 200]);
+    navigator.vibrate(vibrate === true ? [200, 100, 200] : [200, 100, 200]);
+  }
+}
+
+function speakUrgent(text: string) {
+  if (typeof speechSynthesis === 'undefined') return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ko-KR';
+  u.rate = 1.0;
+  u.pitch = 1.1;
+  const voices = speechSynthesis.getVoices();
+  const ko = voices.find((v) => v.lang.startsWith('ko'));
+  if (ko) u.voice = ko;
+  speechSynthesis.speak(u);
+
+  if (navigator.vibrate) {
+    navigator.vibrate([300, 150, 300, 150, 300]);
   }
 }
 
@@ -161,20 +226,51 @@ export function tickVoiceNav(
   cum: number[],
   distanceKm: number,
   totalDistM: number,
+  current?: LatLng | null,
+  planned?: LatLng[],
 ): VoiceNavState {
   if (!state.enabled || !state.supported) return state;
 
   const currentM = cum[Math.min(progressIdx, cum.length - 1)] ?? 0;
   let next = { ...state };
 
+  // ── 이탈 감지 ──────────────────────────────────────────────────
+  if (current && planned && planned.length > 1) {
+    const dist = distToRoute(current, planned, progressIdx);
+    if (dist > OFF_ROUTE_M) {
+      next.offRouteTicks = state.offRouteTicks + 1;
+      if (
+        next.offRouteTicks >= OFF_ROUTE_TICKS &&
+        Date.now() - state.lastOffRouteAt > OFF_ROUTE_COOLDOWN_MS
+      ) {
+        speakUrgent(
+          `경로에서 ${distLabel(Math.round(dist))} 벗어났어요. 화면에서 경로를 확인해 주세요.`,
+        );
+        next.lastOffRouteAt = Date.now();
+        next.wasOffRoute = true;
+      }
+      return next;
+    } else {
+      next.offRouteTicks = 0;
+      if (state.wasOffRoute) {
+        speak('경로로 돌아왔어요. 계속 진행하세요.', false);
+        next.wasOffRoute = false;
+      }
+    }
+  }
+
   // ── 출발 안내 ──────────────────────────────────────────────────
   if (!state.startAnnounced && progressIdx > 0) {
     const firstTurn = state.turns[0];
     if (firstTurn) {
       const toFirst = firstTurn.cumM - currentM;
-      speak(`코스를 시작합니다. ${distLabel(Math.round(toFirst))} 앞에서 ${turnLabel(firstTurn.kind)}.`);
+      if (toFirst > STRAIGHT_MIN_M) {
+        speak(`코스를 시작합니다. ${distLabel(Math.round(toFirst))} 직진 후 ${turnLabel(firstTurn.kind)}.`);
+      } else {
+        speak(`코스를 시작합니다. ${distLabel(Math.round(toFirst))} 앞에서 ${turnLabel(firstTurn.kind)}.`);
+      }
     } else {
-      speak(`코스를 시작합니다. ${distLabel(Math.round(totalDistM))} 직진입니다.`);
+      speak(`코스를 시작합니다. 다음 안내가 나올 때까지 쭉 직진하세요.`);
     }
     next.startAnnounced = true;
   }
@@ -184,7 +280,6 @@ export function tickVoiceNav(
     const turn = state.turns[ti];
     const ahead = turn.cumM - currentM;
 
-    // 이미 지나간 턴은 건너뛴다
     if (ahead < -AT_TURN_M) continue;
 
     // 예고 안내 (150m 전)
@@ -213,6 +308,29 @@ export function tickVoiceNav(
     ) {
       speak(`지금 ${turnLabel(turn.kind)}`);
       next.lastAtTurn = ti;
+
+      // ── 직진 안내: 턴 통과 직후, 다음 턴까지 먼 경우 ──────────
+      const nextTurn = state.turns[ti + 1];
+      if (nextTurn && ti > next.lastStraightAfterTurn) {
+        const gap = nextTurn.cumM - turn.cumM;
+        if (gap >= STRAIGHT_MIN_M) {
+          setTimeout(() => {
+            speak(
+              `다음 안내가 나올 때까지 ${distLabel(Math.round(gap))} 직진하세요.`,
+              false,
+            );
+          }, 2500);
+          next.lastStraightAfterTurn = ti;
+        }
+      } else if (!nextTurn && ti > next.lastStraightAfterTurn) {
+        const remain = totalDistM - turn.cumM;
+        if (remain >= STRAIGHT_MIN_M) {
+          setTimeout(() => {
+            speak(`마지막 턴이에요. ${distLabel(Math.round(remain))} 직진하면 도착합니다.`, false);
+          }, 2500);
+          next.lastStraightAfterTurn = ti;
+        }
+      }
       break;
     }
   }

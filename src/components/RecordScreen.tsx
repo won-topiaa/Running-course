@@ -157,7 +157,7 @@ export default function RecordScreen({
   useEffect(() => {
     if (!voiceNav || !plannedCum || !planned) return;
     const totalM = plannedCum[plannedCum.length - 1] ?? 0;
-    const next = tickVoiceNav(voiceNav, idx, plannedCum, rec.distanceKm, totalM);
+    const next = tickVoiceNav(voiceNav, idx, plannedCum, rec.distanceKm, totalM, cur, planned?.route.coords);
     if (next !== voiceNav) setVoiceNav(next);
   }, [idx, rec.distanceKm]);
 

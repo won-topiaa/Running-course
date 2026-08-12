@@ -1378,6 +1378,21 @@ console.log('\n[숲길 캐시] 오래된 값이 메모리를 붙잡고 있으면
   const cumTiny = cumulativeMeters(tiny);
   const turnsTiny = VN.detectTurns(tiny, cumTiny);
   check(turnsTiny.length === 0, '2점 경로는 안 깨지고 빈 배열');
+
+  // initVoiceNav — 새 state 필드들이 올바른 초기값을 갖는다
+  check(stateNoSpeech.lastStraightAfterTurn === -1, '직진 안내 인덱스 초기값 -1');
+  check(stateNoSpeech.offRouteTicks === 0, '이탈 틱 초기값 0');
+  check(stateNoSpeech.lastOffRouteAt === 0, '이탈 경고 시각 초기값 0');
+  check(stateNoSpeech.wasOffRoute === false, '이탈 복귀 플래그 초기값 false');
+
+  // distToRoute — 경로 위 점은 거리 0, 멀리 떨어진 점은 큰 값
+  const routeForDist = Array.from({ length: 50 }, (_, i) => [37.5, 127.0 + i * 0.0005]);
+  const onRoute = [37.5, 127.005];
+  const distOn = VN.distToRoute(onRoute, routeForDist, 10);
+  check(distOn < 1, `경로 위 점의 거리 ≈ 0 (${distOn.toFixed(1)}m)`);
+  const offRoute = [37.502, 127.005];
+  const distOff = VN.distToRoute(offRoute, routeForDist, 10);
+  check(distOff > 100, `경로에서 먼 점의 거리 > 100m (${distOff.toFixed(0)}m)`);
 }
 
 console.log(`\n통과 ${ok.length} / 실패 ${bad.length}`);
