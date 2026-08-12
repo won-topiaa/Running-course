@@ -235,7 +235,6 @@ export function createGpsFilter() {
           moved = confirmedStill ? 0 : Math.min(spd as number, MAX_SPEED_MS) * dt;
         }
       }
-      if (byDoppler && moved > 0) dopplerCum += moved;
       lastT = fix.t;
 
       const raw: LatLng = [fix.lat, fix.lng];
@@ -261,6 +260,7 @@ export function createGpsFilter() {
           ? raw
           : [smooth[0] + alpha * (raw[0] - smooth[0]), smooth[1] + alpha * (raw[1] - smooth[1])];
 
+      if (byDoppler && moved > 0) dopplerCum += moved;
       if (prevSmooth) pathCum += haversineMeters(prevSmooth, smooth);
       prevSmooth = smooth;
 

@@ -409,6 +409,28 @@ console.log('\n [도플러 교정] 부풀려진 speed 를 감지해 haversine �
   if (Math.abs(err2) > 6) calibFails.push(`정상 기기가 교정에 걸려 오차 ${err2.toFixed(1)}% (한도 ±6%)`);
   else console.log('  ✅ 정상 기기는 교정에 안 걸린다');
 
+  // 정확도가 40% 확률로 50m 를 넘는 도심 — 정상 도플러가 교정에 걸리면 안 된다
+  const f3 = createGpsFilter();
+  let dist3 = 0;
+  const rnd3 = seeded(99);
+  for (let k = 1; k <= 600; k++) {
+    const accFlicker = rnd3() < 0.4 ? 55 : 10;
+    const v = f3.push({
+      lat: LAT0 + (realSpeed * k) / MPD_LAT,
+      lng: LNG0,
+      accuracy: accFlicker,
+      speed: Math.max(0, realSpeed + gauss() * 0.3),
+      t: t0 + k * 1000,
+    });
+    dist3 += v.addM;
+  }
+  const err3 = ((dist3 - truth) / truth) * 100;
+  console.log(
+    `  정확도 간헐 초과(40%) · 10분 → ${(dist3 / 1000).toFixed(2)}km 오차 ${err3 >= 0 ? '+' : ''}${err3.toFixed(1)}%`,
+  );
+  if (Math.abs(err3) > 10) calibFails.push(`정확도 간헐 초과에서 정상 도플러가 교정에 걸려 오차 ${err3.toFixed(1)}% (한도 ±10%)`);
+  else console.log('  ✅ 정확도가 자주 나빠도 정상 도플러는 교정에 안 걸린다');
+
   if (calibFails.length) {
     calibFails.forEach((x) => console.log('  ❌ ' + x));
     process.exit(1);
