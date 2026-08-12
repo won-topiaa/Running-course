@@ -325,6 +325,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
       filterRef.current!.reset();
       paceWinRef.current!.reset();
       winPaceRef.current = null;
+      sawAltRef.current = false;
       statusRef.current = 'recording';
       sync({
         status: 'recording',
@@ -538,6 +539,7 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
     activeMsRef.current = 0;
     autoPausedMsRef.current = 0;
     stillSinceRef.current = null;
+    sawAltRef.current = false;
     filterRef.current?.reset();
     setState({
       status: 'idle',

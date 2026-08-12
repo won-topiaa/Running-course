@@ -172,6 +172,10 @@ export function createGpsFilter() {
       stillTicks = 0;
       lastT = null;
       prevSmooth = null;
+      dopplerOK = true;
+      dopplerCum = 0;
+      pathCum = 0;
+      calibBuf = [];
     },
 
     get speed() {

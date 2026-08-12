@@ -25,7 +25,7 @@ export interface SavedRoute {
   distanceKm: number;
   ascentM: number;
   maxGradePct: number;
-  source: 'ors' | 'offline' | 'gps';
+  source: 'ors' | 'osrm' | 'offline' | 'gps';
   coords: LatLng[];
   elevations: number[];
   durationSec?: number; // 기록한 러닝에만
@@ -174,7 +174,7 @@ export function savedFromView(v: {
   source: string;
   durationSec?: number;
 }): SavedRoute {
-  const src: SavedRoute['source'] = v.source === 'ors' || v.source === 'gps' ? v.source : 'offline';
+  const src: SavedRoute['source'] = v.source === 'ors' || v.source === 'osrm' || v.source === 'gps' ? v.source : 'offline';
   return compactRoute({
     id: rid(),
     name: v.name,
@@ -326,6 +326,7 @@ function safeName(v: unknown): string {
 
 function resample(values: number[], n: number): number[] {
   if (values.length === 0) return new Array(n).fill(0);
+  if (n === 1) return [values[0]];
   if (values.length === n) return values.slice();
   const out: number[] = [];
   for (let i = 0; i < n; i++) {

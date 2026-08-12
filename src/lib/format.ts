@@ -78,6 +78,6 @@ export function estimateTimeLabel(distanceKm: number, paceSecPerKm: number): str
 /** 거리(km) → "3.5km" / "820m" */
 export function formatDistance(km: number): string {
   if (km < 1) return `${Math.round(km * 1000)}m`;
-  return `${km.toFixed(km < 10 ? 2 : 1).replace(/\.0$/, '')}km`;
+  return `${km.toFixed(km < 10 ? 2 : 1).replace(/\.?0+$/, '')}km`;
 }
 
