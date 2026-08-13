@@ -199,23 +199,37 @@ let voicesBound = false;
 
 function pickKoVoice() {
   if (typeof speechSynthesis === 'undefined') return;
-  const found = speechSynthesis
-    .getVoices()
-    .find((v) => v.lang.replace('_', '-').toLowerCase().startsWith('ko'));
-  // 못 찾았다고 쥐고 있던 목소리를 버리지 않는다. voiceschanged 는 목록이 빈
-  // 채로도 오는데, 거기서 null 을 덮어쓰면 영어 엔진이 한글을 읽기 시작한다.
-  if (found) koVoice = found;
+  try {
+    const found = speechSynthesis
+      .getVoices()
+      .find((v) => v.lang.replace('_', '-').toLowerCase().startsWith('ko'));
+    // 못 찾았다고 쥐고 있던 목소리를 버리지 않는다. voiceschanged 는 목록이 빈
+    // 채로도 오는데, 거기서 null 을 덮어쓰면 영어 엔진이 한글을 읽기 시작한다.
+    if (found) koVoice = found;
+  } catch {
+    // getVoices 가 던지는 WebView — 기본 목소리로 말한다
+  }
 }
 
 function ensureVoices() {
   if (voicesBound || typeof speechSynthesis === 'undefined') return;
   voicesBound = true;
   pickKoVoice();
-  speechSynthesis.addEventListener?.('voiceschanged', pickKoVoice);
+  try {
+    speechSynthesis.addEventListener?.('voiceschanged', pickKoVoice);
+  } catch {
+    /* 이벤트 등록 실패 — 첫 발화 때 다시 고른다 */
+  }
   // 주머니에 넣어 화면이 꺼지면(화면 유지 락이 실패할 수 있다) 브라우저가
   // 음성 엔진을 재워버리는 경우가 있다. 돌아왔을 때 깨워 둔다.
   document.addEventListener?.('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && voiceActive) speechSynthesis.resume();
+    if (document.visibilityState === 'visible' && voiceActive) {
+      try {
+        speechSynthesis.resume();
+      } catch {
+        /* resume 실패는 다음 발화가 대신한다 */
+      }
+    }
   });
 }
 
@@ -228,7 +242,8 @@ export function initVoiceNav(
   ensureVoices();
   return {
     enabled: true,
-    supported: typeof speechSynthesis !== 'undefined',
+    supported:
+      typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined',
     turns: detectTurns(coords, cum),
     lastWarnedTurn: -1,
     lastAtTurn: -1,
@@ -279,39 +294,54 @@ function speak(
   text: string,
   { level = 'normal', vibrate = true }: { level?: SpeakLevel; vibrate?: boolean } = {},
 ): boolean {
-  if (!voiceActive || !voiceEnabled || typeof speechSynthesis === 'undefined') return false;
-
-  const now = Date.now();
-  inflight = inflight.filter((t) => now - t < SPEAK_TTL_MS);
-
-  if (level !== 'normal') {
-    speechSynthesis.cancel();
-    inflight = [];
-  } else if (inflight.length >= MAX_QUEUED) {
-    return false; // 이미 밀려 있다 — 지금 말해봐야 한참 뒤에 나온다
+  if (
+    !voiceActive ||
+    !voiceEnabled ||
+    typeof speechSynthesis === 'undefined' ||
+    typeof SpeechSynthesisUtterance === 'undefined'
+  ) {
+    return false;
   }
 
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'ko-KR';
-  u.rate = level === 'alert' ? 1.0 : 1.05;
-  u.pitch = level === 'alert' ? 1.1 : 1.0;
-  // 첫 발화 때 목록이 비어 못 골랐을 수 있다 — 있을 때 다시 집는다
-  if (!koVoice) pickKoVoice();
-  if (koVoice) u.voice = koVoice;
+  // 전부 try 로 감싼다. 일부 안드로이드 WebView 는 speechSynthesis 는 있는데
+  // 발화 생성/재생에서 던지는데, 이 함수는 러닝 화면의 측위 effect 안에서
+  // 불린다 — 여기서 새어 나가면 안내가 안 나오는 게 아니라 뛰는 도중 화면
+  // 전체가 오류 화면으로 떨어진다. 음성은 부가 기능이라 조용히 포기가 맞다.
+  try {
+    const now = Date.now();
+    inflight = inflight.filter((t) => now - t < SPEAK_TTL_MS);
 
-  inflight.push(now);
-  const done = () => {
-    const i = inflight.indexOf(now);
-    if (i >= 0) inflight.splice(i, 1);
-  };
-  u.onend = done;
-  u.onerror = done;
-  speechSynthesis.speak(u);
+    if (level !== 'normal') {
+      speechSynthesis.cancel();
+      inflight = [];
+    } else if (inflight.length >= MAX_QUEUED) {
+      return false; // 이미 밀려 있다 — 지금 말해봐야 한참 뒤에 나온다
+    }
 
-  if (vibrate && navigator.vibrate) {
-    navigator.vibrate(level === 'alert' ? VIBRATE_ALERT : VIBRATE_TURN);
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ko-KR';
+    u.rate = level === 'alert' ? 1.0 : 1.05;
+    u.pitch = level === 'alert' ? 1.1 : 1.0;
+    // 첫 발화 때 목록이 비어 못 골랐을 수 있다 — 있을 때 다시 집는다
+    if (!koVoice) pickKoVoice();
+    if (koVoice) u.voice = koVoice;
+
+    inflight.push(now);
+    const done = () => {
+      const i = inflight.indexOf(now);
+      if (i >= 0) inflight.splice(i, 1);
+    };
+    u.onend = done;
+    u.onerror = done;
+    speechSynthesis.speak(u);
+
+    if (vibrate && navigator.vibrate) {
+      navigator.vibrate(level === 'alert' ? VIBRATE_ALERT : VIBRATE_TURN);
+    }
+    return true;
+  } catch {
+    return false;
   }
-  return true;
 }
 
 /**
@@ -545,7 +575,13 @@ export function toggleVoice(state: VoiceNavState): VoiceNavState {
     pendingTimers.forEach(clearTimeout);
     pendingTimers.length = 0;
     inflight = [];
-    if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+    if (typeof speechSynthesis !== 'undefined') {
+      try {
+        speechSynthesis.cancel();
+      } catch {
+        /* 무시 — 끝내는 길이다 */
+      }
+    }
   } else {
     speak('음성 안내를 시작합니다', { vibrate: false });
   }
@@ -559,6 +595,10 @@ export function stopVoiceNav() {
   pendingTimers.length = 0;
   inflight = [];
   if (typeof speechSynthesis !== 'undefined') {
-    speechSynthesis.cancel();
+    try {
+      speechSynthesis.cancel();
+    } catch {
+      /* 무시 — 정리 경로다 */
+    }
   }
 }

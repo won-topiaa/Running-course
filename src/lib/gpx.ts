@@ -38,7 +38,11 @@ export function buildGpx({
         elevationKnown && elevations?.[i] != null
           ? `<ele>${elevations[i].toFixed(1)}</ele>`
           : '';
-      const time = times?.[i] != null ? `<time>${new Date(times[i]).toISOString()}</time>` : '';
+      // NaN 은 != null 을 통과하는데 toISOString 이 RangeError 를 던진다 —
+      // 손상된 백업에서 온 시각 하나가 내보내기 전체를 죽이면 안 된다
+      const time = Number.isFinite(times?.[i])
+        ? `<time>${new Date(times![i]).toISOString()}</time>`
+        : '';
       return `      <trkpt lat="${lat.toFixed(6)}" lon="${lng.toFixed(6)}">${ele}${time}</trkpt>`;
     })
     .join('\n');

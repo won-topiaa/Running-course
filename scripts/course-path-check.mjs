@@ -319,6 +319,61 @@ console.log('\n[러닝 화면] 지나온 선과 남은 점선이 같은 기하 �
   check(coloredSegmentsUpTo(fakeRoute, 0).length === 0, 'idx=0 이면 지나온 선이 없다');
 }
 
+// ── 크래시 방어 — 던지는 브라우저 API·손상된 시각 ───────────────────────
+console.log('\n[크래시 방어] 음성 합성이 던져도 러닝 틱은 계속된다');
+{
+  // 일부 안드로이드 WebView 흉내: speechSynthesis 는 있는데 뭘 하든 던진다
+  globalThis.speechSynthesis = {
+    cancel() { throw new Error('webview cancel fail'); },
+    speak() { throw new Error('webview speak fail'); },
+    resume() { throw new Error('webview resume fail'); },
+    getVoices() { throw new Error('webview voices fail'); },
+    addEventListener() {},
+  };
+  globalThis.SpeechSynthesisUtterance = class { constructor() { throw new Error('webview utterance fail'); } };
+  // node 에는 document 가 없다 — 브라우저 흉내이므로 최소 스텁을 둔다
+  globalThis.document = { addEventListener() {}, visibilityState: 'visible' };
+  const { initVoiceNav, tickVoiceNav } = await bundle('src/lib/voiceNav.ts', 'vn.mjs');
+  const navPts = [];
+  for (let m = 0; m <= 1000; m += 20) navPts.push([37.5 + m * LAT, 127.0]);
+  const navCum = cumulativeMeters(navPts);
+  let threw = false;
+  try {
+    let st = initVoiceNav(navPts, navCum);
+    let ni = 0;
+    for (let m = 0; m <= 1000; m += 50) {
+      while (ni + 1 < navPts.length && navCum[ni + 1] <= m) ni++;
+      st = tickVoiceNav(st, ni, navCum, m / 1000, 1, [37.5 + m * LAT, 127.0], navPts);
+    }
+  } catch (e) {
+    threw = true;
+  }
+  check(!threw, '던지는 speechSynthesis 스텁에서도 initVoiceNav/tickVoiceNav 가 예외 없이 완주');
+  delete globalThis.speechSynthesis;
+  delete globalThis.SpeechSynthesisUtterance;
+  delete globalThis.document;
+}
+
+console.log('\n[크래시 방어] 손상된 시각이 GPX 내보내기를 죽이지 않는다');
+{
+  const { buildGpx } = await bundle('src/lib/gpx.ts', 'gx.mjs');
+  const coords = [[37.5, 127.0], [37.501, 127.0], [37.502, 127.0]];
+  let gpx = null;
+  try {
+    gpx = buildGpx({
+      name: '테스트',
+      coords,
+      elevations: [10, 11, 12],
+      times: [Date.now(), NaN, Date.now() + 2000], // 가운데가 손상
+    });
+  } catch { /* threw */ }
+  check(gpx != null, 'NaN 시각이 섞여도 buildGpx 가 던지지 않는다');
+  // metadata 의 내보내기 시각은 별개다 — 좌표(trkpt)에 붙은 time 만 센다
+  const trkptTimes = gpx == null ? 0 : (gpx.match(/trkpt[^\n]*<time>/g) ?? []).length;
+  check(trkptTimes === 2, `손상된 시각만 빠지고 나머지 2개는 남는다 (trkpt time ${trkptTimes}개)`);
+  check(gpx != null && !gpx.includes('NaN'), 'GPX 본문에 NaN 이 없다');
+}
+
 // ── 따라 뛰기 진행 판정 ──────────────────────────────────────────────────
 // 왕복 코스는 가는 길과 오는 길 좌표가 같은 자리에 겹친다. 진행 인덱스가
 // 반환점 앞에서 돌아오는 쪽 쌍둥이 점으로 건너뛰면 남은 거리가 순간 붕괴하고
