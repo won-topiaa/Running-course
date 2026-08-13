@@ -177,13 +177,51 @@ export interface VoiceNavState {
 }
 
 let voiceActive = false;
+/** 토글 상태의 사본 — 지연 발화(setTimeout)가 끈 뒤에 울리는 걸 막는다 */
+let voiceEnabled = true;
 const pendingTimers: ReturnType<typeof setTimeout>[] = [];
+
+/** 끝나면 스스로 목록에서 빠지는 타이머 — 긴 러닝에서 배열이 계속 자라지 않게 */
+function later(ms: number, fn: () => void) {
+  const id = setTimeout(() => {
+    const i = pendingTimers.indexOf(id);
+    if (i >= 0) pendingTimers.splice(i, 1);
+    fn();
+  }, ms);
+  pendingTimers.push(id);
+}
+
+// 한국어 음성은 브라우저가 비동기로 싣는다. 첫 호출에 getVoices() 가 빈 배열을
+// 주는 경우가 흔한데, 그때 못 찾고 넘어가면 영어 엔진이 한글을 읽어 알아들을 수
+// 없는 소리가 난다. 한 번 찾아 캐시하고, 목록이 갱신되면 다시 고른다.
+let koVoice: SpeechSynthesisVoice | null = null;
+let voicesBound = false;
+
+function pickKoVoice() {
+  if (typeof speechSynthesis === 'undefined') return;
+  const voices = speechSynthesis.getVoices();
+  koVoice = voices.find((v) => v.lang.replace('_', '-').toLowerCase().startsWith('ko')) ?? null;
+}
+
+function ensureVoices() {
+  if (voicesBound || typeof speechSynthesis === 'undefined') return;
+  voicesBound = true;
+  pickKoVoice();
+  speechSynthesis.addEventListener?.('voiceschanged', pickKoVoice);
+  // 주머니에 넣어 화면이 꺼지면(화면 유지 락이 실패할 수 있다) 브라우저가
+  // 음성 엔진을 재워버리는 경우가 있다. 돌아왔을 때 깨워 둔다.
+  document.addEventListener?.('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && voiceActive) speechSynthesis.resume();
+  });
+}
 
 export function initVoiceNav(
   coords: LatLng[],
   cum: number[],
 ): VoiceNavState {
   voiceActive = true;
+  voiceEnabled = true;
+  ensureVoices();
   return {
     enabled: true,
     supported: typeof speechSynthesis !== 'undefined',
@@ -203,37 +241,56 @@ export function initVoiceNav(
   };
 }
 
-function speak(text: string, vibrate = true) {
-  if (!voiceActive || typeof speechSynthesis === 'undefined') return;
-  speechSynthesis.cancel();
+/**
+ * 안내 우선순위.
+ *
+ * 예전엔 speak() 가 매번 cancel() 을 불러, 같은 틱에 턴 안내와 km 이정표가
+ * 겹치면 앞의 것이 말하다 잘리고 마지막 것만 들렸다. 지금은 급한 것만
+ * 끼어들고, 나머지는 브라우저 큐에 순서대로 쌓는다.
+ *
+ * - alert : 경로 이탈. 하던 말을 끊고 바로 알린다.
+ * - now   : "지금 좌회전". 놓치면 길을 잘못 든다 — 역시 끊고 알린다.
+ * - normal: 예고·이정표·직진. 하던 말이 끝난 뒤 이어서 말한다.
+ */
+type SpeakLevel = 'alert' | 'now' | 'normal';
+
+/** 밀린 안내 상한 — 이보다 쌓이면 흘려보낸다. 지난 안내를 뒤늦게 들으면 헷갈린다 */
+const MAX_QUEUED = 2;
+let queued = 0;
+
+const VIBRATE_TURN = [200, 100, 200];
+const VIBRATE_ALERT = [300, 150, 300, 150, 300];
+
+function speak(
+  text: string,
+  { level = 'normal', vibrate = true }: { level?: SpeakLevel; vibrate?: boolean } = {},
+) {
+  if (!voiceActive || !voiceEnabled || typeof speechSynthesis === 'undefined') return;
+
+  const interrupts = level !== 'normal';
+  if (interrupts) {
+    speechSynthesis.cancel();
+    queued = 0;
+  } else if (queued >= MAX_QUEUED) {
+    return; // 이미 밀려 있다 — 지금 말해봐야 한참 뒤에 나온다
+  }
+
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'ko-KR';
-  u.rate = 1.05;
-  u.pitch = 1.0;
-  const voices = speechSynthesis.getVoices();
-  const ko = voices.find((v) => v.lang.startsWith('ko'));
-  if (ko) u.voice = ko;
+  u.rate = level === 'alert' ? 1.0 : 1.05;
+  u.pitch = level === 'alert' ? 1.1 : 1.0;
+  if (koVoice) u.voice = koVoice;
+
+  queued++;
+  const done = () => {
+    queued = Math.max(0, queued - 1);
+  };
+  u.onend = done;
+  u.onerror = done;
   speechSynthesis.speak(u);
 
   if (vibrate && navigator.vibrate) {
-    navigator.vibrate(vibrate === true ? [200, 100, 200] : [200, 100, 200]);
-  }
-}
-
-function speakUrgent(text: string) {
-  if (!voiceActive || typeof speechSynthesis === 'undefined') return;
-  speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'ko-KR';
-  u.rate = 1.0;
-  u.pitch = 1.1;
-  const voices = speechSynthesis.getVoices();
-  const ko = voices.find((v) => v.lang.startsWith('ko'));
-  if (ko) u.voice = ko;
-  speechSynthesis.speak(u);
-
-  if (navigator.vibrate) {
-    navigator.vibrate([300, 150, 300, 150, 300]);
+    navigator.vibrate(level === 'alert' ? VIBRATE_ALERT : VIBRATE_TURN);
   }
 }
 
@@ -253,7 +310,10 @@ export function tickVoiceNav(
   if (!state.enabled || !state.supported) return state;
 
   const currentM = cum[Math.min(progressIdx, cum.length - 1)] ?? 0;
-  let next = { ...state };
+  const next = { ...state };
+  // 한 번의 측위에 하나만 말한다. 예전엔 턴 안내 → 직진 → km 이정표가 줄줄이
+  // 발화되며 서로를 끊었다. 급한 것부터 자리를 잡고, 나머지는 다음 틱으로 미룬다.
+  let spoke = false;
 
   // ── 이탈 감지 ──────────────────────────────────────────────────
   let offRoute = false;
@@ -266,17 +326,29 @@ export function tickVoiceNav(
         next.offRouteTicks >= OFF_ROUTE_TICKS &&
         Date.now() - state.lastOffRouteAt > OFF_ROUTE_COOLDOWN_MS
       ) {
-        speakUrgent(
+        speak(
           `경로에서 ${distLabel(Math.round(dist))} 벗어났어요. 화면에서 경로를 확인해 주세요.`,
+          { level: 'alert' },
         );
         next.lastOffRouteAt = Date.now();
         next.wasOffRoute = true;
+        spoke = true;
       }
     } else if (dist <= OFF_ROUTE_RETURN_M) {
       next.offRouteTicks = 0;
       if (state.wasOffRoute) {
-        speak('경로로 돌아왔어요. 계속 진행하세요.', false);
+        speak('경로로 돌아왔어요. 계속 진행하세요.', { vibrate: false });
         next.wasOffRoute = false;
+        spoke = true;
+        // 헤매는 동안 다음 턴의 예고 구간을 지나쳤을 수 있다. 되감아서
+        // 복귀 직후 다시 안내받게 한다 — 안 그러면 코앞의 턴을 말없이 지나친다.
+        const upcoming = state.turns.findIndex((t) => t.cumM - currentM > AT_TURN_M);
+        if (upcoming >= 0) {
+          const prev = upcoming - 1;
+          next.lastWarnedTurn = Math.min(next.lastWarnedTurn, prev);
+          next.lastConfirmTurn = Math.min(next.lastConfirmTurn, prev);
+          next.lastAtTurn = Math.min(next.lastAtTurn, prev);
+        }
       }
     } else {
       next.offRouteTicks = 0;
@@ -284,10 +356,11 @@ export function tickVoiceNav(
   }
 
   // ── 출발 안내 (카운트다운 → 5초 뒤 출발 안내) ─────────────────
-  if (!offRoute && !state.startAnnounced && progressIdx > 0) {
+  if (!spoke && !offRoute && !state.startAnnounced && progressIdx > 0) {
     if (state.startCountdownAt === 0) {
-      speak('5초 뒤 코스 출발합니다', false);
+      speak('5초 뒤 코스 출발합니다', { vibrate: false });
       next.startCountdownAt = Date.now();
+      spoke = true;
     } else if (Date.now() - state.startCountdownAt >= 5000) {
       const firstTurn = state.turns[0];
       if (firstTurn) {
@@ -297,11 +370,12 @@ export function tickVoiceNav(
         speak(`출발. 쭉 직진`);
       }
       next.startAnnounced = true;
+      spoke = true;
     }
   }
 
   // ── 턴 안내 ────────────────────────────────────────────────────
-  if (!offRoute) {
+  if (!spoke && !offRoute) {
     for (let ti = 0; ti < state.turns.length; ti++) {
       const turn = state.turns[ti];
       const ahead = turn.cumM - currentM;
@@ -316,6 +390,7 @@ export function tickVoiceNav(
       ) {
         speak(`${distLabel(Math.round(ahead))} 앞 ${turnLabel(turn.kind)}`);
         next.lastWarnedTurn = ti;
+        spoke = true;
 
         // 연속 턴은 별도 발화로 분리 (2초 뒤)
         const nextTurn = state.turns[ti + 1];
@@ -323,7 +398,7 @@ export function tickVoiceNav(
           const gap = nextTurn.cumM - turn.cumM;
           if (gap < 200) {
             const nk = turnLabel(nextTurn.kind);
-            pendingTimers.push(setTimeout(() => speak(`이후 ${nk}`, false), 2000));
+            later(2000, () => speak(`이후 ${nk}`, { vibrate: false }));
           }
         }
         break;
@@ -337,6 +412,7 @@ export function tickVoiceNav(
       ) {
         speak(`잠시 후 ${turnLabel(turn.kind)}`);
         next.lastConfirmTurn = ti;
+        spoke = true;
         break;
       }
 
@@ -345,22 +421,23 @@ export function tickVoiceNav(
         Math.abs(ahead) <= AT_TURN_M &&
         ti > next.lastAtTurn
       ) {
-        speak(`지금 ${turnLabel(turn.kind)}`);
+        speak(`지금 ${turnLabel(turn.kind)}`, { level: 'now' });
         next.lastAtTurn = ti;
+        spoke = true;
 
         // ── 직진 안내: 턴 통과 직후, 다음 턴까지 먼 경우 ──────────
         const nextTurn = state.turns[ti + 1];
         if (nextTurn && ti > next.lastStraightAfterTurn) {
           const gap = nextTurn.cumM - turn.cumM;
           if (gap >= STRAIGHT_MIN_M) {
-            pendingTimers.push(setTimeout(() => speak('쭉 직진하세요', false), 2500));
+            later(2500, () => speak('쭉 직진하세요', { vibrate: false }));
             next.lastStraightAfterTurn = ti;
             next.lastStraightRemindM = currentM;
           }
         } else if (!nextTurn && ti > next.lastStraightAfterTurn) {
           const remain = totalDistM - turn.cumM;
           if (remain >= STRAIGHT_MIN_M) {
-            pendingTimers.push(setTimeout(() => speak('직진하면 도착', false), 2500));
+            later(2500, () => speak('직진하면 도착', { vibrate: false }));
             next.lastStraightAfterTurn = ti;
             next.lastStraightRemindM = currentM;
           }
@@ -370,49 +447,72 @@ export function tickVoiceNav(
     }
 
     // ── 직진 반복 안내: 다음 턴까지 먼 구간에서 500m마다 ────────
-    if (!offRoute && state.startAnnounced) {
+    if (!spoke && state.startAnnounced) {
       const nextTurnM = state.turns.find((t) => t.cumM - currentM > WARN_AHEAD_M)?.cumM;
       const aheadToTurn = nextTurnM != null ? nextTurnM - currentM : totalDistM - currentM;
       if (
         aheadToTurn > STRAIGHT_MIN_M &&
         currentM - next.lastStraightRemindM >= STRAIGHT_REMIND_M
       ) {
-        speak('쭉 직진하세요', false);
+        speak('쭉 직진하세요', { vibrate: false });
         next.lastStraightRemindM = currentM;
+        spoke = true;
       }
     }
+  }
+
+  // ── 완주 안내 ──────────────────────────────────────────────────
+  // km 이정표보다 먼저 본다 — 마지막 순간에 "5킬로미터 완료" 대신
+  // "코스 완주" 를 들려주는 쪽이 맞다.
+  const remainM = totalDistM - currentM;
+  if (!state.completionAnnounced && remainM <= 30 && totalDistM > 100) {
+    speak('코스 완주! 수고했어요.', { level: 'now' });
+    next.completionAnnounced = true;
+    next.lastKmAnnounced = Math.floor(distanceKm); // 완주 뒤 이정표가 뒤따르지 않게
+    return next;
   }
 
   // ── km 이정표 ──────────────────────────────────────────────────
   const km = Math.floor(distanceKm);
   if (km > 0 && km > state.lastKmAnnounced) {
-    const remainM = totalDistM - currentM;
-    if (remainM > 200) {
-      speak(`${km}킬로미터 완료. 남은 거리 ${distLabel(Math.round(remainM))}`, false);
+    // 안내를 건너뛰더라도 이정표는 지나간 것으로 처리한다. 안 그러면
+    // 다음 틱에 뒤늦게 튀어나와 턴 안내와 부딪친다.
+    if (!spoke && remainM > 200) {
+      speak(`${km}킬로미터 완료. 남은 거리 ${distLabel(Math.round(remainM))}`, {
+        vibrate: false,
+      });
     }
     next.lastKmAnnounced = km;
   }
 
-  // ── 완주 안내 ──────────────────────────────────────────────────
-  const remainM = totalDistM - currentM;
-  if (remainM <= 30 && totalDistM > 100 && currentM > totalDistM * 0.8) {
-    if (!state.completionAnnounced) {
-      speak('코스 완주! 수고했어요.');
-      next.completionAnnounced = true;
-    }
-  }
+  return settled(state, next);
+}
 
-  return next;
+/**
+ * 바뀐 게 없으면 원래 객체를 그대로 돌려준다.
+ * 호출부는 `next !== state` 로 리렌더를 거르는데, 매번 새 객체를 주면
+ * 그 검사가 늘 통과해 측위마다(초당 한 번) 화면이 다시 그려진다.
+ */
+function settled(prev: VoiceNavState, next: VoiceNavState): VoiceNavState {
+  for (const k of Object.keys(next) as (keyof VoiceNavState)[]) {
+    if (next[k] !== prev[k]) return next;
+  }
+  return prev;
 }
 
 /** 음성 토글 — 끌 때 대기 중인 발화를 취소한다 */
 export function toggleVoice(state: VoiceNavState): VoiceNavState {
   const enabled = !state.enabled;
-  if (!enabled && typeof speechSynthesis !== 'undefined') {
-    speechSynthesis.cancel();
-  }
-  if (enabled) {
-    speak('음성 안내를 시작합니다', false);
+  voiceEnabled = enabled;
+  if (!enabled) {
+    // 예약된 뒷말("이후 좌회전", "쭉 직진하세요")까지 걷어낸다. 이걸 안 하면
+    // 음성을 끈 뒤 2~3초 있다가 한 마디가 튀어나온다.
+    pendingTimers.forEach(clearTimeout);
+    pendingTimers.length = 0;
+    queued = 0;
+    if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+  } else {
+    speak('음성 안내를 시작합니다', { vibrate: false });
   }
   return { ...state, enabled };
 }
@@ -422,6 +522,7 @@ export function stopVoiceNav() {
   voiceActive = false;
   pendingTimers.forEach(clearTimeout);
   pendingTimers.length = 0;
+  queued = 0;
   if (typeof speechSynthesis !== 'undefined') {
     speechSynthesis.cancel();
   }
