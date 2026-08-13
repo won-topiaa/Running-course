@@ -81,7 +81,7 @@ console.log('\n[기록 확정값] 저장값과 요약 화면 값이 같은지');
 
 // 1) 데모 재생 시작 → 실제 시간이 흐르게 둔다
 render().startDemo();
-await new Promise((r) => setTimeout(r, 5000));
+await new Promise((r) => setTimeout(r, 9000));
 
 // 2) '마지막 렌더' 시점의 객체를 손에 쥔다 (finish() 가 보는 것과 같은 상태)
 const staleRec = render();
@@ -99,7 +99,10 @@ staleRec.stop();
 // 5) 요약 화면이 보게 될 값
 const summary = render();
 
+// 아래 '같은지' 검사들이 0 == 0 으로 헛돌지 않게 먼저 실제 기록이 쌓였는지 본다.
 ok(snap.elapsedSec > 0, `확정 시간이 0 이 아니다 (${snap.elapsedSec.toFixed(3)}s)`);
+ok(snap.distanceKm > 0, `거리가 쌓였다 (${(snap.distanceKm * 1000).toFixed(0)}m)`);
+ok(snap.coords.length > 2, `좌표가 쌓였다 (${snap.coords.length}개)`);
 ok(
   snap.elapsedSec === summary.elapsedSec,
   `저장 시간 == 요약 시간 (${snap.elapsedSec.toFixed(3)} vs ${summary.elapsedSec.toFixed(3)})`,
