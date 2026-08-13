@@ -92,7 +92,11 @@ export function loadInProgress(): InProgressRun | null {
       Number.isFinite(v.distanceKm) &&
       Array.isArray(v.elevations) && v.elevations.length === n &&
       Array.isArray(v.times) && v.times.length === n &&
-      Array.isArray(v.cumDist) && v.cumDist.length === n;
+      Array.isArray(v.cumDist) && v.cumDist.length === n &&
+      Array.isArray(v.activeTimes) && v.activeTimes.length === n &&
+      // name 이 객체면 화면에 그리다 React 가 통째로 터진다
+      typeof v.name === 'string' &&
+      Number.isFinite(v.elapsedSec);
     if (!ok) {
       clearInProgress();
       return null;

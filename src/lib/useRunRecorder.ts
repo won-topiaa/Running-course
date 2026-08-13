@@ -444,7 +444,11 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
           return;
         }
         const [lat, lng] = path[demoIdxRef.current++];
-        ingest(lat, lng, syntheticElevation(lat, lng), 5, null);
+        // 고도는 null 로 넘긴다. ingest 가 알아서 합성 고도를 채우고(240행),
+        // 동시에 altitudeKnown 을 false 로 남긴다. 여기서 지어낸 값을 직접
+        // 건네면 '기기가 고도를 줬다' 는 표시가 켜져, 사인파 값이 잰 값처럼
+        // GPX 를 타고 스트라바까지 간다 — altitudeKnown 이 막으려던 바로 그 일.
+        ingest(lat, lng, null, 5, null);
       }, 500);
     },
     [beginSession, ingest, startLoc],

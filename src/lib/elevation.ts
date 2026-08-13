@@ -79,12 +79,20 @@ async function fetchElevations(points: LatLng[]): Promise<number[]> {
     if (!res.ok) throw new Error(`elevation ${res.status}`);
     const json = await res.json();
     if (!Array.isArray(json?.elevation)) throw new Error('elevation malformed');
+    if (json.elevation.length !== chunk.length) throw new Error('elevation length mismatch');
     json.elevation.forEach((v: unknown, k: number) => {
       if (typeof v === 'number' && Number.isFinite(v) && chunk[k]) remember(chunk[k], v);
     });
   }
 
-  return points.map((p) => cache.get(cacheKey(p)) ?? 0);
+  // 한 점이라도 못 채웠으면 실패로 돌린다. 예전엔 0(해수면)으로 메웠는데,
+  // 그건 조용히 틀린 값이 된다 — 고도 20m 한강변 코스에서 한 점만 0 이 되면
+  // 앞뒤로 20m 내리막·오르막이 생겨 '총 오르막 +20m, 최대 경사 20%' 가
+  // 기록에 영구히 남는다. 호출측은 실패를 제대로 다룬다(경로는
+  // elevationKnown=false 로, 기록은 기기 고도를 그대로 유지).
+  const out = points.map((p) => cache.get(cacheKey(p)));
+  if (out.some((v) => v == null)) throw new Error('elevation incomplete');
+  return out as number[];
 }
 
 /** 경로 길이에 맞춘 샘플 개수 — 100m 에 한 점, 12~100개 사이 */

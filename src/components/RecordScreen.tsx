@@ -202,11 +202,15 @@ export default function RecordScreen({
   // 기록 종료 → 요약 시트
   if (rec.status === 'finished' && rec.coords.length > 1) {
     const route = buildRecorded();
+    // 데모는 자동 저장에서 이미 빼두지만, 요약 시트의 '내 코스에 저장' 은
+    // 그대로 열려 있었다. 그걸 누르면 지어낸 2.4km 가 kind:'recorded' 로
+    // 들어가 누적 거리·러닝 횟수·연속 일수·뱃지·신발 마일리지를 전부
+    // 오염시킨다. 실측만 담는다는 약속이 데모 한 번에 깨진다.
     const view: RouteView = {
-      name,
+      name: rec.demo ? `${name} (데모)` : name,
       route,
-      kind: 'recorded',
-      source: 'gps',
+      kind: rec.demo ? 'built' : 'recorded',
+      source: rec.demo ? 'demo' : 'gps',
       durationSec: rec.elapsedSec,
       times: rec.times,
       activeTimes: rec.activeTimes,

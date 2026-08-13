@@ -533,14 +533,16 @@ export class OfflineProvider implements RoutingProvider {
     }
     const dense = densifyPath(waypoints, 45);
     const elev = dense.map(([lat, lng]) => syntheticElevation(lat, lng));
-    return buildResult(dense, elev, 'offline', waypoints);
+    // 사인파로 지어낸 값이다 — 잰 값인 척하면 안 된다. 이 표시가 있어야
+    // 화면·공유·GPX 가 고도를 '—' 로 비운다.
+    return { ...buildResult(dense, elev, 'offline', waypoints), elevationKnown: false };
   }
 
   async roundTrip(start: LatLng, targetKm: number, opts: RouteOptions = {}): Promise<RouteResult> {
     const ring = generateLoop(start, targetKm, opts.points ?? 5, opts.seed ?? 0);
     const dense = densifyPath(ring, 45);
     const elev = dense.map(([lat, lng]) => syntheticElevation(lat, lng));
-    return buildResult(dense, elev, 'offline', [start]);
+    return { ...buildResult(dense, elev, 'offline', [start]), elevationKnown: false };
   }
 }
 

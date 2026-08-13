@@ -310,10 +310,14 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     [results, greenPct],
   );
 
+  // 고도를 못 받은 코스(Open-Meteo 실패·데모 경로)는 elevations 가 전부 0 이다.
+  // 그걸 그대로 그리면 '고도 0~0m · 총 오르막 0m' 라는, 잰 적 없는 숫자가 뜬다.
+  const elevUnknown = selected?.route.elevationKnown === false;
+
   // 접힌 상태에서도 남길 한 줄용 고도 범위
   const elevRange = useMemo(() => {
     const e = selected?.route.elevations ?? [];
-    if (e.length === 0) return null;
+    if (e.length === 0 || selected?.route.elevationKnown === false) return null;
     let lo = Infinity, hi = -Infinity;
     for (const v of e) { if (v < lo) lo = v; if (v > hi) hi = v; }
     return { lo: Math.round(lo), hi: Math.round(hi) };
@@ -879,13 +883,19 @@ export default function BuildScreen({ api }: { api: AppApi }) {
 
                       {gradeOpen && (
                         <div className="px-3 pb-3">
-                          <GradeElevationChart
-                            elevations={selected.route.elevations}
-                            lengthsM={selected.route.segments.map((s) => s.lengthM)}
-                            distanceKm={selected.route.distanceKm}
-                            ascentM={selected.route.ascentM}
-                            height={84}
-                          />
+                          {elevUnknown ? (
+                            <p className="py-2 text-[11.5px] text-espresso-soft">
+                              이 경로는 고도를 받지 못했어요. 경사 정보는 표시하지 않습니다.
+                            </p>
+                          ) : (
+                            <GradeElevationChart
+                              elevations={selected.route.elevations}
+                              lengthsM={selected.route.segments.map((s) => s.lengthM)}
+                              distanceKm={selected.route.distanceKm}
+                              ascentM={selected.route.ascentM}
+                              height={84}
+                            />
+                          )}
                           {/* 경사 색 범례 — 지도의 경로 색과 1:1 대응 */}
                           <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-line/70 pt-2 text-[10px] text-espresso-soft">
                             {GRADE_LEGEND.map((g) => (
@@ -1163,27 +1173,34 @@ function buildHeadline(
 ): { lead: string; from: string | null; value: string; tail: string } {
   const sel = results[selIdx];
   const mine = Math.round(sel.route.ascentM);
+  const known = sel.route.elevationKnown !== false;
   const wantsLess = style === 'flat' || style === 'gentle';
 
-  // 비교 대상은 '다른 후보'들 — 선택한 코스가 실제로 더 나을 때만 대비 문장을 쓴다
-  const others = results.filter((_, i) => i !== selIdx).map((r) => Math.round(r.route.ascentM));
-  if (others.length > 0) {
-    const rival = wantsLess ? Math.max(...others) : Math.min(...others);
-    const better = wantsLess ? mine < rival : mine > rival;
-    if (better && Math.abs(rival - mine) >= 5) {
-      return {
-        lead: '총 오르막',
-        from: `${rival}m`,
-        value: `${mine}m`,
-        tail: wantsLess ? '로 줄였어요' : '로 늘렸어요',
-      };
+  // 고도를 못 받은 코스는 ascentM 이 0 이다 — '모름' 이지 '평지' 가 아니다.
+  // 그대로 대비하면 "총 오르막 78m → 0m 로 줄였어요" 처럼, 재지도 않은 값을
+  // 성과인 양 말하게 된다. 고도가 확실한 후보끼리만 견준다.
+  if (known) {
+    const others = results
+      .filter((r, i) => i !== selIdx && r.route.elevationKnown !== false)
+      .map((r) => Math.round(r.route.ascentM));
+    if (others.length > 0) {
+      const rival = wantsLess ? Math.max(...others) : Math.min(...others);
+      const better = wantsLess ? mine < rival : mine > rival;
+      if (better && Math.abs(rival - mine) >= 5) {
+        return {
+          lead: '총 오르막',
+          from: `${rival}m`,
+          value: `${mine}m`,
+          tail: wantsLess ? '로 줄였어요' : '로 늘렸어요',
+        };
+      }
     }
   }
   return {
     lead: `${styleLabel(style)} ·`,
     from: null,
     value: formatDistance(sel.route.distanceKm),
-    tail: `· 총 오르막 ${mine}m`,
+    tail: known ? `· 총 오르막 ${mine}m` : '· 총 오르막 —',
   };
 }
 

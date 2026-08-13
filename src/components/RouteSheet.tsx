@@ -290,7 +290,8 @@ export default function RouteSheet({
               const splits = kmSplits(route.coords, view.activeTimes, false, view.cumDist);
               if (!splits.length) return null;
               const fastest = Math.min(...splits.map((x) => x.sec));
-              const slowest = Math.max(...splits.map((x) => x.sec));
+              // 0 이면 width 가 NaN% 이 된다 — RecordScreen 과 같은 방어
+              const slowest = Math.max(...splits.map((x) => x.sec)) || 1;
               return (
                 <div className="mt-3 rounded-3xl border border-line bg-paper p-4 shadow-soft">
                   <p className="mb-2 text-[13px] font-bold text-espresso">구간 기록</p>

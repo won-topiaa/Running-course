@@ -289,12 +289,17 @@ export async function fetchGreenPolysForArea(
   center: LatLng,
   radiusKm: number,
 ): Promise<Poly[] | null> {
-  const margin = radiusKm / 111;
+  // 위도 1도는 어디서나 ~111km 지만, 경도 1도는 위도에 따라 줄어든다
+  // (서울 37.5°에서 ~88km). 위도 값을 경도에도 쓰면 동서 폭이 21% 모자라
+  // 동쪽으로 뻗은 코스의 공원이 조회 범위 밖으로 빠진다 — 여름철 랭킹에서
+  // 그 코스만 초록 점수를 덜 받는, 방향에 따라 갈리는 편향이 생긴다.
+  const latMargin = radiusKm / 111;
+  const lngMargin = radiusKm / (111 * Math.cos((center[0] * Math.PI) / 180));
   const bbox: [number, number, number, number] = [
-    center[0] - margin - MARGIN_DEG,
-    center[1] - margin - MARGIN_DEG,
-    center[0] + margin + MARGIN_DEG,
-    center[1] + margin + MARGIN_DEG,
+    center[0] - latMargin - MARGIN_DEG,
+    center[1] - lngMargin - MARGIN_DEG,
+    center[0] + latMargin + MARGIN_DEG,
+    center[1] + lngMargin + MARGIN_DEG,
   ];
   if (bbox[2] - bbox[0] > MAX_SPAN_DEG || bbox[3] - bbox[1] > MAX_SPAN_DEG) return null;
 
