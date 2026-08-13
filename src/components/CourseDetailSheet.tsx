@@ -11,7 +11,9 @@ import { estimateTimeLabel, formatDistance } from '../lib/format';
 import {
   COURSE_TYPE_EMOJI,
   COURSE_TYPE_LABEL,
+  courseLaps,
   ELEVATION_LABEL,
+  lapDistanceKm,
   LOOP_TYPE_LABEL,
   type Course,
 } from '../lib/types';
@@ -109,6 +111,10 @@ function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose:
   const segLen = n > 1 ? (course.distanceKm * 1000) / (n - 1) : 0;
   const lengthsM = Array.from({ length: n - 1 }, () => segLen);
   const paceTime = estimateTimeLabel(course.distanceKm, api.settings.paceSecPerKm);
+  // 순환 코스는 표기 거리를 채우려면 여러 바퀴를 돌기도 한다. 데이터에 적힌
+  // 값이 없으면 실제 라우팅된 한 바퀴 거리로 추정한다 (real 은 한 바퀴다).
+  const laps = courseLaps(course, real?.distanceKm ?? null);
+  const lapKm = lapDistanceKm(course, real?.distanceKm ?? null);
 
   return (
     <div className="fixed inset-0 z-[2000] flex items-end justify-center sm:items-center">
@@ -143,6 +149,11 @@ function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose:
             <Pill>{formatDistance(course.distanceKm)}</Pill>
             <Pill>{ELEVATION_LABEL[course.elevation.category]}</Pill>
             <Pill>{LOOP_TYPE_LABEL[course.loopType]}</Pill>
+            {laps > 1 && (
+              <Pill>
+                한 바퀴 {Math.round(lapKm * 10) / 10}km × {laps}바퀴
+              </Pill>
+            )}
             <Pill icon={<Timer size={12} />}>약 {paceTime}</Pill>
           </div>
 

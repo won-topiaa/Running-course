@@ -19,6 +19,7 @@ import {
   destinationPoint,
   haversineMeters,
   pathLengthMeters,
+  spurKeptIndices,
   thinWaypoints,
 } from './geo';
 
@@ -173,11 +174,18 @@ function climbProfile(
 }
 
 export function buildResult(
-  coords: LatLng[],
-  rawElev: number[],
+  rawCoords: LatLng[],
+  rawElevIn: number[],
   source: RouteResult['source'],
   waypoints: LatLng[],
+  opts: { trimSpurs?: boolean } = {},
 ): RouteResult {
+  // 라우터가 만든 경로에만 켠다. GPS 로 기록한 실제 달리기는 그대로 둬야 한다 —
+  // 막다른 길에 들어갔다 나온 게 사실이면 그건 잘라낼 오류가 아니라 기록이다.
+  const kept = opts.trimSpurs ? spurKeptIndices(rawCoords, { protect: waypoints }) : null;
+  const trimmed = kept !== null && kept.length < rawCoords.length;
+  const coords = trimmed ? kept!.map((i) => rawCoords[i]) : rawCoords;
+  const rawElev = trimmed ? kept!.map((i) => rawElevIn[i]) : rawElevIn;
   // 고도 배열을 좌표 수에 정확히 맞춘다. 고도는 별도 API 에서 오므로 배열이
   // 짧거나 구멍(NaN·undefined)이 있을 수 있는데, 그대로 빼기 연산에 들어가면
   // NaN 이 상승·최대경사를 타고 화면까지 올라간다 — 실측에서 카드에
@@ -246,7 +254,7 @@ function parseOrsGeoJson(gj: any, source: RouteResult['source'], waypoints: LatL
   }
   const coords: LatLng[] = line.map((c: number[]) => [c[1], c[0]]);
   const elevations: number[] = line.map((c: number[]) => c[2] ?? 0);
-  const result = buildResult(coords, elevations, source, waypoints);
+  const result = buildResult(coords, elevations, source, waypoints, { trimSpurs: true });
   // waytype/surface 는 같은 응답에 실려 온다 — 추가 호출도 지연도 없다
   const way = parseWayMix(feat?.properties?.extras);
   return way ? { ...result, way } : result;
@@ -298,7 +306,9 @@ export class OrsProvider implements RoutingProvider {
       targetKm,
       opts,
     );
-    const result = buildResult(best.coords, best.elevations ?? [], 'ors', [start]);
+    const result = buildResult(best.coords, best.elevations ?? [], 'ors', [start], {
+      trimSpurs: true,
+    });
     return best.way ? { ...result, way: best.way } : result;
   }
 
@@ -456,13 +466,14 @@ export class OsrmProvider implements RoutingProvider {
   private async withElevation(coords: LatLng[], waypoints: LatLng[]): Promise<RouteResult> {
     try {
       const elev = await elevationsForPath(coords);
-      return buildResult(coords, elev, 'osrm', waypoints);
+      return buildResult(coords, elev, 'osrm', waypoints, { trimSpurs: true });
     } catch {
       const flat = buildResult(
         coords,
         coords.map(() => 0),
         'osrm',
         waypoints,
+        { trimSpurs: true },
       );
       return { ...flat, elevationKnown: false };
     }

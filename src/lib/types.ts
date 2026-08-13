@@ -98,6 +98,15 @@ export interface Course {
   /** 지도에 그릴 실제 경로 좌표 */
   path: LatLng[];
   loopType: LoopType;
+  /**
+   * 표기 거리(distanceKm)를 채우려면 이 순환로를 몇 바퀴 도는가. 없으면 1바퀴.
+   *
+   * 공원 순환로는 공원 크기가 상한이라 한 바퀴가 표기 거리보다 짧은 경우가
+   * 많다 — 실제로도 여러 바퀴를 돈다. path 는 언제나 '한 바퀴'를 그린다.
+   * 값을 적어 두지 않은 코스는 앱이 실제 라우팅된 한 바퀴 거리로 추정한다
+   * (courseLaps). 지어낸 숫자를 넣느니 실측에서 끌어오는 편이 낫다.
+   */
+  laps?: number;
   surface: Surface[];
   courseTypes: CourseType[]; // 취향 태그 (2번 요소)
   elevation: Elevation; //     경사도 (1번)
@@ -177,4 +186,22 @@ export interface Recommendation {
   reasons: string[];
   /** 감점/주의 문장들 */
   cautions: string[];
+}
+
+/**
+ * 코스를 몇 바퀴 도는가. 데이터에 적힌 값이 우선이고, 없으면 실제 라우팅된
+ * 한 바퀴 거리(routedLapKm)로 추정한다. 둘 다 없으면 1바퀴로 본다.
+ *
+ * 순환 코스에만 의미가 있다 — 왕복·편도는 언제나 1이다.
+ */
+export function courseLaps(course: Course, routedLapKm?: number | null): number {
+  if (course.loopType !== 'loop') return 1;
+  if (course.laps && course.laps > 0) return Math.round(course.laps);
+  if (!routedLapKm || routedLapKm <= 0) return 1;
+  return Math.max(1, Math.round(course.distanceKm / routedLapKm));
+}
+
+/** 한 바퀴 거리(km). 표기 거리를 바퀴 수로 나눈 값. */
+export function lapDistanceKm(course: Course, routedLapKm?: number | null): number {
+  return course.distanceKm / courseLaps(course, routedLapKm);
 }

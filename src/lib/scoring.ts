@@ -1,6 +1,7 @@
 import {
   COURSE_TYPE_LABEL,
   ELEVATION_LABEL,
+  lapDistanceKm,
   type Course,
   type FactorKey,
   type FactorScore,
@@ -97,10 +98,13 @@ function scoreDistance(course: Course, prefs: Preferences): number {
   if (course.loopType === 'out-and-back' && target <= course.distanceKm) {
     raw = Math.max(raw, 1 - (course.distanceKm - target) * 0.015);
   }
-  // 순환 코스: 여러 바퀴로 목표에 근접시킬 수 있음
+  // 순환 코스: 여러 바퀴로 목표에 근접시킬 수 있음.
+  // 기준은 표기 거리가 아니라 '한 바퀴' 거리다 — 표기 거리가 이미 두 바퀴를
+  // 합친 값이면 그걸 한 바퀴로 보고 또 곱해 목표를 두 배로 넘겨 잡게 된다.
   if (course.loopType === 'loop') {
-    const laps = Math.max(1, Math.round(target / course.distanceKm));
-    const achievable = laps * course.distanceKm;
+    const lapKm = lapDistanceKm(course);
+    const laps = Math.max(1, Math.round(target / lapKm));
+    const achievable = laps * lapKm;
     raw = Math.max(raw, 1 - Math.abs(achievable - target) / tolerance);
   }
   return clamp01(raw);
@@ -257,9 +261,10 @@ function explain(
     if (Math.abs(diff) <= 0.6) {
       reasons.push(`목표 거리와 거의 일치해요 (${course.distanceKm}km).`);
     } else if (course.loopType === 'loop' && diff < 0) {
-      const laps = Math.max(1, Math.round(prefs.targetDistanceKm / course.distanceKm));
+      const lapKm = lapDistanceKm(course);
+      const laps = Math.max(1, Math.round(prefs.targetDistanceKm / lapKm));
       reasons.push(
-        `한 바퀴 ${course.distanceKm}km 순환 코스 — ${laps}바퀴면 목표(${prefs.targetDistanceKm}km)에 맞출 수 있어요.`,
+        `한 바퀴 ${Math.round(lapKm * 10) / 10}km 순환 코스 — ${laps}바퀴면 목표(${prefs.targetDistanceKm}km)에 맞출 수 있어요.`,
       );
     } else if (course.loopType === 'out-and-back' && diff > 0) {
       reasons.push(
