@@ -199,8 +199,12 @@ let voicesBound = false;
 
 function pickKoVoice() {
   if (typeof speechSynthesis === 'undefined') return;
-  const voices = speechSynthesis.getVoices();
-  koVoice = voices.find((v) => v.lang.replace('_', '-').toLowerCase().startsWith('ko')) ?? null;
+  const found = speechSynthesis
+    .getVoices()
+    .find((v) => v.lang.replace('_', '-').toLowerCase().startsWith('ko'));
+  // 못 찾았다고 쥐고 있던 목소리를 버리지 않는다. voiceschanged 는 목록이 빈
+  // 채로도 오는데, 거기서 null 을 덮어쓰면 영어 엔진이 한글을 읽기 시작한다.
+  if (found) koVoice = found;
 }
 
 function ensureVoices() {
@@ -256,34 +260,49 @@ type SpeakLevel = 'alert' | 'now' | 'normal';
 
 /** 밀린 안내 상한 — 이보다 쌓이면 흘려보낸다. 지난 안내를 뒤늦게 들으면 헷갈린다 */
 const MAX_QUEUED = 2;
-let queued = 0;
+/**
+ * 발화가 끝났다고 보는 최대 시간(ms).
+ *
+ * 화면이 꺼져 브라우저가 음성 엔진을 재우면 onend/onerror 가 영영 안 온다.
+ * 그것만 믿으면 카운터가 상한에 박혀 남은 러닝 내내 안내가 사라진다 —
+ * 하필 주머니에 넣고 뛰는, 음성이 가장 필요한 상황에서.
+ */
+const SPEAK_TTL_MS = 12_000;
+/** 재생 중인 발화의 시작 시각들 */
+let inflight: number[] = [];
 
 const VIBRATE_TURN = [200, 100, 200];
 const VIBRATE_ALERT = [300, 150, 300, 150, 300];
 
+/** 실제로 발화했으면 true. 밀려서 흘려보냈으면 false — 호출부가 재시도한다. */
 function speak(
   text: string,
   { level = 'normal', vibrate = true }: { level?: SpeakLevel; vibrate?: boolean } = {},
-) {
-  if (!voiceActive || !voiceEnabled || typeof speechSynthesis === 'undefined') return;
+): boolean {
+  if (!voiceActive || !voiceEnabled || typeof speechSynthesis === 'undefined') return false;
 
-  const interrupts = level !== 'normal';
-  if (interrupts) {
+  const now = Date.now();
+  inflight = inflight.filter((t) => now - t < SPEAK_TTL_MS);
+
+  if (level !== 'normal') {
     speechSynthesis.cancel();
-    queued = 0;
-  } else if (queued >= MAX_QUEUED) {
-    return; // 이미 밀려 있다 — 지금 말해봐야 한참 뒤에 나온다
+    inflight = [];
+  } else if (inflight.length >= MAX_QUEUED) {
+    return false; // 이미 밀려 있다 — 지금 말해봐야 한참 뒤에 나온다
   }
 
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'ko-KR';
   u.rate = level === 'alert' ? 1.0 : 1.05;
   u.pitch = level === 'alert' ? 1.1 : 1.0;
+  // 첫 발화 때 목록이 비어 못 골랐을 수 있다 — 있을 때 다시 집는다
+  if (!koVoice) pickKoVoice();
   if (koVoice) u.voice = koVoice;
 
-  queued++;
+  inflight.push(now);
   const done = () => {
-    queued = Math.max(0, queued - 1);
+    const i = inflight.indexOf(now);
+    if (i >= 0) inflight.splice(i, 1);
   };
   u.onend = done;
   u.onerror = done;
@@ -292,6 +311,7 @@ function speak(
   if (vibrate && navigator.vibrate) {
     navigator.vibrate(level === 'alert' ? VIBRATE_ALERT : VIBRATE_TURN);
   }
+  return true;
 }
 
 /**
@@ -358,19 +378,28 @@ export function tickVoiceNav(
   // ── 출발 안내 (카운트다운 → 5초 뒤 출발 안내) ─────────────────
   if (!spoke && !offRoute && !state.startAnnounced && progressIdx > 0) {
     if (state.startCountdownAt === 0) {
-      speak('5초 뒤 코스 출발합니다', { vibrate: false });
-      next.startCountdownAt = Date.now();
-      spoke = true;
+      if (speak('5초 뒤 코스 출발합니다', { vibrate: false })) {
+        next.startCountdownAt = Date.now();
+        spoke = true;
+      }
     } else if (Date.now() - state.startCountdownAt >= 5000) {
       const firstTurn = state.turns[0];
+      let said: boolean;
       if (firstTurn) {
+        // 카운트다운 5초 사이에 첫 턴을 이미 지났을 수 있다(첫 턴은 40m 앞에도
+        // 있다). 그대로 빼면 "마이너스 80미터 앞 좌회전" 이 나온다.
         const toFirst = firstTurn.cumM - currentM;
-        speak(`출발. ${distLabel(Math.round(toFirst))} 앞 ${turnLabel(firstTurn.kind)}`);
+        said =
+          toFirst > AT_TURN_M
+            ? speak(`출발. ${distLabel(Math.round(toFirst))} 앞 ${turnLabel(firstTurn.kind)}`)
+            : speak(`출발. 잠시 후 ${turnLabel(firstTurn.kind)}`);
       } else {
-        speak(`출발. 쭉 직진`);
+        said = speak(`출발. 쭉 직진`);
       }
-      next.startAnnounced = true;
-      spoke = true;
+      if (said) {
+        next.startAnnounced = true;
+        spoke = true;
+      }
     }
   }
 
@@ -388,7 +417,9 @@ export function tickVoiceNav(
         ahead <= WARN_AHEAD_M &&
         ti > next.lastWarnedTurn
       ) {
-        speak(`${distLabel(Math.round(ahead))} 앞 ${turnLabel(turn.kind)}`);
+        // 밀려서 못 했으면 표시하지 않는다 — 다음 측위에서 다시 시도한다.
+        // 안 그러면 안내를 못 들은 채로 "안내함" 이 되어 영영 예고가 없다.
+        if (!speak(`${distLabel(Math.round(ahead))} 앞 ${turnLabel(turn.kind)}`)) break;
         next.lastWarnedTurn = ti;
         spoke = true;
 
@@ -410,7 +441,7 @@ export function tickVoiceNav(
         ahead <= CONFIRM_AHEAD_M &&
         ti > next.lastConfirmTurn
       ) {
-        speak(`잠시 후 ${turnLabel(turn.kind)}`);
+        if (!speak(`잠시 후 ${turnLabel(turn.kind)}`)) break;
         next.lastConfirmTurn = ti;
         spoke = true;
         break;
@@ -454,9 +485,10 @@ export function tickVoiceNav(
         aheadToTurn > STRAIGHT_MIN_M &&
         currentM - next.lastStraightRemindM >= STRAIGHT_REMIND_M
       ) {
-        speak('쭉 직진하세요', { vibrate: false });
-        next.lastStraightRemindM = currentM;
-        spoke = true;
+        if (speak('쭉 직진하세요', { vibrate: false })) {
+          next.lastStraightRemindM = currentM;
+          spoke = true;
+        }
       }
     }
   }
@@ -465,7 +497,7 @@ export function tickVoiceNav(
   // km 이정표보다 먼저 본다 — 마지막 순간에 "5킬로미터 완료" 대신
   // "코스 완주" 를 들려주는 쪽이 맞다.
   const remainM = totalDistM - currentM;
-  if (!state.completionAnnounced && remainM <= 30 && totalDistM > 100) {
+  if (!spoke && !state.completionAnnounced && remainM <= 30 && totalDistM > 100) {
     speak('코스 완주! 수고했어요.', { level: 'now' });
     next.completionAnnounced = true;
     next.lastKmAnnounced = Math.floor(distanceKm); // 완주 뒤 이정표가 뒤따르지 않게
@@ -475,14 +507,17 @@ export function tickVoiceNav(
   // ── km 이정표 ──────────────────────────────────────────────────
   const km = Math.floor(distanceKm);
   if (km > 0 && km > state.lastKmAnnounced) {
-    // 안내를 건너뛰더라도 이정표는 지나간 것으로 처리한다. 안 그러면
-    // 다음 틱에 뒤늦게 튀어나와 턴 안내와 부딪친다.
-    if (!spoke && remainM > 200) {
-      speak(`${km}킬로미터 완료. 남은 거리 ${distLabel(Math.round(remainM))}`, {
+    if (remainM <= 200) {
+      // 결승이 코앞이다 — 이정표는 건너뛰고 완주 안내에 자리를 내준다
+      next.lastKmAnnounced = km;
+    } else if (!spoke) {
+      // 실제로 말했을 때만 넘긴 것으로 친다. 턴 안내에 밀렸다면 그대로 두고
+      // 다음 측위에서 다시 시도한다 — 놓치면 그 이정표는 영영 안 나온다.
+      const said = speak(`${km}킬로미터 완료. 남은 거리 ${distLabel(Math.round(remainM))}`, {
         vibrate: false,
       });
+      if (said) next.lastKmAnnounced = km;
     }
-    next.lastKmAnnounced = km;
   }
 
   return settled(state, next);
@@ -509,7 +544,7 @@ export function toggleVoice(state: VoiceNavState): VoiceNavState {
     // 음성을 끈 뒤 2~3초 있다가 한 마디가 튀어나온다.
     pendingTimers.forEach(clearTimeout);
     pendingTimers.length = 0;
-    queued = 0;
+    inflight = [];
     if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
   } else {
     speak('음성 안내를 시작합니다', { vibrate: false });
@@ -522,7 +557,7 @@ export function stopVoiceNav() {
   voiceActive = false;
   pendingTimers.forEach(clearTimeout);
   pendingTimers.length = 0;
-  queued = 0;
+  inflight = [];
   if (typeof speechSynthesis !== 'undefined') {
     speechSynthesis.cancel();
   }
