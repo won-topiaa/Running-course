@@ -62,6 +62,25 @@ export interface RecorderState {
   altitudeKnown: boolean;
 }
 
+/**
+ * 확정된 기록값.
+ *
+ * RecorderState 는 렌더 스냅샷이라 1Hz 틱과 React 갱신 주기만큼 뒤처질 수
+ * 있다. 종료 시점에 그 값으로 저장하면, 방금 본 '러닝 완료' 화면보다 최대
+ * 1초 짧고 측위 한 번만큼 가까운 기록이 내 코스에 남는다 — 같은 러닝인데
+ * 두 화면의 숫자가 다르다. 저장할 때는 ref 를 직접 읽은 이 값을 쓴다.
+ */
+export interface RunSnapshot {
+  coords: LatLng[];
+  elevations: number[];
+  times: number[];
+  activeTimes: number[];
+  cumDist: number[];
+  distanceKm: number;
+  elapsedSec: number;
+  altitudeKnown: boolean;
+}
+
 export interface Recorder extends RecorderState {
   start: () => void;
   startDemo: (path?: LatLng[]) => void;
@@ -69,6 +88,8 @@ export interface Recorder extends RecorderState {
   resume: () => void;
   stop: () => void;
   reset: () => void;
+  /** 지금 이 순간의 확정값 (렌더 지연 없음) */
+  snapshot: () => RunSnapshot;
 }
 
 /** 좌표 차분으로 낸 최근 페이스 — 기기가 도플러 속도를 안 줄 때의 대비책 */
@@ -569,5 +590,21 @@ export function useRunRecorder(startLoc: LatLng): Recorder {
 
   useEffect(() => cleanup, [cleanup]);
 
-  return { ...state, start, startDemo, pause, resume, stop, reset };
+  const snapshot = useCallback(
+    (): RunSnapshot => ({
+      coords: coordsRef.current.slice(),
+      elevations: elevRef.current.slice(),
+      times: timesRef.current.slice(),
+      activeTimes: activeTimesRef.current.slice(),
+      cumDist: cumDistRef.current.slice(),
+      distanceKm: distMRef.current / 1000,
+      // 기록 중이면 지금까지 흐른 활성 시간, 멈춘 뒤면 그때 확정된 값
+      elapsedSec:
+        (statusRef.current === 'recording' ? activeNow(Date.now()) : activeMsRef.current) / 1000,
+      altitudeKnown: sawAltRef.current,
+    }),
+    [activeNow],
+  );
+
+  return { ...state, start, startDemo, pause, resume, stop, reset, snapshot };
 }

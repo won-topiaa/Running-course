@@ -17,7 +17,7 @@ import RouteSheet from './RouteSheet';
 import { savedFromView } from '../lib/savedRoutes';
 import { elevationsForPath } from '../lib/elevation';
 import { clearInProgress, loadInProgress, saveInProgress } from '../lib/runRecovery';
-import { useRunRecorder } from '../lib/useRunRecorder';
+import { useRunRecorder, type RunSnapshot } from '../lib/useRunRecorder';
 import { wakeLockSupported } from '../lib/wakeLock';
 import { buildResult } from '../lib/routing';
 import { formatClock, formatDistance, formatPace } from '../lib/format';
@@ -99,15 +99,17 @@ export default function RecordScreen({
   useEffect(() => {
     if (rec.status !== 'recording' || rec.demo) return;
     const snapshot = (force = false) => {
-      const r = recRef.current;
+      // 렌더 스냅샷(rec.*) 대신 확정값을 쓴다. 안전망이 되살리는 기록이
+      // 실제보다 1초 짧고 측위 한 번만큼 모자라면 안 된다.
+      const r = recRef.current.snapshot();
       saveInProgress(
         {
-        name,
-        coords: r.coords,
-        elevations: r.elevations,
-        times: r.times,
-        activeTimes: r.activeTimes,
-        cumDist: r.cumDist,
+          name,
+          coords: r.coords,
+          elevations: r.elevations,
+          times: r.times,
+          activeTimes: r.activeTimes,
+          cumDist: r.cumDist,
           distanceKm: r.distanceKm,
           elapsedSec: r.elapsedSec,
         },
@@ -188,15 +190,18 @@ export default function RecordScreen({
    * 좌표를 다시 합산하면 GPS 필터가 걸러낸 구간(정지 중 지터, 일시정지하고
    * 이동한 거리)이 되살아나서, 뛰는 동안 본 거리와 저장된 거리가 달라진다.
    */
-  const buildRecorded = (elevOverride?: number[] | null): RouteResult => {
+  const buildRecorded = (elevOverride?: number[] | null, snap?: RunSnapshot): RouteResult => {
+    // snap 이 있으면 그쪽이 확정값이다 — 종료 시점 저장은 렌더 스냅샷 대신
+    // 이걸 써야 요약 화면과 내 코스의 숫자가 어긋나지 않는다.
+    const src = snap ?? rec;
     const dem = elevOverride ?? demElev;
-    const elev = dem ?? rec.elevations;
-    const r = buildResult(rec.coords, elev, 'offline', [rec.coords[0]]);
-    const withDist = rec.distanceKm > 0 ? { ...r, distanceKm: rec.distanceKm } : r;
+    const elev = dem ?? src.elevations;
+    const r = buildResult(src.coords, elev, 'offline', [src.coords[0]]);
+    const withDist = src.distanceKm > 0 ? { ...r, distanceKm: src.distanceKm } : r;
     // 기기가 고도를 안 주고 지형 고도(DEM)도 못 받았으면, elevations 는 첫
     // 점의 지어낸 값이 끝까지 이어진 배열이다. '상승 0m' 라고 단정하지 않고
     // 모른다고 표시한다 — 저장·공유·GPX 가 이 표시를 따라간다.
-    return dem == null && !rec.altitudeKnown ? { ...withDist, elevationKnown: false } : withDist;
+    return dem == null && !src.altitudeKnown ? { ...withDist, elevationKnown: false } : withDist;
   };
 
   // 기록 종료 → 요약 시트
@@ -311,22 +316,26 @@ export default function RecordScreen({
     // 어긋나고(뒤쪽 고도가 마지막 값으로 채워진다) 화면의 거리도 계속 올라간다.
     // pause 는 활성 시간을 여기서 확정하고, 뒤따르는 stop 이 다시 더하지 않는다.
     rec.pause();
+    // pause 가 활성 시간을 확정한 직후의 값을 잡는다. rec.* 는 렌더 스냅샷이라
+    // 1Hz 틱만큼 뒤처져 있어, 그대로 저장하면 방금 본 '러닝 완료' 화면보다
+    // 최대 1초 짧고 측위 한 번만큼 짧은 기록이 내 코스에 남는다.
+    const snap = rec.snapshot();
     try {
       // GPS 고도 대신 실제 지형 고도로 바꿔 단다 (못 받으면 그대로 진행)
       let dem: number[] | null = null;
-      if (!rec.demo && rec.coords.length > 1) {
-        dem = await realElevations(rec.coords);
+      if (!rec.demo && snap.coords.length > 1) {
+        dem = await realElevations(snap.coords);
         if (dem) setDemElev(dem);
       }
       // 데모가 아니면 자동으로 내 코스에 저장 — 마이 통계가 여기서 나온다
-      if (!rec.demo && rec.coords.length > 1 && !autoSaved.current) {
-        const route = buildRecorded(dem);
+      if (!rec.demo && snap.coords.length > 1 && !autoSaved.current) {
+        const route = buildRecorded(dem, snap);
         const saved = savedFromView({
           name,
           route,
           kind: 'recorded',
           source: 'gps',
-          durationSec: rec.elapsedSec,
+          durationSec: snap.elapsedSec,
         });
         api.addSavedRoute(saved);
         autoSaved.current = saved.id;
