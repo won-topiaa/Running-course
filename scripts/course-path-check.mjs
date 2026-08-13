@@ -374,6 +374,95 @@ console.log('\n[크래시 방어] 손상된 시각이 GPX 내보내기를 죽이
   check(gpx != null && !gpx.includes('NaN'), 'GPX 본문에 NaN 이 없다');
 }
 
+// ── 음성 안내 시퀀스 ─────────────────────────────────────────────────────
+// 발화를 녹음하는 스텁으로 러닝 전체를 시뮬레이션해, 어떤 안내가 나오고
+// 어떤 안내가 안 나와야 하는지를 문장 단위로 못박는다.
+console.log('\n[음성 안내] 왕복·순환·자유 러닝 발화 시퀀스');
+{
+  const texts = [];
+  globalThis.speechSynthesis = {
+    // 실제 브라우저처럼 발화가 끝난다 — 안 끝내면 큐 상한(2)에 걸려
+    // 뒤 안내가 전부 굶는, 현실에 없는 상태를 검사하게 된다
+    speak(u) { texts.push(u.text); u.onend?.(); },
+    cancel() {}, resume() {},
+    getVoices() { return []; },
+    addEventListener() {},
+  };
+  globalThis.SpeechSynthesisUtterance = class { constructor(t) { this.text = t; } };
+  globalThis.document = { addEventListener() {}, visibilityState: 'visible' };
+  const { initVoiceNav, tickVoiceNav } = await bundle('src/lib/voiceNav.ts', 'vn2.mjs');
+
+  // 시뮬레이터 — 경로를 20m 틱으로 끝까지 뛴다 (활성 시간 6분/km)
+  const drive = (coords, cum, totalM) => {
+    let st = initVoiceNav(coords, cum);
+    for (let i = 0; i < coords.length; i++) {
+      const distKm = cum[i] / 1000;
+      st = tickVoiceNav(st, i, cum, distKm, totalM, coords[i], coords, distKm * 360);
+    }
+    return st;
+  };
+
+  // 1) 왕복 3km — ㄱ자로 꺾여 나갔다 같은 길로 복귀 (반환점 = 유턴 지점)
+  const out = [];
+  for (let m = 0; m <= 900; m += 20) out.push(P(m, 0));
+  for (let m = 20; m <= 600; m += 20) out.push(P(900, m));
+  const ob = [...out, ...out.slice(0, -1).reverse()];
+  const obCum = cumulativeMeters(ob);
+  texts.length = 0;
+  drive(ob, obCum, obCum[obCum.length - 1]);
+  const obTexts = [...texts];
+  check(obTexts.some((t) => t.includes('반환점')), `왕복: 반환점 안내가 나온다`);
+  check(obTexts.some((t) => t.includes('왔던 길로 돌아갑니다')), '왕복: 반환점 도착 문구');
+  check(!obTexts.some((t) => t.includes('유턴')), '왕복: 반환점을 유턴이라 부르지 않는다');
+  check(!obTexts.some((t) => t.includes('절반')), '왕복: 반환점과 겹치는 절반 안내는 없다');
+  check(
+    obTexts.some((t) => /킬로미터 완료. 지난 1킬로미터 \d+분/.test(t)),
+    'km 이정표에 지난 1km 페이스가 붙는다',
+  );
+  check(obTexts.some((t) => t.includes('마지막 500미터')), '마지막 500미터 안내');
+  check(obTexts.filter((t) => t.includes('완주')).length === 1, '완주 안내 한 번');
+
+  // 2) 순환 2.4km (사각 링) — 반환점이 없으니 절반 안내가 나온다
+  const ring2 = [];
+  for (let m = 0; m <= 600; m += 20) ring2.push(P(m, 0));
+  for (let m = 20; m <= 600; m += 20) ring2.push(P(600, m));
+  for (let m = 580; m >= 0; m -= 20) ring2.push(P(m, 600));
+  for (let m = 580; m >= 20; m -= 20) ring2.push(P(0, m));
+  ring2.push(P(0, 0));
+  const ring2Cum = cumulativeMeters(ring2);
+  texts.length = 0;
+  drive(ring2, ring2Cum, ring2Cum[ring2Cum.length - 1]);
+  check(texts.some((t) => t.includes('절반')), '순환: 절반 안내가 나온다');
+  check(!texts.some((t) => t.includes('반환점')), '순환: 반환점 안내는 없다');
+
+  // 3) 자유 러닝 — 경로 없이 거리·시간만. km 이정표(페이스)만 나온다
+  texts.length = 0;
+  let fs = initVoiceNav([], [0]);
+  // 0.25 단위 — 0.05 누적은 이진 오차로 3.00 이 2.999… 가 되어 이정표가 밀린다
+  for (let km = 0; km <= 3.1; km += 0.25) {
+    fs = tickVoiceNav(fs, 0, [0], km, 0, null, undefined, km * 330);
+  }
+  const freeKm = texts.filter((t) => /킬로미터 완료/.test(t));
+  check(freeKm.length === 3, `자유 러닝: km 이정표 3번 (${freeKm.length}번)`);
+  check(
+    freeKm.every((t) => t.includes('지난 1킬로미터')),
+    '자유 러닝: 이정표마다 구간 페이스가 붙는다',
+  );
+  check(!texts.some((t) => t.includes('남은 거리')), '자유 러닝: 남은 거리(경로 없음)는 말하지 않는다');
+  check(!texts.some((t) => t.includes('완주')), '자유 러닝: 완주 안내 없음');
+  check(!texts.some((t) => t.includes('출발')), '자유 러닝: 코스 출발 안내 없음');
+
+  // 페이스 문구가 실제 시간과 맞는지 — 5분 30초/km 로 뛰었다 (330초)
+  check(
+    freeKm.every((t) => t.includes('5분 30초')),
+    `구간 페이스가 실제 시간과 일치 (5분 30초) — ${freeKm[0] ?? ''}`,
+  );
+
+  delete globalThis.speechSynthesis;
+  delete globalThis.SpeechSynthesisUtterance;
+  delete globalThis.document;
+}
+
 // ── 따라 뛰기 진행 판정 ──────────────────────────────────────────────────
 // 왕복 코스는 가는 길과 오는 길 좌표가 같은 자리에 겹친다. 진행 인덱스가
 // 반환점 앞에서 돌아오는 쪽 쌍둥이 점으로 건너뛰면 남은 거리가 순간 붕괴하고

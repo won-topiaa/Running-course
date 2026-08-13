@@ -20,6 +20,12 @@ export interface TurnPoint {
   /** 방향 변화(도, -180~180, 양수 = 우회전) */
   deltaDeg: number;
   kind: 'left' | 'right' | 'sharp-left' | 'sharp-right' | 'u-turn';
+  /**
+   * 왕복 코스의 반환점인가. 유턴 중 코스 중간(총거리의 절반 ±15%)에 있는
+   * 것 하나만 표시한다. '유턴'은 도로 내비 말투라 코스 반환점에는 어색하다 —
+   * "반환점. 왔던 길로 돌아갑니다" 쪽이 러너가 기대하는 말이다.
+   */
+  turnaround?: boolean;
 }
 
 function normalizeAngle(deg: number): number {
@@ -81,6 +87,10 @@ export function detectTurns(
 }
 
 // ── 안내 문구 ───────────────────────────────────────────────────────────────
+
+function labelFor(turn: TurnPoint): string {
+  return turn.turnaround ? '반환점' : turnLabel(turn.kind);
+}
 
 function turnLabel(kind: TurnPoint['kind']): string {
   switch (kind) {
@@ -174,6 +184,12 @@ export interface VoiceNavState {
   lastOffRouteAt: number;
   /** 이탈 복귀 안내 발화 여부 (이탈→복귀 시 한 번만) */
   wasOffRoute: boolean;
+  /** '절반 지났어요' 발화 여부 */
+  halfAnnounced: boolean;
+  /** '마지막 500미터' 발화 여부 */
+  finalAnnounced: boolean;
+  /** 마지막 km 이정표 시점의 활성 시간(초) — 구간 페이스 계산용 */
+  lastKmAtSec: number;
 }
 
 let voiceActive = false;
@@ -240,11 +256,28 @@ export function initVoiceNav(
   voiceActive = true;
   voiceEnabled = true;
   ensureVoices();
+  const turns = detectTurns(coords, cum);
+  // 왕복 반환점: 코스 중간 근처의 유턴 중 절반에 가장 가까운 하나.
+  // 막다른 길 핀을 다녀오는 유턴까지 전부 반환점이라 부르면 거짓말이 된다.
+  const totalM = cum[cum.length - 1] ?? 0;
+  if (totalM >= 1000) {
+    let best = -1;
+    let bestGap = totalM * 0.15;
+    for (let i = 0; i < turns.length; i++) {
+      if (turns[i].kind !== 'u-turn') continue;
+      const gap = Math.abs(turns[i].cumM - totalM / 2);
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = i;
+      }
+    }
+    if (best >= 0) turns[best] = { ...turns[best], turnaround: true };
+  }
   return {
     enabled: true,
     supported:
       typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined',
-    turns: detectTurns(coords, cum),
+    turns,
     lastWarnedTurn: -1,
     lastAtTurn: -1,
     lastKmAnnounced: 0,
@@ -257,6 +290,9 @@ export function initVoiceNav(
     offRouteTicks: 0,
     lastOffRouteAt: 0,
     wasOffRoute: false,
+    halfAnnounced: false,
+    finalAnnounced: false,
+    lastKmAtSec: 0,
   };
 }
 
@@ -333,6 +369,9 @@ function speak(
     };
     u.onend = done;
     u.onerror = done;
+    // 화면이 꺼졌다 켜지면 브라우저가 음성 엔진을 paused 로 남겨 두기도 한다.
+    // 그 상태에서 speak 만 하면 소리 없이 큐에만 쌓인다 — 말하기 전에 깨운다.
+    speechSynthesis.resume?.();
     speechSynthesis.speak(u);
 
     if (vibrate && navigator.vibrate) {
@@ -356,6 +395,8 @@ export function tickVoiceNav(
   totalDistM: number,
   current?: LatLng | null,
   planned?: LatLng[],
+  /** 활성 시간(초, 일시정지 제외) — 주면 km 이정표에 지난 1km 페이스를 붙인다 */
+  activeSec?: number,
 ): VoiceNavState {
   if (!state.enabled || !state.supported) return state;
 
@@ -421,8 +462,8 @@ export function tickVoiceNav(
         const toFirst = firstTurn.cumM - currentM;
         said =
           toFirst > AT_TURN_M
-            ? speak(`출발. ${distLabel(Math.round(toFirst))} 앞 ${turnLabel(firstTurn.kind)}`)
-            : speak(`출발. 잠시 후 ${turnLabel(firstTurn.kind)}`);
+            ? speak(`출발. ${distLabel(Math.round(toFirst))} 앞 ${labelFor(firstTurn)}`)
+            : speak(`출발. 잠시 후 ${labelFor(firstTurn)}`);
       } else {
         said = speak(`출발. 쭉 직진`);
       }
@@ -449,7 +490,7 @@ export function tickVoiceNav(
       ) {
         // 밀려서 못 했으면 표시하지 않는다 — 다음 측위에서 다시 시도한다.
         // 안 그러면 안내를 못 들은 채로 "안내함" 이 되어 영영 예고가 없다.
-        if (!speak(`${distLabel(Math.round(ahead))} 앞 ${turnLabel(turn.kind)}`)) break;
+        if (!speak(`${distLabel(Math.round(ahead))} 앞 ${labelFor(turn)}`)) break;
         next.lastWarnedTurn = ti;
         spoke = true;
 
@@ -458,7 +499,7 @@ export function tickVoiceNav(
         if (nextTurn) {
           const gap = nextTurn.cumM - turn.cumM;
           if (gap < 200) {
-            const nk = turnLabel(nextTurn.kind);
+            const nk = labelFor(nextTurn);
             later(2000, () => speak(`이후 ${nk}`, { vibrate: false }));
           }
         }
@@ -471,7 +512,7 @@ export function tickVoiceNav(
         ahead <= CONFIRM_AHEAD_M &&
         ti > next.lastConfirmTurn
       ) {
-        if (!speak(`잠시 후 ${turnLabel(turn.kind)}`)) break;
+        if (!speak(`잠시 후 ${labelFor(turn)}`)) break;
         next.lastConfirmTurn = ti;
         spoke = true;
         break;
@@ -482,7 +523,10 @@ export function tickVoiceNav(
         Math.abs(ahead) <= AT_TURN_M &&
         ti > next.lastAtTurn
       ) {
-        speak(`지금 ${turnLabel(turn.kind)}`, { level: 'now' });
+        speak(
+          turn.turnaround ? '반환점. 왔던 길로 돌아갑니다' : `지금 ${turnLabel(turn.kind)}`,
+          { level: 'now' },
+        );
         next.lastAtTurn = ti;
         spoke = true;
 
@@ -534,19 +578,65 @@ export function tickVoiceNav(
     return next;
   }
 
+  // ── 마지막 스퍼트 (따라 뛰기 전용) ─────────────────────────────
+  // 완주 직전(60m 이내)이면 굳이 말하지 않는다 — 완주 안내가 곧 나온다.
+  if (
+    !spoke &&
+    !state.finalAnnounced &&
+    totalDistM >= 1500 &&
+    remainM <= 500 &&
+    remainM > 60
+  ) {
+    if (speak('마지막 500미터입니다.', { vibrate: false })) {
+      next.finalAnnounced = true;
+      spoke = true;
+    }
+  }
+
+  // ── 절반 안내 (따라 뛰기 전용) ─────────────────────────────────
+  // 왕복 코스는 반환점 안내가 절반 그 자체라 겹쳐 말하지 않는다.
+  if (
+    !spoke &&
+    !state.halfAnnounced &&
+    totalDistM >= 2000 &&
+    currentM >= totalDistM / 2 &&
+    !state.turns.some((t) => t.turnaround)
+  ) {
+    if (speak('절반 지났어요.', { vibrate: false })) {
+      next.halfAnnounced = true;
+      spoke = true;
+    }
+  }
+
   // ── km 이정표 ──────────────────────────────────────────────────
   const km = Math.floor(distanceKm);
   if (km > 0 && km > state.lastKmAnnounced) {
-    if (remainM <= 200) {
+    if (remainM <= 200 && totalDistM > 0) {
       // 결승이 코앞이다 — 이정표는 건너뛰고 완주 안내에 자리를 내준다
       next.lastKmAnnounced = km;
+      if (activeSec != null) next.lastKmAtSec = activeSec;
     } else if (!spoke) {
+      // 지난 1km 에 걸린 시간. 한 틱에 km 가 2 이상 뛰었거나(GPS 공백) 값이
+      // 상식 밖이면(2분 미만·20분 초과) 붙이지 않는다 — 지어낸 숫자를 읽어
+      // 주느니 거리만 말하는 편이 낫다.
+      let pace = '';
+      if (activeSec != null && km === state.lastKmAnnounced + 1) {
+        const split = Math.round(activeSec - state.lastKmAtSec);
+        if (split >= 120 && split <= 1200) {
+          const mm = Math.floor(split / 60);
+          const ss = split % 60;
+          pace = ` 지난 1킬로미터 ${mm}분${ss > 0 ? ` ${ss}초` : ''}.`;
+        }
+      }
+      // 따라 뛰기는 남은 거리까지, 자유 러닝(totalDistM 0)은 거리·페이스만
+      const tail = totalDistM > 0 ? ` 남은 거리 ${distLabel(Math.round(remainM))}` : '';
       // 실제로 말했을 때만 넘긴 것으로 친다. 턴 안내에 밀렸다면 그대로 두고
       // 다음 측위에서 다시 시도한다 — 놓치면 그 이정표는 영영 안 나온다.
-      const said = speak(`${km}킬로미터 완료. 남은 거리 ${distLabel(Math.round(remainM))}`, {
-        vibrate: false,
-      });
-      if (said) next.lastKmAnnounced = km;
+      const said = speak(`${km}킬로미터 완료.${pace}${tail}`, { vibrate: false });
+      if (said) {
+        next.lastKmAnnounced = km;
+        if (activeSec != null) next.lastKmAtSec = activeSec;
+      }
     }
   }
 

@@ -159,18 +159,32 @@ export default function RecordScreen({
     return cum.map((v) => v * k);
   }, [planned]);
 
-  // ── 음성 턴바이턴 내비게이션 ────────────────────────────────
+  // ── 음성 안내 ───────────────────────────────────────────────
+  // 따라 뛰기: 턴바이턴 + km 이정표. 자유 러닝: km 이정표(구간 페이스)만.
+  // 자유 러닝은 경로가 없으니 빈 좌표로 초기화한다 — 턴·이탈·완주 안내는
+  // 조건이 안 잡혀 자연히 조용하고, km 이정표만 산다.
   const [voiceNav, setVoiceNav] = useState<VoiceNavState | null>(null);
   useEffect(() => {
-    if (!planned || !plannedCum) return;
-    setVoiceNav(initVoiceNav(planned.route.coords, plannedCum));
+    if (planned && !plannedCum) return; // 코스는 있는데 누적거리가 아직이면 다음 턴에
+    setVoiceNav(planned && plannedCum ? initVoiceNav(planned.route.coords, plannedCum) : initVoiceNav([], [0]));
     return () => stopVoiceNav();
   }, [planned, plannedCum]);
 
   useEffect(() => {
-    if (!voiceNav || !plannedCum || !planned) return;
-    const totalM = plannedCum[plannedCum.length - 1] ?? 0;
-    const next = tickVoiceNav(voiceNav, idx, plannedCum, rec.distanceKm, totalM, cur, planned?.route.coords);
+    if (!voiceNav) return;
+    const next =
+      planned && plannedCum
+        ? tickVoiceNav(
+            voiceNav,
+            idx,
+            plannedCum,
+            rec.distanceKm,
+            plannedCum[plannedCum.length - 1] ?? 0,
+            cur,
+            planned.route.coords,
+            rec.elapsedSec,
+          )
+        : tickVoiceNav(voiceNav, 0, [0], rec.distanceKm, 0, null, undefined, rec.elapsedSec);
     if (next !== voiceNav) setVoiceNav(next);
   }, [idx, rec.distanceKm]);
 
@@ -398,7 +412,7 @@ export default function RecordScreen({
             <Zap size={12} /> DEMO
           </span>
         )}
-        {planned && voiceNav?.supported && live && !acquiring && (
+        {voiceNav?.supported && live && !acquiring && (
           <button
             onClick={() => setVoiceNav((v) => v ? toggleVoice(v) : v)}
             className={`absolute z-[1000] grid h-11 w-11 place-items-center rounded-full backdrop-blur active:scale-90 ${
