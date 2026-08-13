@@ -120,54 +120,94 @@ export function thinWaypoints(points: LatLng[], max: number): LatLng[] {
   return out;
 }
 
+/** 점에서 선분까지의 최단 거리(m). 국소 평면 근사 — 서울 규모에서 충분하다. */
+export function pointToSegmentMeters(pt: LatLng, a: LatLng, b: LatLng): number {
+  const latRad = (pt[0] * Math.PI) / 180;
+  const mx = 111_320 * Math.cos(latRad);
+  const my = 110_574;
+  const px = (pt[1] - a[1]) * mx;
+  const py = (pt[0] - a[0]) * my;
+  const bx = (b[1] - a[1]) * mx;
+  const by = (b[0] - a[0]) * my;
+  const len2 = bx * bx + by * by;
+  const t = len2 > 0 ? Math.max(0, Math.min(1, (px * bx + py * by) / len2)) : 0;
+  return Math.hypot(px - bx * t, py - by * t);
+}
+
+/** 점에서 좌표열 [from..to] 구간까지의 최단 거리(m) */
+function distToPolyline(pt: LatLng, coords: LatLng[], from: number, to: number): number {
+  let best = Infinity;
+  for (let i = from; i < to; i++) {
+    const d = pointToSegmentMeters(pt, coords[i], coords[i + 1]);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
 /**
- * 되돌아 나오는 짧은 곁가지를 걷어내고 남길 좌표의 인덱스를 고른다.
+ * 되돌아 나오는 곁가지를 걷어내고 남길 좌표의 인덱스를 고른다.
  *
  * 거리 모드는 시작점 둘레에 고리 정점을 기하학적으로 찍어(generateLoop) 그
  * 점들을 반드시 지나게 경로를 만든다. 정점이 막다른 골목이나 진행 방향과
  * 어긋난 길에 스냅되면 라우터는 거기 들어갔다 그대로 되돌아 나온다 —
  * 지도에서 선이 삐쭉 튀어나온 돌기로 보이고, 그만큼 거리도 부풀려진다.
  *
- * 판별: 어느 지점에서 출발해 rejoinM 안으로 되돌아왔고, 그 사이 경로 길이가
- * '최대 이탈 거리의 두 배'에 가까우면(되짚기) 곁가지다. 고리는 같은 조건에서
- * 길이가 훨씬 길어(원이면 π배) 걸러진다 — 블록을 한 바퀴 도는 구간은 남는다.
+ * 판별은 두 가지를 본다.
  *
- * 왕복 코스의 반환점도 국소적으로는 똑같은 되짚기라, 되짚기 판정만으로는
- * 구분되지 않는다. 차이는 전역적이다 — 돌기는 '본선에서 벗어났다 본선으로
- * 돌아오는' 것이라 앞뒤 진행 방향이 같지만, 반환점은 진행 방향이 뒤집힌다.
- * 그래서 곁가지 앞뒤 본선의 방위가 비슷할 때만 걷어낸다.
+ * 1) 되짚기인가 — 어느 지점에서 출발해 rejoinM 안으로 되돌아왔고, 나가는 쪽
+ *    좌표가 하나같이 들어오는 쪽 선에 붙어 있으면(widthM 이내) 같은 길을
+ *    되짚은 것이다. 예전엔 '길이가 최대 이탈의 두 배에 가까운가'로 봤는데,
+ *    그러면 막다른 길 끝의 회차 공간을 한 바퀴 돌거나 곁가지가 중간에 꺾이면
+ *    길이가 늘어나 판정에서 빠졌다 — 실제로 돌기가 남던 주된 이유다.
+ *    폭으로 보면 모양과 무관하게 잡히고, 블록을 한 바퀴 도는 구간은 폭이
+ *    넓어 그대로 남는다.
+ *
+ * 2) 본선에서 벗어난 것인가 — 왕복 코스의 반환점도 되짚기라 1)만으로는
+ *    구분되지 않는다. 곁가지 앞 THROUGH_M 지점과 뒤 THROUGH_M 지점이 서로
+ *    멀면 본선이 계속 이어지는 것이고(→ 돌기), 가까우면 왔던 길을 그대로
+ *    되돌아가는 것이다(→ 반환점, 남긴다). 예전엔 앞뒤 '방위'를 비교했는데
+ *    모퉁이에서 생긴 돌기가 방위 차 때문에 빠져나갔다.
  *
  * protect 에 준 지점(사용자가 찍은 핀) 근처의 곁가지는 의도된 것이므로 남긴다.
  * 막다른 길에 핀을 찍었으면 거기 들어갔다 나오는 게 맞다.
+ *
+ * 곁가지를 걷어내면 그 옆에 가려져 있던 곁가지가 드러나므로, 더 걷어낼 것이
+ * 없을 때까지(최대 4회) 되풀이한다.
  */
 export function spurKeptIndices(
   coords: LatLng[],
   opts: { maxSpurM?: number; rejoinM?: number; protect?: LatLng[]; protectM?: number } = {},
 ): number[] {
-  const maxSpurM = opts.maxSpurM ?? 120;
-  const rejoinM = opts.rejoinM ?? 20;
+  let idx = coords.map((_, i) => i);
+  for (let pass = 0; pass < 4; pass++) {
+    const cur = idx.map((i) => coords[i]);
+    const kept = spurPass(cur, opts);
+    if (kept.length === cur.length) break;
+    idx = kept.map((k) => idx[k]);
+  }
+  return idx;
+}
+
+function spurPass(
+  coords: LatLng[],
+  opts: { maxSpurM?: number; rejoinM?: number; protect?: LatLng[]; protectM?: number },
+): number[] {
+  const maxSpurM = opts.maxSpurM ?? 200; // 곁가지 편도 최대 길이
+  const rejoinM = opts.rejoinM ?? 25; //    되돌아온 지점이 출발 지점과 이 안이면 복귀로 본다
   const protect = opts.protect ?? [];
   const protectM = opts.protectM ?? 30;
-  const MIN_SPUR_M = 25; //  이보다 짧으면 좌표 잡음이라 건드리지 않는다
-  const RETRACE_MAX = 1.25; // 되짚기 판정 상한 (1.0 이 완벽한 왕복)
-  const TREND_M = 15; //     본선 방위를 재는 구간 길이
-  const TREND_TOL_DEG = 60; // 앞뒤 본선이 '같은 방향'이라고 볼 각도 차
+  const MIN_SPUR_M = 25; //   이보다 짧으면 좌표 잡음이라 건드리지 않는다
+  const WIDTH_M = 30; //      나가는 쪽이 들어오는 쪽 선에서 이 안이면 '같은 길'
+  const THROUGH_M = 120; //   본선이 이어지는지 보려고 앞뒤로 재는 거리
+  const THROUGH_MIN_M = 40; //앞뒤로 최소 이만큼은 있어야 판단한다
+  const RETRACE_NEAR_M = 25; //뒤쪽 경로가 앞쪽 경로에서 이 안이면 '겹친다'
+  const RETRACE_FRAC = 0.5; // 겹치는 비율이 이 이상이면 왔던 길을 되돌아가는 것
 
   const n = coords.length;
-  const all = () => coords.map((_, i) => i);
-  if (n < 4) return all();
+  if (n < 4) return coords.map((_, i) => i);
 
   const cum = new Array<number>(n).fill(0);
   for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + haversineMeters(coords[i - 1], coords[i]);
-
-  // 두 좌표 사이 진행 방위(도). 서울 규모에서는 국소 평면 근사로 충분하다.
-  const bearing = (a: LatLng, b: LatLng): number => {
-    const dy = b[0] - a[0];
-    const dx = (b[1] - a[1]) * Math.cos((((a[0] + b[0]) / 2) * Math.PI) / 180);
-    return (Math.atan2(dx, dy) * 180) / Math.PI;
-  };
-  const angleGap = (p: number, q: number): number =>
-    Math.abs((((p - q + 180) % 360) + 360) % 360 - 180);
 
   const keep = [0];
   let i = 0;
@@ -179,6 +219,7 @@ export function spurKeptIndices(
     for (let j = jMax; j >= i + 2; j--) {
       if (cum[j] - cum[i] < MIN_SPUR_M) break; // j 가 줄면 길이도 준다
       if (haversineMeters(coords[i], coords[j]) > rejoinM) continue;
+
       let maxDist = 0;
       let tip = i;
       for (let k = i + 1; k < j; k++) {
@@ -189,17 +230,35 @@ export function spurKeptIndices(
         }
       }
       if (maxDist < 1 || maxDist > maxSpurM) continue;
-      if (cum[j] - cum[i] > 2 * maxDist * RETRACE_MAX) continue; // 고리다 — 남긴다
-      // 앞뒤로 본선이 이어지고, 그 방향이 같아야 '본선에서 벗어난 돌기'다.
-      // 경로 끝에 붙은 되짚기는 판단할 근거가 없으므로 건드리지 않는다.
-      let a = i;
-      while (a > 0 && cum[i] - cum[a] < TREND_M) a--;
-      let b = j;
-      while (b < n - 1 && cum[b] - cum[j] < TREND_M) b++;
-      if (cum[i] - cum[a] < TREND_M || cum[b] - cum[j] < TREND_M) continue;
-      if (angleGap(bearing(coords[a], coords[i]), bearing(coords[j], coords[b])) > TREND_TOL_DEG) {
-        continue; // 진행 방향이 뒤집혔다 — 왕복 반환점이지 돌기가 아니다
+      if (tip <= i + 1 || tip >= j - 1) continue; // 나가는/들어오는 쪽이 없다
+
+      // 1) 나가는 쪽이 들어오는 쪽 선에 붙어 있는가 (같은 길 되짚기)
+      let width = 0;
+      for (let k = i + 1; k < tip && width <= WIDTH_M; k++) {
+        width = Math.max(width, distToPolyline(coords[k], coords, tip, j));
       }
+      if (width > WIDTH_M) continue; // 폭이 넓다 — 고리지 곁가지가 아니다
+
+      // 2) 곁가지 앞뒤로 본선이 계속 이어지는가
+      let a = i;
+      while (a > 0 && cum[i] - cum[a] < THROUGH_M) a--;
+      let b = j;
+      while (b < n - 1 && cum[b] - cum[j] < THROUGH_M) b++;
+      if (cum[i] - cum[a] < THROUGH_MIN_M || cum[b] - cum[j] < THROUGH_MIN_M) continue;
+      // 뒤쪽 구간이 앞쪽 구간과 얼마나 겹치는가. 앞뒤 '점 하나씩'을 비교하면
+      // 근처에 다른 돌기가 하나만 있어도 그 점이 밀려 판정이 뒤집힌다 —
+      // 실제로 복귀 구간에 돌기가 붙은 왕복 코스에서 반환점째로 잘려 나갔다.
+      // 구간 전체에서 겹치는 점의 비율로 보면 국소적인 흔들림에 흔들리지 않는다.
+      let near = 0;
+      let total = 0;
+      for (let k = j + 1; k <= b; k++) {
+        total++;
+        if (distToPolyline(coords[k], coords, a, i) <= RETRACE_NEAR_M) near++;
+      }
+      if (total === 0 || near / total >= RETRACE_FRAC) {
+        continue; // 왔던 길을 그대로 되돌아간다 — 왕복 반환점이지 돌기가 아니다
+      }
+
       if (protect.some((pt) => haversineMeters(pt, coords[tip]) <= protectM)) continue;
       cut = j;
       break;
@@ -208,4 +267,146 @@ export function spurKeptIndices(
     keep.push(i);
   }
   return keep;
+}
+
+/**
+ * 같은 길을 두 번 지나는 구간을 표시한다. 구간 i(coords[i]→coords[i+1])가
+ * 경로의 다른 곳에서 한 번 더 지나가면 true.
+ *
+ * 왕복 코스나 막다른 길을 다녀오는 구간은 선이 정확히 겹쳐 그려져서, 지도만
+ * 봐서는 한 번 지나는 길인지 갔다 오는 길인지 알 수 없다. 나중에 그린 선이
+ * 앞선 선을 그대로 덮기 때문이다.
+ *
+ * 경로를 따라 minGapM 이상 떨어진 두 구간이 공간적으로 tolM 안에 겹치면
+ * 같은 길로 본다. 바로 옆 구간끼리는 원래 이어져 있으니 제외해야 한다.
+ * 중점끼리가 아니라 '중점에서 상대 구간까지'를 양쪽으로 재서, 두 방향이
+ * 좌표를 다르게 쪼개 놓아도 잡히게 한다.
+ *
+ * 방향도 함께 본다 — 같은 길을 되짚으면 두 구간이 나란하거나(같은 방향으로
+ * 두 번) 정반대인데(갔다 옴), 모퉁이에서 만나는 두 구간은 수직에 가깝다.
+ * 방향을 안 보면 순환로가 닫히는 모퉁이가 겹침으로 잡힌다.
+ */
+export function retracedSegmentMask(
+  coords: LatLng[],
+  opts: { tolM?: number; minGapM?: number } = {},
+): boolean[] {
+  const tolM = opts.tolM ?? 18;
+  const minGapM = opts.minGapM ?? 60;
+  const PARALLEL_TOL_DEG = 35; // 0도·180도에서 이만큼 벗어나면 같은 길이 아니다
+  const segCount = Math.max(0, coords.length - 1);
+  const mask = new Array<boolean>(segCount).fill(false);
+  if (segCount < 2) return mask;
+
+  const cum = new Array<number>(coords.length).fill(0);
+  for (let i = 1; i < coords.length; i++) {
+    cum[i] = cum[i - 1] + haversineMeters(coords[i - 1], coords[i]);
+  }
+  // 구간별 진행 방위(도) — 나란한지 보려고 미리 구해 둔다
+  const dir = new Array<number>(segCount).fill(0);
+  for (let i = 0; i < segCount; i++) {
+    const dy = coords[i + 1][0] - coords[i][0];
+    const dx =
+      (coords[i + 1][1] - coords[i][1]) *
+      Math.cos((((coords[i][0] + coords[i + 1][0]) / 2) * Math.PI) / 180);
+    dir[i] = (Math.atan2(dx, dy) * 180) / Math.PI;
+  }
+  // 0도(같은 방향)나 180도(반대 방향)에 얼마나 가까운가
+  const offAxis = (a: number, b: number): number => {
+    const d = Math.abs((((a - b + 180) % 360) + 360) % 360 - 180);
+    return Math.min(d, 180 - d);
+  };
+
+  const mid = (i: number): LatLng => [
+    (coords[i][0] + coords[i + 1][0]) / 2,
+    (coords[i][1] + coords[i + 1][1]) / 2,
+  ];
+  const along = (i: number) => (cum[i] + cum[i + 1]) / 2;
+
+  // 중점을 격자에 담아 이웃 칸만 비교한다 — 전부 대 전부로 보면 좌표가
+  // 수천 개인 경로에서 눈에 띄게 느려진다.
+  const origin = coords[0];
+  const mx = 111_320 * Math.cos((origin[0] * Math.PI) / 180);
+  const my = 110_574;
+  const cell = Math.max(1, tolM);
+  const grid = new Map<string, number[]>();
+  const cellOf = (p: LatLng): [number, number] => [
+    Math.floor(((p[1] - origin[1]) * mx) / cell),
+    Math.floor(((p[0] - origin[0]) * my) / cell),
+  ];
+  for (let i = 0; i < segCount; i++) {
+    const [cx, cy] = cellOf(mid(i));
+    const key = `${cx},${cy}`;
+    const bucket = grid.get(key);
+    if (bucket) bucket.push(i);
+    else grid.set(key, [i]);
+  }
+
+  for (let i = 0; i < segCount; i++) {
+    if (mask[i]) continue;
+    const mi = mid(i);
+    const [cx, cy] = cellOf(mi);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (const j of grid.get(`${cx + dx},${cy + dy}`) ?? []) {
+          if (j <= i) continue;
+          if (Math.abs(along(j) - along(i)) < minGapM) continue;
+          if (offAxis(dir[i], dir[j]) > PARALLEL_TOL_DEG) continue; // 모퉁이에서 만난 것
+          if (pointToSegmentMeters(mi, coords[j], coords[j + 1]) > tolM) continue;
+          if (pointToSegmentMeters(mid(j), coords[i], coords[i + 1]) > tolM) continue;
+          mask[i] = true;
+          mask[j] = true;
+        }
+      }
+    }
+  }
+  return mask;
+}
+
+/**
+ * 겹쳐 그려지는 구간을 진행 방향 오른쪽으로 조금 밀어, 갔다 오는 두 방향이
+ * 나란한 두 선으로 보이게 한다(실제 좌표가 아니라 '그리기용' 좌표다).
+ *
+ * 두 방향 모두 자기 진행 방향의 오른쪽으로 밀리므로 서로 반대쪽에 놓인다 —
+ * 왕복 2차선 도로처럼 보인다. 겹치지 않는 구간은 그대로 두고, 꼭짓점에서는
+ * 앞뒤 구간의 밀린 양을 평균 내 선이 끊겨 보이지 않게 잇는다.
+ *
+ * 밀어내는 양은 미터 단위라 확대하면 두 선이 벌어져 보이고, 축소하면 한 선으로
+ * 합쳐진다 — 멀리서 볼 때 지저분해지지 않는다.
+ */
+export function separateRetraced(
+  coords: LatLng[],
+  mask: boolean[],
+  offsetM = 7,
+): LatLng[] {
+  if (coords.length < 2 || !mask.some(Boolean)) return coords;
+  const mx = 111_320 * Math.cos((coords[0][0] * Math.PI) / 180);
+  const my = 110_574;
+
+  // 구간별로 '오른쪽 법선 × offsetM' (겹치지 않으면 0)
+  const segOff: Array<[number, number]> = [];
+  for (let i = 0; i < coords.length - 1; i++) {
+    if (!mask[i]) {
+      segOff.push([0, 0]);
+      continue;
+    }
+    const ex = (coords[i + 1][1] - coords[i][1]) * mx;
+    const ey = (coords[i + 1][0] - coords[i][0]) * my;
+    const len = Math.hypot(ex, ey);
+    if (len < 1e-6) {
+      segOff.push([0, 0]);
+      continue;
+    }
+    segOff.push([(ey / len) * offsetM, (-ex / len) * offsetM]); // 오른쪽 법선
+  }
+
+  return coords.map((pt, i) => {
+    const a = segOff[i - 1];
+    const b = segOff[i];
+    const parts = [a, b].filter(Boolean) as Array<[number, number]>;
+    if (!parts.length) return pt;
+    const ox = parts.reduce((s, v) => s + v[0], 0) / parts.length;
+    const oy = parts.reduce((s, v) => s + v[1], 0) / parts.length;
+    if (ox === 0 && oy === 0) return pt;
+    return [pt[0] + oy / my, pt[1] + ox / mx] as LatLng;
+  });
 }

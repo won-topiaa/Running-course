@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { labelPinHtml, numberPinHtml } from './mapMarkers';
 import { arrowHtml, directionMarkers, endpointHtml } from '../lib/routeDirection';
 import type { RouteMapProps } from './mapTypes';
-import { coloredSegments } from '../lib/routeColor';
+import { coloredSegments, displayCoords } from '../lib/routeColor';
 import type { LatLng } from '../lib/types';
 
 // 기본값을 렌더마다 새로 만들면(= [] 리터럴) 아래 재그리기 effect 의 의존성이
@@ -100,7 +100,7 @@ export default function KakaoRouteMap({
       if (route) {
         add(
           new kakao.maps.Polyline({
-            path: toPath(route.coords),
+            path: toPath(displayCoords(route)),
             strokeWeight: 8,
             strokeColor: '#ffffff',
             strokeOpacity: 0.9,

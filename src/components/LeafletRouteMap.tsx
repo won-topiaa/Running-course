@@ -8,7 +8,7 @@ import BaseTiles from './BaseTiles';
 import { labelPinHtml, numberPinHtml } from './mapMarkers';
 import { arrowHtml, directionMarkers, endpointHtml } from '../lib/routeDirection';
 import type { RouteMapProps } from './mapTypes';
-import { coloredSegments } from '../lib/routeColor';
+import { coloredSegments, displayCoords } from '../lib/routeColor';
 import type { RouteResult } from '../lib/routing';
 import type { LatLng } from '../lib/types';
 
@@ -125,6 +125,7 @@ export default function LeafletRouteMap({
   // 열림, 숲길 값 도착 등 — 15km 경로 기준 삼각함수가 수천 번씩 다시 돈다.
   // 경로가 바뀔 때만 계산한다.
   const colored = useMemo(() => coloredSegments(route), [route]);
+  const casing = useMemo(() => displayCoords(route), [route]);
   const arrows = useMemo(() => (route ? directionMarkers(route.coords) : []), [route]);
 
   return (
@@ -174,7 +175,7 @@ export default function LeafletRouteMap({
       {route && (
         <>
           <Polyline
-            positions={route.coords as [number, number][]}
+            positions={casing as [number, number][]}
             pathOptions={{ color: '#fff', weight: 8, opacity: 0.9 }}
           />
           {colored.map((g, i) => (

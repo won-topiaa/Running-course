@@ -15,9 +15,16 @@ const bundle = async (entry, name) => {
 };
 
 const { COURSES } = await bundle('src/data/courses.ts', 'c.mjs');
-const { thinWaypoints, haversineMeters, pathLengthMeters, spurKeptIndices } =
-  await bundle('src/lib/geo.ts', 'g.mjs');
+const {
+  thinWaypoints,
+  haversineMeters,
+  pathLengthMeters,
+  spurKeptIndices,
+  retracedSegmentMask,
+  separateRetraced,
+} = await bundle('src/lib/geo.ts', 'g.mjs');
 const { courseLaps, lapDistanceKm } = await bundle('src/lib/types.ts', 't.mjs');
+const { ringRoundTrip } = await bundle('src/lib/routing.ts', 'r.mjs');
 
 const ok = [];
 const bad = [];
@@ -154,10 +161,153 @@ two.push(...line(210, 300));
 const k6 = spurKeptIndices(two);
 check(lenOf(two, k6) <= 320, `연속된 곁가지 2개를 모두 걷어낸다 (${Math.round(pathLengthMeters(two))}m → ${lenOf(two, k6)}m, 본선 300m)`);
 
+// 예전 판별기가 놓치던 경우들 ─────────────────────────────────────────
+// 모퉁이에서 생긴 돌기: 앞뒤 본선 방위가 90도 차이라 '방위 비교'로는 빠졌다
+const corner = [...line(0, 200)];
+for (let x = 210; x <= 260; x += 10) corner.push(P(x, 0));
+for (let x = 250; x >= 210; x -= 10) corner.push(P(x, 0));
+for (let y = 10; y <= 200; y += 10) corner.push(P(200, y));
+const kc = spurKeptIndices(corner);
+check(kc.length < corner.length, `모퉁이 돌기를 걷어낸다 (${corner.length} → ${kc.length}점)`);
+check(
+  Math.abs(lenOf(corner, kc) - 400) <= 25,
+  `모퉁이 돌기 제거 후 본선만 남는다 (${Math.round(pathLengthMeters(corner))}m → ${lenOf(corner, kc)}m, 본선 400m)`,
+);
+
+// 180m 돌기: 예전 상한(120m)을 넘어 빠져나갔다
+const long = [...line(0, 200)];
+for (let y = 10; y <= 180; y += 10) long.push(P(200, y));
+for (let y = 170; y >= 0; y -= 10) long.push(P(200, y));
+long.push(...line(210, 400));
+const kl = spurKeptIndices(long);
+check(
+  Math.abs(lenOf(long, kl) - 400) <= 20,
+  `180m 돌기를 걷어낸다 (${Math.round(pathLengthMeters(long))}m → ${lenOf(long, kl)}m, 본선 400m)`,
+);
+
+// 막다른 길 끝 회차 공간을 한 바퀴 돌고 나오는 돌기 — 순수 되짚기가 아니다
+const bulb = [...line(0, 200)];
+for (let y = 10; y <= 80; y += 10) bulb.push(P(200, y));
+for (const [dx, dy] of [[14, 90], [20, 100], [14, 110], [0, 114], [-14, 110], [-20, 100], [-14, 90]])
+  bulb.push(P(200 + dx, dy));
+for (let y = 80; y >= 0; y -= 10) bulb.push(P(200, y));
+bulb.push(...line(210, 400));
+const kb = spurKeptIndices(bulb);
+check(
+  Math.abs(lenOf(bulb, kb) - 400) <= 30,
+  `회차 공간이 달린 돌기를 걷어낸다 (${Math.round(pathLengthMeters(bulb))}m → ${lenOf(bulb, kb)}m, 본선 400m)`,
+);
+
+// 왕복 코스의 '돌아오는 구간'에 붙은 돌기 — 반환점은 남기고 돌기만 걷어낸다
+const onReturn = [...line(0, 600), ...line(590, 300, -10)];
+for (let y = 10; y <= 50; y += 10) onReturn.push(P(300, y));
+for (let y = 40; y >= 0; y -= 10) onReturn.push(P(300, y));
+onReturn.push(...line(290, 0, -10));
+const kr = spurKeptIndices(onReturn);
+check(
+  Math.abs(lenOf(onReturn, kr) - 1200) <= 25,
+  `돌아오는 구간의 돌기만 걷어내고 반환점은 남긴다 (${Math.round(pathLengthMeters(onReturn))}m → ${lenOf(onReturn, kr)}m, 왕복 1200m)`,
+);
+
 // 끝점은 언제나 남는다
-for (const [name, pts] of [['곁가지', spur], ['블록', blk], ['왕복', ob], ['2개', two]]) {
+for (const [name, pts] of [
+  ['곁가지', spur], ['블록', blk], ['왕복', ob], ['2개', two],
+  ['모퉁이', corner], ['180m', long], ['회차공간', bulb], ['복귀구간', onReturn],
+]) {
   const k = spurKeptIndices(pts);
   check(k[0] === 0 && k[k.length - 1] === pts.length - 1, `${name}: 시작·끝 좌표는 언제나 남는다`);
+}
+
+// ── 같은 길 왕복 표시 ────────────────────────────────────────────────────
+// 갔다 오는 구간은 선이 정확히 겹쳐 나중 선이 앞선 선을 덮는다. 겹침을 찾아
+// 좌우로 벌려 그리는 게 목적이므로, 무엇을 겹침으로 볼지부터 못박는다.
+console.log('\n[같은 길 왕복] 겹치는 구간을 찾아 좌우로 벌린다');
+const straightLine = line(0, 500);
+check(
+  !retracedSegmentMask(straightLine).some(Boolean),
+  '한 번만 지나는 곧은 길에는 겹침이 없다',
+);
+
+const back = [...line(0, 500), ...line(490, 0, -10)];
+const backMask = retracedSegmentMask(back);
+const backRatio = backMask.filter(Boolean).length / backMask.length;
+check(backRatio > 0.9, `왕복 코스는 거의 전 구간이 겹침 (${Math.round(backRatio * 100)}%)`);
+
+// 블록 한 바퀴는 서로 다른 길이라 겹치지 않는다
+const ring = [];
+for (let x = 0; x <= 200; x += 10) ring.push(P(x, 0));
+for (let y = 10; y <= 200; y += 10) ring.push(P(200, y));
+for (let x = 190; x >= 0; x -= 10) ring.push(P(x, 200));
+for (let y = 190; y >= 0; y -= 10) ring.push(P(0, y));
+check(!retracedSegmentMask(ring).some(Boolean), '사각 순환로는 겹침으로 보지 않는다');
+
+// 벌린 뒤 두 방향이 서로 반대쪽에 놓인다
+const sep = separateRetraced(back, backMask, 7);
+const outIdx = 30; //         가는 길 x=300
+const inIdx = back.length - 1 - 30; // 오는 길 x=300
+check(
+  haversineMeters(back[outIdx], back[inIdx]) < 1,
+  '벌리기 전에는 두 방향이 같은 자리에 겹쳐 있다',
+);
+const gap = haversineMeters(sep[outIdx], sep[inIdx]);
+check(gap > 10 && gap < 18, `벌린 뒤 두 방향이 ${gap.toFixed(1)}m 떨어진다 (밀어낸 양 7m × 2)`);
+check(
+  Math.abs(pathLengthMeters(sep) - pathLengthMeters(back)) < 5,
+  '좌우로 벌려도 경로 길이는 그대로다 (그리기용 좌표일 뿐)',
+);
+check(
+  separateRetraced(straightLine, retracedSegmentMask(straightLine), 7) === straightLine,
+  '겹침이 없으면 좌표를 그대로 돌려준다',
+);
+
+// 좌표가 수천 개인 경로에서도 느려지지 않아야 한다 (격자 없이 전부 비교하면 O(n²))
+const big = [];
+for (let x = 0; x <= 6000; x += 4) big.push(P(x, 0));
+for (let x = 5996; x >= 0; x -= 4) big.push(P(x, 0));
+const t0 = Date.now();
+retracedSegmentMask(big);
+const ms = Date.now() - t0;
+check(ms < 400, `좌표 ${big.length}개 겹침 판정 ${ms}ms (< 400ms)`);
+
+// ── 왕복 루프 거리 보정 ─────────────────────────────────────────────────
+// 고리 정점이 막다른 길에 스냅되면 돌기가 생긴다. 그 돌기를 '반지름 보정 뒤'에
+// 걷어내면, 보정은 돌기까지 포함한 길이로 목표를 맞춰 놓고 그 뒤에 돌기가
+// 빠져 최종 거리가 짧아진다. 실제 라우터를 못 부르므로 돌기를 심은 가짜
+// 라우터로 확인한다.
+console.log('\n[왕복 루프] 돌기를 걷어낸 뒤에도 목표 거리를 지킨다');
+{
+  const start = P(0, 0);
+  // 고리 둘레를 따라가되, 정점마다 60m 돌기를 하나씩 심는 가짜 라우터
+  const fakeRouter = (withSpurs) => async (ring) => {
+    const coords = [ring[0]];
+    for (let i = 1; i < ring.length; i++) {
+      const a = coords[coords.length - 1], b = ring[i];
+      const n = Math.max(1, Math.round(haversineMeters(a, b) / 20));
+      for (let k = 1; k <= n; k++) {
+        coords.push([a[0] + (b[0] - a[0]) * (k / n), a[1] + (b[1] - a[1]) * (k / n)]);
+      }
+      if (withSpurs && i < ring.length - 1) {
+        // 옆길로 60m 들어갔다 그대로 되돌아 나온다
+        const tipLat = b[0] + 60 * LAT;
+        for (let y = 10; y <= 60; y += 10) coords.push([b[0] + y * LAT, b[1]]);
+        for (let y = 50; y >= 0; y -= 10) coords.push([b[0] + y * LAT, b[1]]);
+        void tipLat;
+      }
+    }
+    return { coords };
+  };
+  for (const targetKm of [3, 5]) {
+    const spurred = await ringRoundTrip(fakeRouter(true), start, targetKm, { points: 5 });
+    // 사용자가 보는 건 buildResult 가 돌기를 걷어낸 뒤의 거리다. 보정이 돌기를
+    // 포함한 길이로 목표를 맞췄다면 여기서 그만큼 줄어든다.
+    const kept = spurKeptIndices(spurred.coords, { protect: [start] });
+    const finalKm = pathLengthMeters(kept.map((i) => spurred.coords[i])) / 1000;
+    const err = Math.abs(finalKm - targetKm) / targetKm;
+    check(
+      err < 0.05,
+      `목표 ${targetKm}km → 돌기 걷어낸 최종 ${finalKm.toFixed(2)}km (오차 ${(err * 100).toFixed(1)}%)`,
+    );
+  }
 }
 
 // ── 바퀴 수 ──────────────────────────────────────────────────────────────

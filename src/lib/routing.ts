@@ -364,11 +364,28 @@ export class OrsProvider implements RoutingProvider {
 
 // --- 왕복 루프 공통 전략 ------------------------------------------------------
 
-interface Geometry {
+export interface Geometry {
   coords: LatLng[];
   elevations?: number[];
   /** ORS 만 채운다 — 보정 시도마다 다른 경로가 나오므로 채택된 시도의 것을 써야 한다 */
   way?: WayMix;
+}
+
+/**
+ * 고리 정점이 막다른 길에 스냅돼 생긴 돌기를 걷어낸다.
+ *
+ * 반지름 보정 '전에' 걷어내야 한다. 나중에(buildResult 에서) 걷어내면 보정은
+ * 돌기까지 포함한 길이로 목표를 맞춰 놓고 그 뒤에 돌기가 빠지므로, 5km 를
+ * 요청해도 최종 거리가 그만큼 짧아진다.
+ */
+function trimGeometrySpurs(geom: Geometry, start: LatLng): Geometry {
+  const kept = spurKeptIndices(geom.coords, { protect: [start] });
+  if (kept.length === geom.coords.length) return geom;
+  return {
+    ...geom,
+    coords: kept.map((i) => geom.coords[i]),
+    elevations: geom.elevations ? kept.map((i) => geom.elevations![i]) : geom.elevations,
+  };
 }
 
 /**
@@ -378,7 +395,7 @@ interface Geometry {
  * 나온 경로의 실측 거리로 고리 반지름을 보정해 목표에 수렴시킨다(최대 3회).
  * 라우팅 엔진의 자체 왕복 기능보다 거리 정확도가 훨씬 좋다.
  */
-async function ringRoundTrip(
+export async function ringRoundTrip(
   geomFn: (ring: LatLng[]) => Promise<Geometry>,
   start: LatLng,
   targetKm: number,
@@ -396,7 +413,7 @@ async function ringRoundTrip(
   // (2회로 줄이면 평균 오차가 14.87% 로 크게 나빠져 그 아래로는 못 내린다)
   for (let attempt = 0; attempt < 3; attempt++) {
     const ring = generateLoop(start, targetKm * scale, points, seed);
-    const geom = await geomFn(ring);
+    const geom = trimGeometrySpurs(await geomFn(ring), start);
     const km = pathLengthMeters(geom.coords) / 1000;
     const err = Math.abs(km - targetKm);
     if (err < bestErr) {
