@@ -66,7 +66,14 @@ function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose:
     }
     let alive = true;
     (async () => {
-      const pts = course.loopType === 'loop' ? [...course.path, course.path[0]] : course.path;
+      // 왕복 코스는 갔다가 돌아와야 왕복이다. 예전엔 편도만 라우팅해서,
+      // '왕복 5km' 라고 적힌 코스를 눌러도 따라 뛸 경로는 편도 길이만 나왔다.
+      const pts =
+        course.loopType === 'loop'
+          ? [...course.path, course.path[0]]
+          : course.loopType === 'out-and-back'
+            ? [...course.path, ...course.path.slice(0, -1).reverse()]
+            : course.path;
       let provider: RoutingProvider | null = makeProvider(api.settings.orsKey);
       while (provider && provider.realRoads) {
         try {

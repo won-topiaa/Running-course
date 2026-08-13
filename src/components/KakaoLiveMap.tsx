@@ -39,18 +39,18 @@ export default function KakaoLiveMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kakao]);
 
+  // 계획 경로 오버레이는 계획이 바뀔 때만 다시 그린다.
+  // 예전엔 실시간 트랙과 한 effect 에 묶여 있어 deps 에 coords 가 들어갔다 —
+  // 측위가 들어올 때마다(초당 한 번) 계획 폴리라인과 지나온 구간을 전부
+  // 지웠다 다시 만들며, 10km 경로면 매초 수천 개의 LatLng 를 새로 할당했다.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !kakao?.maps) return;
     try {
-      const cur = coords.length ? coords[coords.length - 1] : null;
-
-      // 계획 경로: 아직 안 지난 구간은 '따라갈 눈금'(대시), 지나온 구간은 경사
-      // 색상 밑칠. 그 위에 내가 실제로 뛴 트랙을 실선으로 얹는다.
+      const toPath = (pts: LatLng[]) => pts.map((p) => new kakao.maps.LatLng(p[0], p[1]));
       if (plannedPath || traveled) {
         planRef.current.forEach((o) => o.setMap(null));
         planRef.current = [];
-        const toPath = (pts: LatLng[]) => pts.map((p) => new kakao.maps.LatLng(p[0], p[1]));
         if (plannedPath && plannedPath.length > 1) {
           const pl = new kakao.maps.Polyline({
             path: toPath(plannedPath),
@@ -75,6 +75,17 @@ export default function KakaoLiveMap({
           planRef.current.push(pl);
         }
       }
+    } catch {
+      /* 무시 */
+    }
+  }, [kakao, plannedPath, traveled]);
+
+  // 실시간 트랙과 현재 위치 — 폴리라인/오버레이를 한 번 만들고 갱신만 한다
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !kakao?.maps) return;
+    try {
+      const cur = coords.length ? coords[coords.length - 1] : null;
 
       // 내가 실제로 지나온 길. 예전엔 계획 경로가 있으면 이 줄을 통째로 건너뛰어,
       // 코스를 따라 뛰는 내내 '내가 실제로 어디로 갔는지'가 화면에 없었다.
@@ -110,7 +121,7 @@ export default function KakaoLiveMap({
     } catch {
       /* 무시 */
     }
-  }, [kakao, coords, plannedPath, traveled]);
+  }, [kakao, coords]);
 
   return <div ref={boxRef} className="kakao-soft h-full w-full" />;
 }

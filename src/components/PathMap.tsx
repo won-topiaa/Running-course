@@ -11,7 +11,10 @@ const LeafletPathMap = lazyWithReload(() => import('./LeafletPathMap'));
 /** 카카오맵 또는 Leaflet(폴백) 단일 경로 지도 */
 function PathMap(props: PathMapProps) {
   const { kakao, status } = useKakao(props.kakaoKey ?? null);
-  if (status === 'ready' && kakao && props.path.length > 0) {
+  // 좌표가 없으면 어느 엔진도 중심을 못 잡는다. 카카오 쪽만 막고 통과시키면
+  // Leaflet 폴백이 center={path[0]} 로 undefined 를 받아 터진다.
+  if (props.path.length === 0) return <div className="h-full w-full bg-ink-soft" />;
+  if (status === 'ready' && kakao) {
     return <KakaoPathMap {...props} kakao={kakao} />;
   }
   // 카카오 SDK 를 기다리는 동안에는 Leaflet 을 받지 않는다 (LiveMap 주석 참고)

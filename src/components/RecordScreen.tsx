@@ -143,10 +143,21 @@ export default function RecordScreen({
 
   // 경로는 뛰는 동안 안 바뀐다 — 누적 거리를 한 번만 만들어 두고, 매 측위마다
   // 하던 전체 경로 재순회(15km 면 측위 1회당 삼각함수 수천 번)를 없앤다.
-  const plannedCum = useMemo(
-    () => (planned ? cumulativeMeters(planned.route.coords) : null),
-    [planned],
-  );
+  const plannedCum = useMemo(() => {
+    if (!planned) return null;
+    const cum = cumulativeMeters(planned.route.coords);
+    // 좌표에서 다시 잰 길이는 믿을 수 없다. 공유 링크는 100점으로 솎여 오고,
+    // 저장 용량이 차면 shrinkOldest 가 100점까지 줄인다 — 코너를 직선으로
+    // 가로질러 도심 지그재그에서 29% 까지 짧게 나온다(savedRoutes.toRouteResult
+    // 가 거리만 저장값을 쓰는 이유가 이것이다). 진행 '비율'은 좌표에서 얻되,
+    // 총량은 믿을 수 있는 distanceKm 에 맞춰 늘린다. 안 그러면 시작 화면은
+    // 11.7km 라고 하고 러닝 화면은 '남은 8.24km' 라고 말한다.
+    const raw = cum[cum.length - 1] ?? 0;
+    const target = planned.route.distanceKm * 1000;
+    if (raw <= 0 || target <= 0) return cum;
+    const k = target / raw;
+    return cum.map((v) => v * k);
+  }, [planned]);
 
   // ── 음성 턴바이턴 내비게이션 ────────────────────────────────
   const [voiceNav, setVoiceNav] = useState<VoiceNavState | null>(null);
