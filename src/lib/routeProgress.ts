@@ -16,18 +16,38 @@ const LOOKAHEAD = 60;
 /**
  * 현재 위치로 진행 인덱스를 갱신한다.
  * 항상 앞으로만 이동하므로 경로가 자기 자신과 겹쳐도 뒤로 튀지 않는다.
+ *
+ * 창 안에서 '마지막으로 닿은 점'이 아니라 '첫 번째로 연속으로 닿는 구간에서
+ * 가장 가까운 점'을 고른다. 왕복 코스는 가는 길과 오는 길 좌표가 같은 자리에
+ * 겹치는데, 마지막 점을 고르면 반환점 앞 수백 m 에서 돌아오는 쪽 쌍둥이 점이
+ * 창에 들어오는 순간 그리로 건너뛴다 — 실측: 3km 왕복에서 한 틱에 1200m 전진,
+ * 남은 거리가 순간 붕괴하고 km 음성 안내가 몰아서 터졌다. 첫 구간에서 멈추면
+ * 가는 쪽 점(닿는 점들 사이에 틈이 있어 쌍둥이와 이어지지 않는다)에 붙고,
+ * 반환점 근처에서는 두 쪽이 실제로 한 구간으로 이어지므로 자연스럽게 넘어간다.
  */
 export function advanceProgress(
   planned: LatLng[],
   current: LatLng,
   prevIdx: number,
 ): number {
-  let idx = prevIdx;
   const limit = Math.min(planned.length - 1, prevIdx + LOOKAHEAD);
   for (let i = prevIdx; i <= limit; i++) {
-    if (haversineMeters(planned[i], current) <= REACH_M) idx = i;
+    if (haversineMeters(planned[i], current) > REACH_M) continue;
+    // 첫 번째로 닿는 점을 찾았다 — 연속으로 닿는 동안만 더 나아가며 가장
+    // 가까운 점을 고른다 (한 점 뒤에서 멈추는 지연 방지)
+    let best = i;
+    let bestD = haversineMeters(planned[i], current);
+    for (let j = i + 1; j <= limit; j++) {
+      const d = haversineMeters(planned[j], current);
+      if (d > REACH_M) break;
+      if (d < bestD) {
+        best = j;
+        bestD = d;
+      }
+    }
+    return best;
   }
-  return idx;
+  return prevIdx;
 }
 
 /**

@@ -27,6 +27,7 @@ const { courseLaps, lapDistanceKm } = await bundle('src/lib/types.ts', 't.mjs');
 const { ringRoundTrip } = await bundle('src/lib/routing.ts', 'r.mjs');
 const { coloredSegments, coloredSegmentsUpTo, displayCoords, retraceInfo } =
   await bundle('src/lib/routeColor.ts', 'rc.mjs');
+const { advanceProgress, cumulativeMeters } = await bundle('src/lib/routeProgress.ts', 'rp.mjs');
 
 const ok = [];
 const bad = [];
@@ -316,6 +317,45 @@ console.log('\n[러닝 화면] 지나온 선과 남은 점선이 같은 기하 �
     );
   }
   check(coloredSegmentsUpTo(fakeRoute, 0).length === 0, 'idx=0 이면 지나온 선이 없다');
+}
+
+// ── 따라 뛰기 진행 판정 ──────────────────────────────────────────────────
+// 왕복 코스는 가는 길과 오는 길 좌표가 같은 자리에 겹친다. 진행 인덱스가
+// 반환점 앞에서 돌아오는 쪽 쌍둥이 점으로 건너뛰면 남은 거리가 순간 붕괴하고
+// km 음성 안내가 몰아서 터진다. 러너가 경로를 그대로 따라 뛰는 상황을
+// 시뮬레이션해 한 틱 전진 폭을 못박는다.
+console.log('\n[따라 뛰기] 왕복 반환점을 건너뛰지 않는다');
+{
+  const pts = [];
+  for (let m = 0; m <= 1500; m += 20) pts.push([37.5 + m * LAT, 127.0]);
+  for (let m = 1480; m >= 0; m -= 20) pts.push([37.5 + (m) * LAT, 127.0]);
+  const cum = cumulativeMeters(pts);
+  let idx = 0;
+  let maxJumpM = 0;
+  let wentBack = false;
+  for (let m = 0; m <= 3000; m += 15) {
+    const pos = m <= 1500 ? [37.5 + m * LAT, 127.0] : [37.5 + (3000 - m) * LAT, 127.0];
+    const prev = idx;
+    idx = advanceProgress(pts, pos, idx);
+    if (idx < prev) wentBack = true;
+    maxJumpM = Math.max(maxJumpM, cum[idx] - cum[prev]);
+  }
+  check(!wentBack, '진행 인덱스는 전 구간에서 뒤로 가지 않는다');
+  check(
+    maxJumpM < 100,
+    `한 틱 최대 전진 ${Math.round(maxJumpM)}m < 100m (반환점 건너뛰기 없음 — 수정 전 1200m)`,
+  );
+  check(idx === pts.length - 1, `왕복 끝까지 완주한다 (idx ${idx}/${pts.length - 1})`);
+
+  // 순환 코스: 출발점과 도착점이 같은 자리 — 출발 직후 도착으로 건너뛰지 않는다
+  const ring = [];
+  for (let d = 0; d < 360; d += 3) {
+    const r = 300;
+    ring.push([37.5 + (r * Math.cos((d * Math.PI) / 180) - r) * LAT, 127.0 + r * Math.sin((d * Math.PI) / 180) * (1 / 88320)]);
+  }
+  ring.push(ring[0]);
+  const early = advanceProgress(ring, ring[1], 0);
+  check(early < 10, `순환 코스 출발 직후 도착점으로 건너뛰지 않는다 (idx ${early})`);
 }
 
 // ── 왕복 루프 거리 보정 ─────────────────────────────────────────────────
