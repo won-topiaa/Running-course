@@ -8,6 +8,20 @@ import { chromium } from 'playwright-core';
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { join, extname, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { build } from 'esbuild';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+
+// 코스 이름 목록 — 14개 시트 전부 열기 검사에서 쓴다
+const dir2 = mkdtempSync(join(tmpdir(), 'sm-'));
+await build({
+  entryPoints: ['src/data/courses.ts'],
+  bundle: true,
+  format: 'esm',
+  outfile: join(dir2, 'c.mjs'),
+  logLevel: 'error',
+});
 
 const DIST = resolve('dist');
 const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
@@ -135,6 +149,43 @@ const belowHitsSlider = await page.evaluate(() => {
   return hit === el;
 });
 step(belowHitsSlider, '트랙 아래쪽을 눌러도 슬라이더가 잡힌다 (눈금이 안 가로챈다)');
+
+// 큐레이션 코스 14개 상세 시트를 전부 연다 — 코스 데이터가 하나라도 깨지면
+// (좌표·바퀴 수·경사 프로파일) 해당 시트가 열리다 터지거나 NaN 이 찍힌다.
+// 라우팅 API 는 이 환경에서 막혀 있어 지도는 못 떠도, 시트 자체(수치·배지·
+// 팁)는 오류 없이 렌더돼야 한다.
+await page.getByRole('button', { name: '추천', exact: true }).first().click();
+await page.waitForTimeout(1200);
+{
+  const { COURSES } = await import(pathToFileURL(join(dir2, 'c.mjs')).href);
+  let opened = 0;
+  let dirty = null;
+  for (const c of COURSES) {
+    const card = page.getByText(c.name, { exact: false }).first();
+    const visible = await card.isVisible().catch(() => false);
+    if (!visible) {
+      // 목록이 길면 스크롤해서 찾는다
+      await card.scrollIntoViewIfNeeded().catch(() => {});
+    }
+    const clicked = await card.click({ timeout: 3000 }).then(() => true).catch(() => false);
+    if (!clicked) continue;
+    await page.waitForTimeout(700);
+    const sheetText = await page.locator('body').innerText();
+    if (/NaN|Infinity|undefined/.test(sheetText)) {
+      dirty = c.id;
+    }
+    const errored = await page.getByText('문제가 생겼어요').count();
+    if (errored) {
+      dirty = `${c.id} (ErrorBoundary)`;
+      break;
+    }
+    opened++;
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+  }
+  step(opened === COURSES.length, `추천 코스 ${COURSES.length}개 상세 시트가 전부 열린다 (${opened}개)`);
+  step(dirty === null, `모든 코스 시트에 NaN·오류 없음${dirty ? ` — ${dirty}` : ''}`);
+}
 
 step(errors.length === 0, `앱 자체 오류 ${errors.length}건`);
 errors.slice(0, 8).forEach((e) => console.log('     · ' + e));
