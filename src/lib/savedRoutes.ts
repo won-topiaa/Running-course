@@ -15,6 +15,7 @@ import { RUN_STYLES, type RunStyle } from './routeStyle';
 import type { LatLng } from './types';
 
 const KEY = 'run-app-routes-v1';
+const TRASH_KEY = 'run-app-routes-trash-v1';
 
 export interface SavedRoute {
   id: string;
@@ -97,10 +98,9 @@ function isRoute(v: unknown): v is SavedRoute {
   );
 }
 
-/** 손상된 항목을 걸러낸 목록. 통계·지도가 이 배열을 그대로 믿고 쓴다. */
-export function sanitizeRoutes(v: unknown): SavedRoute[] {
-  if (!Array.isArray(v)) return [];
-  return v.filter(isRoute).map((r) => ({
+/** 숫자 칸 보정 — 목록·통계가 NaN 을 그대로 그리지 않게 */
+function fixNumbers<T extends SavedRoute>(r: T): T {
+  return {
     ...r,
     ascentM: Number.isFinite(r.ascentM) ? r.ascentM : 0,
     maxGradePct: Number.isFinite(r.maxGradePct) ? r.maxGradePct : 0,
@@ -108,7 +108,13 @@ export function sanitizeRoutes(v: unknown): SavedRoute[] {
       typeof r.durationSec === 'number' && Number.isFinite(r.durationSec)
         ? r.durationSec
         : undefined,
-  }));
+  };
+}
+
+/** 손상된 항목을 걸러낸 목록. 통계·지도가 이 배열을 그대로 믿고 쓴다. */
+export function sanitizeRoutes(v: unknown): SavedRoute[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter(isRoute).map(fixNumbers);
 }
 
 export function loadRoutes(): SavedRoute[] {
@@ -161,6 +167,88 @@ export function persistRoutes(routes: SavedRoute[]): { ok: boolean; compacted?: 
     }
   }
   return { ok: false };
+}
+
+// --- 휴지통 ----------------------------------------------------------------
+//
+// 삭제는 한 번의 탭으로 끝나고 되돌릴 방법이 없었다. 시트에서 '내 코스에 저장'
+// 이 있던 바로 그 자리가 저장 직후 '삭제'로 바뀌기 때문에, 저장하려고 한 번 더
+// 누르면 방금 뛴 기록이 확인도 없이 지워지고 시트까지 닫혔다 — 사용자가 보기엔
+// '보관 버튼을 눌렀더니 코스가 사라진' 것이다.
+//
+// 지운 코스는 곧바로 없애지 않고 여기서 30일 머문다. 저장한 코스 화면에서 다시
+// 꺼낼 수 있고, 지운 직후에는 되돌리기 띠가 뜬다.
+
+/** 휴지통 보관 기간 */
+export const TRASH_DAYS = 30;
+const DAY_MS = 86_400_000;
+/** 휴지통 최대 건수 — 기록 본체가 쓸 저장 공간을 잠식하지 않게 */
+const TRASH_MAX = 10;
+
+export interface TrashedRoute extends SavedRoute {
+  /** 지운 시각(epoch ms) */
+  deletedAt: number;
+}
+
+function isTrashed(v: unknown): v is TrashedRoute {
+  if (!isRoute(v)) return false;
+  const t = (v as TrashedRoute).deletedAt;
+  return typeof t === 'number' && Number.isFinite(t);
+}
+
+/** 손상된 항목과 기간이 지난 항목을 걸러낸 휴지통 */
+export function sanitizeTrash(v: unknown, now: number = Date.now()): TrashedRoute[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter(isTrashed)
+    .filter((t) => now - t.deletedAt < TRASH_DAYS * DAY_MS)
+    .map(fixNumbers)
+    .slice(0, TRASH_MAX);
+}
+
+/** 휴지통에 넣기 — 최근 것이 앞, 기간·건수 상한을 지킨다 */
+export function addToTrash(
+  trash: TrashedRoute[],
+  r: SavedRoute,
+  now: number = Date.now(),
+): TrashedRoute[] {
+  const next: TrashedRoute[] = [{ ...r, deletedAt: now }, ...trash.filter((t) => t.id !== r.id)];
+  return next.filter((t) => now - t.deletedAt < TRASH_DAYS * DAY_MS).slice(0, TRASH_MAX);
+}
+
+/** 휴지통 항목 → 되살릴 기록 (deletedAt 을 뗀다) */
+export function restoredFromTrash(t: TrashedRoute): SavedRoute {
+  const { deletedAt: _deletedAt, ...route } = t;
+  return route;
+}
+
+export function loadTrash(now: number = Date.now()): TrashedRoute[] {
+  try {
+    const raw = localStorage.getItem(TRASH_KEY);
+    if (raw) return sanitizeTrash(JSON.parse(raw), now);
+  } catch {
+    /* 무시 */
+  }
+  return [];
+}
+
+/**
+ * 휴지통 저장. 실제로 저장된 배열을 돌려준다.
+ *
+ * 이건 '되면 좋은' 데이터다. 기록 본체(persistRoutes)가 쓸 자리를 뺏으면
+ * 안 되므로, 용량이 모자라면 오래된 것부터 버리며 재시도한다.
+ */
+export function persistTrash(trash: TrashedRoute[]): TrashedRoute[] {
+  let cur = trash;
+  for (;;) {
+    try {
+      localStorage.setItem(TRASH_KEY, JSON.stringify(cur));
+      return cur;
+    } catch {
+      if (cur.length === 0) return cur; // 빈 배열도 못 쓰면 더 줄일 것이 없다
+      cur = cur.slice(0, -1);
+    }
+  }
 }
 
 const rid = () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;

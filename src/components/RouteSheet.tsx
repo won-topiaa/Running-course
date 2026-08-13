@@ -98,7 +98,26 @@ export default function RouteSheet({
     flash('내 코스에 저장했어요');
   };
 
+  /**
+   * 삭제는 두 번 눌러야 한다.
+   *
+   * 예전엔 저장 버튼이 있던 자리가 저장 직후 '삭제'로 바뀌었고, 한 번 누르면
+   * 확인도 없이 지워지며 시트까지 닫혔다. 저장하려고 한 번 더 누른 사람에게는
+   * 방금 뛴 기록이 통째로 사라진 것으로 보인다. 이제 삭제는 액션 칸 밖에
+   * 따로 있고, 한 번 더 확인하고, 지워도 휴지통에서 되살릴 수 있다.
+   */
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const t = setTimeout(() => setConfirmDelete(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmDelete]);
+
   const doDelete = () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
     if (savedId) api.removeSavedRoute(savedId);
     onClose();
   };
@@ -347,9 +366,15 @@ export default function RouteSheet({
 
           {/* 액션 */}
           <div className="mt-4 grid grid-cols-2 gap-2">
+            {/* 이 칸은 절대 삭제로 바뀌지 않는다 — 저장하려고 한 번 더 누른
+                손가락이 기록을 지우는 일이 없어야 한다 */}
             {savedId ? (
-              <ActionBtn onClick={doDelete} tone="line" icon={<Trash2 size={16} />}>
-                삭제
+              <ActionBtn
+                onClick={() => flash('이미 내 코스에 있어요')}
+                tone="sage"
+                icon={<Check size={16} />}
+              >
+                저장됨
               </ActionBtn>
             ) : (
               <ActionBtn onClick={doSave} tone="coral" icon={<Bookmark size={16} />}>
@@ -380,9 +405,24 @@ export default function RouteSheet({
             앱(Garmin Connect 등)으로 가져오면 워치 내비게이션이 켜져요.
           </p>
           {savedId && (
-            <p className="mt-2 inline-flex items-center gap-1 text-[12px] text-sage-600">
-              <Check size={13} /> 내 코스에 저장됨
-            </p>
+            <div className="mt-2.5 flex items-center justify-between gap-2 pb-1">
+              <p className="inline-flex min-w-0 items-center gap-1 text-[12px] text-sage-600">
+                <Check size={13} className="shrink-0" />
+                <span className="truncate">
+                  {confirmDelete ? '지우면 저장한 코스의 휴지통에 30일 남아요' : '내 코스에 저장됨'}
+                </span>
+              </p>
+              <button
+                onClick={doDelete}
+                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition active:scale-95 ${
+                  confirmDelete
+                    ? 'bg-coral-50 text-coral-600'
+                    : 'border border-line bg-paper text-espresso-soft'
+                }`}
+              >
+                <Trash2 size={13} /> {confirmDelete ? '한 번 더 누르면 삭제' : '삭제'}
+              </button>
+            </div>
           )}
         </div>
       </div>

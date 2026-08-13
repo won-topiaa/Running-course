@@ -1,9 +1,9 @@
-import { Bookmark, Compass, Footprints, Route, TrendingUp } from 'lucide-react';
+import { Bookmark, Compass, Footprints, Route, RotateCcw, Trash2, TrendingUp } from 'lucide-react';
 import ScenePhoto from '../components/ScenePhoto';
 import { COURSES } from '../data/courses';
 import { sceneForCourse } from '../lib/scene';
 import { formatDistance, formatDuration } from '../lib/format';
-import { toRouteResult, type SavedRoute } from '../lib/savedRoutes';
+import { toRouteResult, TRASH_DAYS, type SavedRoute } from '../lib/savedRoutes';
 import { ELEVATION_LABEL } from '../lib/types';
 import type { AppApi } from '../ui/appApi';
 
@@ -115,6 +115,56 @@ export default function SavedScreen({ api }: { api: AppApi }) {
         </section>
       )}
 
+      {/* 휴지통 — 실수로 지운 코스를 다시 찾는 곳 */}
+      {api.trashedRoutes.length > 0 && (
+        <section className="mb-5">
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <h2 className="flex items-center gap-1.5 text-[14px] font-bold text-espresso">
+              <Trash2 size={15} className="text-espresso-soft" /> 최근 삭제한 코스
+            </h2>
+            <button
+              onClick={api.clearTrash}
+              className="shrink-0 text-[11.5px] font-medium text-espresso-soft underline underline-offset-2 active:scale-95"
+            >
+              비우기
+            </button>
+          </div>
+          <p className="mb-2.5 text-[11.5px] text-espresso-soft">
+            지운 코스는 {TRASH_DAYS}일 동안 여기 남아요. 되돌리면 내 코스로 돌아갑니다.
+          </p>
+          <div className="space-y-2">
+            {api.trashedRoutes.map((t) => (
+              <div
+                key={t.id}
+                className="flex items-center gap-3 rounded-3xl border border-dashed border-line bg-paper/60 p-3 text-left"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13.5px] font-semibold text-espresso-muted">
+                    {t.name}
+                  </span>
+                  <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-espresso-soft">
+                    <span>{formatDistance(t.distanceKm)}</span>
+                    {t.durationSec != null && <span>{formatDuration(t.durationSec)}</span>}
+                    <span>{daysLeftLabel(t.deletedAt)}</span>
+                  </span>
+                </span>
+                <button
+                  onClick={() => api.restoreRoute(t.id)}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full bg-coral-50 px-3 py-2 text-[12.5px] font-semibold text-coral-600 active:scale-95"
+                >
+                  <RotateCcw size={13} /> 되돌리기
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
+}
+
+/** 휴지통에서 자동으로 지워지기까지 남은 기간 */
+function daysLeftLabel(deletedAt: number): string {
+  const left = Math.ceil((deletedAt + TRASH_DAYS * 86_400_000 - Date.now()) / 86_400_000);
+  return left <= 1 ? '오늘까지' : `${left}일 남음`;
 }

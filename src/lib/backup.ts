@@ -11,6 +11,9 @@ const KEYS = [
   'run-app-settings-v1',
   'run-app-saved-v1',
   'run-app-routes-v1',
+  // 휴지통(30일). 백업에 같이 실어야 기기를 옮기거나 복원한 뒤에도
+  // 실수로 지운 코스를 되살릴 수 있다.
+  'run-app-routes-trash-v1',
   'run-app-shoes-v1',
   'run-app-strava-token-v1',
 ] as const;

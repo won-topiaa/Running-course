@@ -2,7 +2,7 @@ import type { Screen } from '../components/BottomNav';
 import type { Settings } from '../lib/config';
 import type { RouteResult } from '../lib/routing';
 import type { RunStyle } from '../lib/routeStyle';
-import type { SavedRoute } from '../lib/savedRoutes';
+import type { SavedRoute, TrashedRoute } from '../lib/savedRoutes';
 import type { RunConditions } from '../lib/weather';
 
 /** RouteSheet 로 볼 경로(만든/기록한/공유된) */
@@ -37,7 +37,12 @@ export interface AppApi {
   // 내가 만든/기록한 코스
   savedRoutes: SavedRoute[];
   addSavedRoute: (r: SavedRoute) => void;
+  /** 삭제 — 곧바로 없애지 않고 휴지통(30일)으로 옮긴다 */
   removeSavedRoute: (id: string) => void;
+  // 휴지통 — 지운 코스를 다시 찾는 곳
+  trashedRoutes: TrashedRoute[];
+  restoreRoute: (id: string) => void;
+  clearTrash: () => void;
   // 실시간 기록 / 경로 보기
   /** planned 를 주면 그 경로를 따라 뛰는 모드로 시작한다 */
   startRecord: (planned?: { name: string; route: RouteResult } | null) => void;

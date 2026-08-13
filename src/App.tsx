@@ -15,7 +15,17 @@ const RecordScreen = lazyWithReload(() => import('./components/RecordScreen'));
 const RouteSheet = lazyWithReload(() => import('./components/RouteSheet'));
 const CourseDetailSheet = lazyWithReload(() => import('./components/CourseDetailSheet'));
 import { loadSettings, saveSettings, type Settings } from './lib/config';
-import { loadRoutes, parseSharedFromHash, persistRoutes, type SavedRoute } from './lib/savedRoutes';
+import {
+  addToTrash,
+  loadRoutes,
+  loadTrash,
+  parseSharedFromHash,
+  persistRoutes,
+  persistTrash,
+  restoredFromTrash,
+  type SavedRoute,
+  type TrashedRoute,
+} from './lib/savedRoutes';
 import { loadCloudSession, pushCloud } from './lib/cloud';
 import { captureTokenFromHash } from './lib/strava';
 import type { RouteResult } from './lib/routing';
@@ -45,6 +55,10 @@ export default function App() {
   const [conditions, setConditions] = useState<RunConditions | null>(null);
   const [savedIds, setSavedIds] = useState<string[]>(loadSaved);
   const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>(loadRoutes);
+  // 지운 코스는 30일 동안 휴지통에 남는다 (저장한 코스 화면에서 되살릴 수 있다)
+  const [trashedRoutes, setTrashedRoutes] = useState<TrashedRoute[]>(loadTrash);
+  /** 방금 지운 코스 — 되돌리기 띠에 쓴다 */
+  const [justDeleted, setJustDeleted] = useState<TrashedRoute | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
   const [plannedRun, setPlannedRun] = useState<{ name: string; route: RouteResult } | null>(null);
@@ -135,6 +149,20 @@ export default function App() {
     setStorageFull(!r.ok);
     if (r.compacted) setSavedRoutes(r.compacted);
   }, [savedRoutes]);
+  // 휴지통도 저장한다. 자리가 모자라면 오래된 것부터 빠지므로, 실제로 저장된
+  // 배열로 화면 상태를 맞춰 목록에 '되살릴 수 있다'고 거짓말하지 않게 한다.
+  useEffect(() => {
+    const stored = persistTrash(trashedRoutes);
+    if (stored.length !== trashedRoutes.length) setTrashedRoutes(stored);
+  }, [trashedRoutes]);
+
+  // 되돌리기 띠는 잠깐만 — 그 뒤에도 저장한 코스 화면의 휴지통에서 되살릴 수 있다
+  useEffect(() => {
+    if (!justDeleted) return;
+    const t = setTimeout(() => setJustDeleted(null), 8000);
+    return () => clearTimeout(t);
+  }, [justDeleted]);
+
   useEffect(() => {
     try {
       localStorage.setItem(SAVED_KEY, JSON.stringify(savedIds));
@@ -166,8 +194,45 @@ export default function App() {
     setSavedRoutes((cur) => [r, ...cur]);
   }, []);
 
-  const removeSavedRoute = useCallback((id: string) => {
-    setSavedRoutes((cur) => cur.filter((r) => r.id !== id));
+  /**
+   * 삭제 — 목록에서 빼고 휴지통으로 옮긴다.
+   *
+   * 예전엔 여기서 그냥 버렸다. 한 번의 탭으로 기록이 영영 사라지는데, 그 탭은
+   * 저장 버튼이 있던 자리에서 일어난다 — 되돌릴 방법이 있어야 한다.
+   */
+  const removeSavedRoute = useCallback(
+    (id: string) => {
+      const gone = savedRoutes.find((r) => r.id === id);
+      setSavedRoutes((cur) => cur.filter((r) => r.id !== id));
+      if (!gone) return;
+      const deletedAt = Date.now();
+      setTrashedRoutes((cur) => addToTrash(cur, gone, deletedAt));
+      setJustDeleted({ ...gone, deletedAt });
+    },
+    [savedRoutes],
+  );
+
+  /** 휴지통 → 내 코스. 만든 시각 순서(최신 우선)에 맞춰 제자리에 꽂는다. */
+  const restoreRoute = useCallback(
+    (id: string) => {
+      const t = trashedRoutes.find((x) => x.id === id);
+      if (!t) return;
+      const route = restoredFromTrash(t);
+      setSavedRoutes((cur) => {
+        if (cur.some((r) => r.id === route.id)) return cur;
+        const at = cur.findIndex((r) => r.createdAt < route.createdAt);
+        return at === -1 ? [...cur, route] : [...cur.slice(0, at), route, ...cur.slice(at)];
+      });
+      setTrashedRoutes((cur) => cur.filter((x) => x.id !== id));
+      setJustDeleted((cur) => (cur?.id === id ? null : cur));
+    },
+    [trashedRoutes],
+  );
+
+  /** 휴지통 비우기 — 저장 공간이 꽉 찼을 때 실제로 자리를 만드는 길 */
+  const clearTrash = useCallback(() => {
+    setTrashedRoutes([]);
+    setJustDeleted(null);
   }, []);
 
   const api: AppApi = useMemo(
@@ -183,13 +248,27 @@ export default function App() {
       savedRoutes,
       addSavedRoute,
       removeSavedRoute,
+      trashedRoutes,
+      restoreRoute,
+      clearTrash,
       startRecord: (planned) => {
         setPlannedRun(planned ?? null);
         setRecordOpen(true);
       },
       viewRoute: setRouteView,
     }),
-    [settings, conditions, savedIds, savedRoutes, toggleSaved, addSavedRoute, removeSavedRoute],
+    [
+      settings,
+      conditions,
+      savedIds,
+      savedRoutes,
+      toggleSaved,
+      addSavedRoute,
+      removeSavedRoute,
+      trashedRoutes,
+      restoreRoute,
+      clearTrash,
+    ],
   );
 
   return (
@@ -200,6 +279,30 @@ export default function App() {
         {screen === 'saved' && <SavedScreen api={api} />}
         {screen === 'my' && <MyScreen api={api} />}
       </Suspense>
+
+      {/* 방금 지운 코스 되돌리기 — 잘못 누른 걸 그 자리에서 물릴 수 있어야 한다 */}
+      {justDeleted && (
+        <div
+          /* 저장 공간 경고와 겹치지 않게 그 위로 올린다 */
+          className={`fixed inset-x-0 z-[1200] px-3 ${
+            storageFull
+              ? 'bottom-[calc(env(safe-area-inset-bottom,0px)+152px)]'
+              : 'bottom-[calc(env(safe-area-inset-bottom,0px)+86px)]'
+          }`}
+        >
+          <div className="mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-espresso px-4 py-3 text-[13px] text-ink shadow-card">
+            <span className="min-w-0 flex-1 truncate">
+              <b className="font-semibold">{justDeleted.name}</b> 삭제됨
+            </span>
+            <button
+              onClick={() => restoreRoute(justDeleted.id)}
+              className="shrink-0 rounded-full bg-volt px-3.5 py-1.5 text-[12.5px] font-bold text-ink active:scale-95"
+            >
+              되돌리기
+            </button>
+          </div>
+        </div>
+      )}
 
       {storageFull && (
         <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+86px)] z-[1100] px-3">

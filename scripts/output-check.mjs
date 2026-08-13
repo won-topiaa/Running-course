@@ -1396,5 +1396,103 @@ console.log('\n[숲길 캐시] 오래된 값이 메모리를 붙잡고 있으면
   check(distOff > 100, `경로에서 먼 점의 거리 > 100m (${distOff.toFixed(0)}m)`);
 }
 
+// ---------------------------------------------------------------------------
+// 삭제한 코스는 되찾을 수 있어야 한다
+//
+// 저장 버튼이 있던 자리가 저장 직후 '삭제'로 바뀌던 시절, 한 번 더 누른 사람은
+// 방금 뛴 기록을 확인도 없이 잃었다. 이제 삭제는 휴지통을 거친다.
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[휴지통] 지운 코스를 되살릴 수 있는지');
+  const sr4 = await bundle('src/lib/savedRoutes.ts', 'savedRoutes4.mjs');
+  const DAY = 86_400_000;
+  const now = 1_700_000_000_000;
+  const run = (id, createdAt = now) => ({
+    id,
+    name: `한강 러닝 ${id}`,
+    createdAt,
+    kind: 'recorded',
+    distanceKm: 5.24,
+    ascentM: 38,
+    maxGradePct: 6,
+    source: 'gps',
+    coords: [
+      [37.5, 127.0],
+      [37.51, 127.01],
+    ],
+    elevations: [40, 42],
+    durationSec: 1800,
+  });
+
+  const t1 = sr4.addToTrash([], run('r1'), now);
+  check(t1.length === 1 && t1[0].deletedAt === now, '지운 코스가 휴지통에 지운 시각과 함께 남는다');
+  check(
+    sr4.restoredFromTrash(t1[0]).distanceKm === 5.24 &&
+      !('deletedAt' in sr4.restoredFromTrash(t1[0])),
+    '되살리면 수치 그대로, deletedAt 은 떨어진다',
+  );
+
+  // 같은 코스를 지웠다 되살렸다 다시 지워도 두 번 쌓이지 않는다
+  const dup = sr4.addToTrash(t1, run('r1'), now + 1000);
+  check(dup.length === 1 && dup[0].deletedAt === now + 1000, '같은 코스는 한 번만 남는다');
+
+  // 상한 — 휴지통이 기록 본체의 저장 공간을 잠식하면 안 된다
+  let many = [];
+  for (let i = 0; i < 25; i++) many = sr4.addToTrash(many, run(`m${i}`), now + i);
+  check(many.length === 10, `건수 상한이 지켜진다 (${many.length}건)`);
+  check(many[0].id === 'm24', '최근에 지운 것이 앞에 온다');
+
+  // 기간 — 30일이 지난 항목은 목록에서도 저장에서도 사라진다
+  const oldOne = [{ ...run('old'), deletedAt: now - 31 * DAY }, { ...run('new'), deletedAt: now }];
+  const kept = sr4.sanitizeTrash(oldOne, now);
+  check(kept.length === 1 && kept[0].id === 'new', `${sr4.TRASH_DAYS}일이 지난 항목은 빠진다`);
+  check(sr4.sanitizeTrash([{ id: 'x' }, null, 'junk'], now).length === 0, '손상된 항목은 버린다');
+  check(
+    sr4.sanitizeTrash([{ ...run('nodate') }], now).length === 0,
+    '지운 시각이 없는 항목도 버린다',
+  );
+
+  // 저장소가 꽉 차도 삭제 자체가 실패하면 안 된다 — 오래된 것부터 버리고 살아남는다
+  const mem2 = new Map();
+  let limit = Infinity;
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: {
+      getItem: (k) => (mem2.has(k) ? mem2.get(k) : null),
+      setItem: (k, v) => {
+        if (String(v).length > limit) throw new Error('QuotaExceededError');
+        mem2.set(k, String(v));
+      },
+      removeItem: (k) => void mem2.delete(k),
+    },
+    configurable: true,
+  });
+  const full = sr4.sanitizeTrash(many, now + 25);
+  limit = JSON.stringify(full).length / 3;
+  const stored = sr4.persistTrash(full);
+  check(stored.length > 0 && stored.length < full.length, `자리가 모자라면 줄여서 저장한다 (${full.length}→${stored.length}건)`);
+  check(
+    JSON.parse(mem2.get('run-app-routes-trash-v1')).length === stored.length,
+    '저장된 배열과 돌려준 배열이 같다 (화면이 없는 항목을 그리지 않게)',
+  );
+  limit = Infinity;
+  const roundTrip = sr4.persistTrash(full);
+  check(roundTrip.length === full.length, '자리가 있으면 전부 저장된다 (검사가 헛돌지 않게)');
+  check(
+    sr4.loadTrash(now + 25).length === full.length,
+    '다시 켜도 휴지통이 그대로 읽힌다',
+  );
+  check(
+    sr4.loadTrash(now + 31 * DAY).length === 0,
+    '보관 기간이 지난 뒤에는 읽을 때도 빠진다',
+  );
+
+  // 백업·기기 이동 뒤에도 되살릴 수 있어야 한다
+  const backup3 = await bundle('src/lib/backup.ts', 'backup3.mjs');
+  check(
+    'run-app-routes-trash-v1' in backup3.collectBackup().data,
+    '휴지통이 백업에 같이 담긴다',
+  );
+}
+
 console.log(`\n통과 ${ok.length} / 실패 ${bad.length}`);
 if (bad.length) process.exit(1);
