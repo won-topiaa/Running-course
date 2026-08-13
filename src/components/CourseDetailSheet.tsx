@@ -23,6 +23,7 @@ import {
   type RouteResult,
   type RoutingProvider,
 } from '../lib/routing';
+import { displayCoords } from '../lib/routeColor';
 import type { AppApi } from '../ui/appApi';
 
 const AMENITIES: { key: keyof Course['amenities']; label: string; icon: string }[] = [
@@ -113,8 +114,13 @@ function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose:
   const paceTime = estimateTimeLabel(course.distanceKm, api.settings.paceSecPerKm);
   // 순환 코스는 표기 거리를 채우려면 여러 바퀴를 돌기도 한다. 데이터에 적힌
   // 값이 없으면 실제 라우팅된 한 바퀴 거리로 추정한다 (real 은 한 바퀴다).
+  // pill 의 한 바퀴 거리는 라우팅 실측을 우선한다 — 표기÷바퀴수로 내면
+  // 지도에 그려진 한 바퀴와 다른 숫자를 말하게 된다.
   const laps = courseLaps(course, real?.distanceKm ?? null);
-  const lapKm = lapDistanceKm(course, real?.distanceKm ?? null);
+  const lapKm =
+    course.loopType === 'loop' && real
+      ? real.distanceKm
+      : lapDistanceKm(course, real?.distanceKm ?? null);
 
   return (
     <div className="fixed inset-0 z-[2000] flex items-end justify-center sm:items-center">
@@ -164,7 +170,7 @@ function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose:
             (real ? (
               <div className="mt-4 h-52 overflow-hidden rounded-3xl border border-line">
                 <PathMap
-                  path={real.coords}
+                  path={displayCoords(real)}
                   kakaoKey={api.settings.kakaoJsKey}
                   mapboxToken={api.settings.mapboxToken}
                 />

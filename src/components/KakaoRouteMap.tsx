@@ -120,7 +120,8 @@ export default function KakaoRouteMap({
 
       // 진행 방향 화살표 + 출발/도착 — 어느 쪽으로 먼저 가는지 알려준다
       if (route && route.coords.length > 1) {
-        for (const m of directionMarkers(route.coords)) {
+        // 화살표도 그리기 좌표를 따라간다 (LeafletRouteMap 과 같은 이유)
+        for (const m of directionMarkers(displayCoords(route))) {
           add(
             new kakao.maps.CustomOverlay({
               position: new kakao.maps.LatLng(m.pos[0], m.pos[1]),

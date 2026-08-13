@@ -76,7 +76,8 @@ export default function RouteSheet({
   const { route } = view;
   // 지형 고도를 못 받은 경로 — 상승·경사 숫자를 내놓으면 안 된다
   const elevUnknown = route.elevationKnown === false;
-  // 같은 길을 두 번 지나는 구간 — 지도에서는 좌우로 벌려 그린다
+  // 같은 길을 두 번 지나는 구간 — 지도에서는 좌우로 벌려 그린다.
+  // 100m 미만이면 접힌 모퉁이 같은 잡음이라 범례를 띄우지 않는다 ('왕복 0.0km' 방지).
   const retrace = retraceInfo(route);
   const styleLabel = view.style ? RUN_STYLES.find((s) => s.id === view.style)?.label : null;
   const paceSec =
@@ -259,7 +260,7 @@ export default function RouteSheet({
           </div>
 
           {/* 같은 길 왕복 — 지도에서 두 방향이 나란히 그려진 이유를 알려준다 */}
-          {retrace.has && (
+          {retrace.km >= 0.1 && (
             <div className="mt-1.5 flex items-center justify-center gap-1.5 text-[10.5px] text-espresso-muted">
               <span className="inline-flex flex-col gap-[2.5px]" aria-hidden>
                 <span className="block h-[2px] w-4 rounded-full bg-espresso-muted" />

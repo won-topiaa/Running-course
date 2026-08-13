@@ -25,6 +25,8 @@ const {
 } = await bundle('src/lib/geo.ts', 'g.mjs');
 const { courseLaps, lapDistanceKm } = await bundle('src/lib/types.ts', 't.mjs');
 const { ringRoundTrip } = await bundle('src/lib/routing.ts', 'r.mjs');
+const { coloredSegments, coloredSegmentsUpTo, displayCoords, retraceInfo } =
+  await bundle('src/lib/routeColor.ts', 'rc.mjs');
 
 const ok = [];
 const bad = [];
@@ -101,6 +103,17 @@ check(thinWaypoints(seq, 20) === seq, '상한 이하면 원본을 그대로 돌�
 check(thinWaypoints(seq, 4).length === 4, '상한을 넘으면 정확히 상한 개수');
 check(thinWaypoints(seq, 2).length === 2 && thinWaypoints(seq, 2)[1] === seq[9], '상한 2 면 시작·끝만');
 check(new Set(thinWaypoints(seq, 7).map(String)).size === 7, '솎은 결과에 중복 없음');
+// 왕복 배열은 반환점 대칭이라 균등 선별이 같은 좌표를 연달아 고를 수 있다
+// (예: 19점 배열을 10개로 솎으면 인덱스 8·10 이 연속 선택되는데 둘 다 같은 점이다)
+const sym = [...seq, ...seq.slice(0, -1).reverse()];
+{
+  let dupTotal = 0;
+  for (let m = 4; m <= 16; m++) {
+    const t = thinWaypoints(sym, m);
+    dupTotal += t.slice(1).filter((p, i) => p[0] === t[i][0] && p[1] === t[i][1]).length;
+  }
+  check(dupTotal === 0, '왕복 대칭 배열을 4~16개로 솎아도 연속 중복 없음');
+}
 
 // ── 곁가지(spur) 다듬기 ──────────────────────────────────────────────────
 // 거리 모드는 고리 정점을 기하학적으로 찍어 그 점들을 반드시 지나게 한다.
@@ -268,6 +281,42 @@ const t0 = Date.now();
 retracedSegmentMask(big);
 const ms = Date.now() - t0;
 check(ms < 400, `좌표 ${big.length}개 겹침 판정 ${ms}ms (< 400ms)`);
+
+// ── 러닝 화면 그리기 정합 ────────────────────────────────────────────────
+// 지나온 구간(경사 색)과 남은 구간(점선)은 같은 그리기 좌표에서 잘라야 한다.
+// 다른 좌표를 쓰면 왕복 반환점 이후 러너 발밑에서 두 선이 7m 어긋난다.
+console.log('\n[러닝 화면] 지나온 선과 남은 점선이 같은 기하 위에 있다');
+{
+  const coords = [...line(0, 600), ...line(590, 0, -10)];
+  const fakeRoute = {
+    coords,
+    segments: coords.slice(1).map((_, i) => ({ gradePct: i < 60 ? 1 : 6, lengthM: 10 })),
+  };
+  const disp = displayCoords(fakeRoute);
+  check(disp.length === coords.length, '그리기 좌표는 원본과 1:1 (idx 슬라이스가 성립하는 전제)');
+  check(
+    retraceInfo(fakeRoute).km > 1.0,
+    `왕복 코스의 겹침 길이를 잰다 (${retraceInfo(fakeRoute).km.toFixed(2)}km)`,
+  );
+
+  const full = coloredSegments(fakeRoute);
+  const upToAll = coloredSegmentsUpTo(fakeRoute, fakeRoute.segments.length);
+  const flat = (gs) => gs.flatMap((g) => g.positions.map(String)).join('|');
+  check(flat(full) === flat(upToAll), 'coloredSegmentsUpTo(전체) = coloredSegments');
+
+  // 접두사의 끝점 = 남은 점선의 시작점 (러너 위치에서 두 선이 만난다)
+  for (const k of [10, 61, 90]) {
+    const prefix = coloredSegmentsUpTo(fakeRoute, k);
+    const lastGroup = prefix[prefix.length - 1];
+    const lastPt = lastGroup.positions[lastGroup.positions.length - 1];
+    const remainStart = disp[k];
+    check(
+      lastPt[0] === remainStart[0] && lastPt[1] === remainStart[1],
+      `idx=${k}: 지나온 선 끝 = 남은 점선 시작`,
+    );
+  }
+  check(coloredSegmentsUpTo(fakeRoute, 0).length === 0, 'idx=0 이면 지나온 선이 없다');
+}
 
 // ── 왕복 루프 거리 보정 ─────────────────────────────────────────────────
 // 고리 정점이 막다른 길에 스냅되면 돌기가 생긴다. 그 돌기를 '반지름 보정 뒤'에

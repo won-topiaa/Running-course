@@ -21,7 +21,7 @@ import { useRunRecorder, type RunSnapshot } from '../lib/useRunRecorder';
 import { wakeLockSupported } from '../lib/wakeLock';
 import { buildResult } from '../lib/routing';
 import { formatClock, formatDistance, formatPace } from '../lib/format';
-import { coloredSegments } from '../lib/routeColor';
+import { coloredSegmentsUpTo, displayCoords } from '../lib/routeColor';
 import {
   advanceProgress,
   cumulativeMeters,
@@ -177,14 +177,13 @@ export default function RecordScreen({
   // 지나온 구간은 경사 색상, 남은 구간은 눈금(점선)
   const { traveled, remainPath, remainM, ratio } = useMemo(() => {
     if (!planned) return { traveled: undefined, remainPath: undefined, remainM: 0, ratio: 0 };
-    const done: RouteResult = {
-      ...planned.route,
-      coords: planned.route.coords.slice(0, idx + 1),
-      segments: planned.route.segments.slice(0, Math.max(idx, 0)),
-    };
+    // 지나온 구간과 남은 점선은 같은 그리기 좌표(전체 경로 기준으로 겹침을
+    // 벌린 좌표)에서 잘라야 한다. 경로를 idx 에서 잘라 새 객체로 만들면 매 틱
+    // 겹침을 다시 계산하는 데다, 반환점 이후 지나온 선만 벌어져 남은 점선과
+    // 러너 발밑에서 7m 어긋난다. 진행 계산(remainM·ratio)은 원본 좌표 기준.
     return {
-      traveled: idx > 0 ? coloredSegments(done) : [],
-      remainPath: planned.route.coords.slice(Math.max(idx, 0)),
+      traveled: coloredSegmentsUpTo(planned.route, idx),
+      remainPath: displayCoords(planned.route).slice(Math.max(idx, 0)),
       remainM: plannedCum ? remainingFromCum(plannedCum, idx) : 0,
       ratio: plannedCum ? ratioFromCum(plannedCum, idx) : 0,
     };

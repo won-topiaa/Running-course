@@ -126,7 +126,9 @@ export default function LeafletRouteMap({
   // 경로가 바뀔 때만 계산한다.
   const colored = useMemo(() => coloredSegments(route), [route]);
   const casing = useMemo(() => displayCoords(route), [route]);
-  const arrows = useMemo(() => (route ? directionMarkers(route.coords) : []), [route]);
+  // 화살표도 그리기 좌표를 따라간다 — 원본 좌표에 찍으면 왕복 구간에서
+  // 벌어진 두 줄 사이 허공에 뜬다
+  const arrows = useMemo(() => (route ? directionMarkers(casing) : []), [route, casing]);
 
   return (
     <MapContainer

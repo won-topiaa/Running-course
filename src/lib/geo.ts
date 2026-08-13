@@ -117,7 +117,9 @@ export function thinWaypoints(points: LatLng[], max: number): LatLng[] {
     out.push(points[Math.round((i * (points.length - 1)) / (max - 1))]);
   }
   out.push(points[points.length - 1]);
-  return out;
+  // 왕복 경로는 반환점을 축으로 대칭이라, 균등 선별이 반환점 좌우에서 같은
+  // 좌표를 연달아 고를 수 있다. 라우터에 같은 점을 두 번 보내지 않는다.
+  return out.filter((p, i) => i === 0 || p[0] !== out[i - 1][0] || p[1] !== out[i - 1][1]);
 }
 
 /** 점에서 선분까지의 최단 거리(m). 국소 평면 근사 — 서울 규모에서 충분하다. */
