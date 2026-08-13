@@ -6,6 +6,11 @@ import type { RouteMapProps } from './mapTypes';
 import { coloredSegments } from '../lib/routeColor';
 import type { LatLng } from '../lib/types';
 
+// 기본값을 렌더마다 새로 만들면(= [] 리터럴) 아래 재그리기 effect 의 의존성이
+// 매번 달라져, 시트가 다시 그려질 때마다 오버레이가 전부 지워졌다 다시 만들어지고
+// setBounds 가 사용자의 확대/이동을 되돌린다. 고정 상수를 쓴다.
+const NO_ALTS: LatLng[][] = [];
+
 /** 카카오맵 기반 빌더 지도 (경사 색상 경로 · 핀 · 클릭) */
 export default function KakaoRouteMap({
   kakao,
@@ -15,7 +20,7 @@ export default function KakaoRouteMap({
   start,
   route,
   onMapClick,
-  alternatives = [],
+  alternatives = NO_ALTS,
   onPinClick,
   plannedPath,
   fitInsets,

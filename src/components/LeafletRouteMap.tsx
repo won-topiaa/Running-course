@@ -52,6 +52,10 @@ function labelIcon(text: string) {
   });
 }
 
+// 기본값을 렌더마다 새로 만들면(= [] 리터럴) FitBounds 의 의존성이 매번
+// 달라져 화면 맞추기가 다시 돌고, 사용자가 확대·이동해 둔 지도가 되돌아간다.
+const NO_ALTS: LatLng[][] = [];
+
 function ClickHandler({ onClick }: { onClick: (p: LatLng) => void }) {
   useMapEvents({
     click(e) {
@@ -111,7 +115,7 @@ export default function LeafletRouteMap({
   route,
   onMapClick,
   mapboxToken,
-  alternatives = [],
+  alternatives = NO_ALTS,
   onPinClick,
   plannedPath,
   fitInsets,

@@ -24,8 +24,14 @@ import { loadToken, STRAVA_UPLOAD_PAGE, uploadGpx } from '../lib/strava';
 import { buildShareToken, savedFromView, shareUrl } from '../lib/savedRoutes';
 import { estimateTimeLabel, formatDuration, formatPace, sanePace } from '../lib/format';
 import type { AppApi, RouteView } from '../ui/appApi';
+import type { LatLng } from '../lib/types';
 
 const noop = () => {};
+// 지도에 찍을 핀이 없다는 뜻. 여기서 [] 리터럴을 그대로 넘기면 시트가 다시
+// 그려질 때마다 새 배열이 되어 RouteMap 의 memo 가 깨지고, 지도 안쪽의
+// 화면 맞추기 effect 가 다시 돌아 사용자가 확대·이동해 둔 화면을 되돌린다
+// (토스트 하나만 떠도 그렇다). 고정 상수로 둔다.
+const NO_WAYPOINTS: LatLng[] = [];
 
 export default function RouteSheet({
   view,
@@ -228,7 +234,7 @@ export default function RouteSheet({
             <RouteMap
               mode="pins"
               center={route.coords[0]}
-              waypoints={[]}
+              waypoints={NO_WAYPOINTS}
               start={null}
               route={route}
               onMapClick={noop}
