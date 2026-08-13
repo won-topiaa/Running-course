@@ -13,7 +13,8 @@
     "check:local": "node scripts/local-features-check.mjs",
     "check:live": "node scripts/live-check.mjs",
     "check:output": "node scripts/output-check.mjs",
-    "check": "npm run check:gps && npm run check:local && npm run check:output && npm run check:recorder",
+    "check:paths": "node scripts/course-path-check.mjs",
+    "check": "npm run check:gps && npm run check:local && npm run check:output && npm run check:recorder && npm run check:paths",
     "check:smoke": "npm run build && node scripts/smoke-check.mjs",
     "check:scenario": "npm run build && node scripts/scenario-check.mjs",
     "check:recorder": "node scripts/recorder-finalize-check.mjs"

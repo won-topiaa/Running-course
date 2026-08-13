@@ -99,3 +99,23 @@ export function nearestNeighborOrder(points: LatLng[]): LatLng[] {
   }
   return ordered;
 }
+
+/**
+ * 경유지를 최대 개수 이하로 솎는다. 첫 점과 끝 점은 반드시 남기고 나머지는
+ * 균등 간격으로 고른다.
+ *
+ * 라우팅 제공자마다 한 번에 받는 경유지 수에 상한이 있다(ORS 무료 50개).
+ * 코스 경로점을 촘촘하게 만들면 왕복 코스는 되돌아오는 몫까지 더해져
+ * 이 상한을 쉽게 넘고, 그러면 경로 요청 자체가 실패한다 — 촘촘함이
+ * 오히려 '경로를 못 만들었습니다'로 돌아오는 셈이다. 상한 안에서는
+ * 원본을 그대로 두고, 넘을 때만 솎아 통로 모양을 유지한다.
+ */
+export function thinWaypoints(points: LatLng[], max: number): LatLng[] {
+  if (max < 2 || points.length <= max) return points;
+  const out: LatLng[] = [];
+  for (let i = 0; i < max - 1; i++) {
+    out.push(points[Math.round((i * (points.length - 1)) / (max - 1))]);
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}

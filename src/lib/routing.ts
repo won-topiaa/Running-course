@@ -14,7 +14,13 @@ import type { LatLng } from './types';
 import { elevationsForPath } from './elevation';
 import { fetchWithTimeout } from './fetchTimeout';
 import { parseWayMix, type WayMix } from './wayMix';
-import { densifyPath, destinationPoint, haversineMeters, pathLengthMeters } from './geo';
+import {
+  densifyPath,
+  destinationPoint,
+  haversineMeters,
+  pathLengthMeters,
+  thinWaypoints,
+} from './geo';
 
 const ORS_BASE = 'https://api.openrouteservice.org/v2/directions/foot-walking/geojson';
 // ORS 는 주 경로 provider 라 응답이 늦으면 빨리 포기하고 OSRM 으로 넘어가는 편이
@@ -26,6 +32,10 @@ const ORS_TIMEOUT_MS = 8_000;
 const SNAP_RADIUS_M = 1_500;
 // FOSSGIS 가 운영하는 공개 OSRM (도보 프로파일). 키가 필요 없다.
 const OSRM_FOOT = 'https://routing.openstreetmap.de/routed-foot/route/v1/foot';
+// 한 요청에 실어 보낼 수 있는 경유지 상한. 넘기면 요청 전체가 거절된다.
+// ORS 무료 플랜은 50개, 공개 OSRM 은 넉넉하지만 URL 길이가 있어 100개로 둔다.
+const ORS_MAX_WAYPOINTS = 50;
+const OSRM_MAX_WAYPOINTS = 100;
 
 // ── ORS 분당 한도 냉각 ────────────────────────────────────────────────────
 // ORS 무료 키는 일일 한도(2000)와 별개로 '분당 40회' 제한이 있다.
@@ -250,7 +260,7 @@ export class OrsProvider implements RoutingProvider {
 
   async route(waypoints: LatLng[]): Promise<RouteResult> {
     const body = {
-      coordinates: waypoints.map(([lat, lng]) => [lng, lat]),
+      coordinates: thinWaypoints(waypoints, ORS_MAX_WAYPOINTS).map(([lat, lng]) => [lng, lat]),
       elevation: true,
       instructions: false,
     };
@@ -410,7 +420,9 @@ export class OsrmProvider implements RoutingProvider {
 
   /** 경유지를 순서대로 잇는 실제 도보 경로 좌표 */
   private async fetchGeometry(waypoints: LatLng[]): Promise<LatLng[]> {
-    const coordStr = waypoints.map(([lat, lng]) => `${lng},${lat}`).join(';');
+    const coordStr = thinWaypoints(waypoints, OSRM_MAX_WAYPOINTS)
+      .map(([lat, lng]) => `${lng},${lat}`)
+      .join(';');
     const url = `${OSRM_FOOT}/${coordStr}?overview=full&geometries=geojson&continue_straight=false`;
     let res: Response;
     try {
