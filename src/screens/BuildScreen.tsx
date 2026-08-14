@@ -114,6 +114,8 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const [sheetOpen, setSheetOpen] = useState(session?.sheetOpen ?? false);
   /** 손잡이 스와이프 시작 y — 위로 밀면 열고 아래로 밀면 닫는다 */
   const sheetDragY = useRef<number | null>(null);
+  /** 이번 제스처가 스와이프였는지 — 뒤따르는 click 의 토글을 막는다 */
+  const sheetSwiped = useRef(false);
   // 고도·경사 상세는 기본으로 접는다. 한 줄 요약만 두고, 궁금한 사람만 편다.
   const [gradeOpen, setGradeOpen] = useState(false);
   // 지도를 만지는 동안에는 오버레이를 비켜준다. 반투명·블러는 실측해보니
@@ -750,14 +752,29 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                  탭 토글만 있으면 그 제스처가 아무 일도 안 하는 것처럼 느껴진다. */
               onPointerDown={(e) => {
                 sheetDragY.current = e.clientY;
+                sheetSwiped.current = false;
               }}
               onPointerUp={(e) => {
                 const from = sheetDragY.current;
                 sheetDragY.current = null;
-                const dy = from == null ? 0 : e.clientY - from;
-                if (dy < -18) setSheetOpen(true);
-                else if (dy > 18) setSheetOpen(false);
-                else setSheetOpen((v) => !v);
+                if (from == null) return;
+                const dy = e.clientY - from;
+                if (dy < -18) {
+                  sheetSwiped.current = true;
+                  setSheetOpen(true);
+                } else if (dy > 18) {
+                  sheetSwiped.current = true;
+                  setSheetOpen(false);
+                }
+              }}
+              /* 실제 토글은 click 에서 한다. 포인터 이벤트만 쓰면 키보드
+                 (Enter·Space)로는 열 수 없다 — 그 경로는 click 만 발생한다. */
+              onClick={() => {
+                if (sheetSwiped.current) {
+                  sheetSwiped.current = false;
+                  return; // 스와이프가 이미 처리했다
+                }
+                setSheetOpen((v) => !v);
               }}
               className="flex w-full shrink-0 touch-none items-center justify-center gap-1.5 py-2.5"
               aria-label={sheetOpen ? '접기' : '펼치기'}
@@ -795,6 +812,9 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                   sheetOpen ? 'flex-1 overflow-y-auto pb-0' : 'overflow-hidden pb-0'
                 }`}
                 style={{ maxHeight: sheetOpen ? '46vh' : '0px' }}
+                /* 접히면 화면에서 잘릴 뿐 DOM 에는 남아, 탭 키가 보이지도 않는
+                   버튼으로 들어간다(실측: 접힘 상태에서 포커스를 받았다). */
+                {...(sheetOpen ? {} : { inert: '' })}
               >
                 <>
                   {/* 헤드라인 + 되돌리기.
@@ -1008,6 +1028,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                     sheetOpen ? 'overflow-y-auto' : 'overflow-hidden'
                   }`}
                   style={{ maxHeight: sheetOpen ? '34vh' : '0px' }}
+                  {...(sheetOpen ? {} : { inert: '' })}
                 >
 
                   {/* 왕복(시작점 복귀) / 편도 — 두 모드 공통 */}

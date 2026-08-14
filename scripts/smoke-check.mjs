@@ -187,6 +187,60 @@ await page.waitForTimeout(1200);
   step(dirty === null, `모든 코스 시트에 NaN·오류 없음${dirty ? ` — ${dirty}` : ''}`);
 }
 
+// 만들기 시트 — 손잡이로 여닫기(탭·키보드)와 접힘 상태 포커스 격리.
+// 손잡이를 포인터 이벤트로만 다루면 키보드(Enter·Space)로는 열 수 없고,
+// 접힌 서랍은 화면에서 잘릴 뿐 DOM 에 남아 탭 키가 안 보이는 버튼으로 들어간다.
+await page.getByRole('button', { name: '만들기', exact: true }).first().click();
+await page.waitForTimeout(1000);
+{
+  const handle = page.getByRole('button', { name: /펼치기|접기/ }).first();
+  const state = () => handle.getAttribute('aria-expanded');
+  step((await state()) === 'false', '만들기 첫 화면은 시트가 접혀 있다 (지도 우선)');
+
+  await handle.focus();
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(450);
+  step((await state()) === 'true', '키보드 Enter 로 시트가 열린다');
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(450);
+  step((await state()) === 'false', '키보드 Space 로 시트가 닫힌다');
+
+  await handle.click();
+  await page.waitForTimeout(450);
+  step((await state()) === 'true', '탭으로도 시트가 열린다');
+  await handle.click();
+  await page.waitForTimeout(450);
+
+  const leak = await page.evaluate(() => {
+    // 손잡이(aria-expanded 보유)는 제외 — 서랍 안 옵션 버튼만 본다
+    const btns = [...document.querySelectorAll('button')].filter(
+      (b) => !b.hasAttribute('aria-expanded'),
+    );
+    const bad = [];
+    for (const label of ['왕복', '편도', '평지 위주', '흙길']) {
+      const el = btns.find((b) => (b.textContent || '').trim().includes(label));
+      if (!el) continue;
+      el.focus();
+      if (document.activeElement === el) bad.push(label);
+    }
+    return bad;
+  });
+  step(leak.length === 0, `접힌 서랍의 옵션 버튼에 포커스가 안 들어간다${leak.length ? ' — ' + leak.join(',') : ''}`);
+
+  // 접혀도 필수 입력은 남아 있어야 한다 — 이게 이 구조의 전제다
+  const sliderVisible = await page
+    .locator('input[type=range].coral')
+    .first()
+    .isVisible()
+    .catch(() => false);
+  const ctaVisible = await page
+    .getByRole('button', { name: /코스 추천받기|최적 코스 찾는 중/ })
+    .first()
+    .isVisible()
+    .catch(() => false);
+  step(sliderVisible && ctaVisible, '접혀도 거리 슬라이더와 추천받기 버튼은 보인다');
+}
+
 step(errors.length === 0, `앱 자체 오류 ${errors.length}건`);
 errors.slice(0, 8).forEach((e) => console.log('     · ' + e));
 
