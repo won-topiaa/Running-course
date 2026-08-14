@@ -109,7 +109,11 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(session?.sheetOpen ?? true);
+  // 시트는 기본 접힘 — 첫 화면의 주인공은 지도다. 필수 입력(거리·추천받기)은
+  // 접혀도 늘 보이고, 세부 취향만 서랍에 들어간다(손잡이 탭/스와이프로 여닫기).
+  const [sheetOpen, setSheetOpen] = useState(session?.sheetOpen ?? false);
+  /** 손잡이 스와이프 시작 y — 위로 밀면 열고 아래로 밀면 닫는다 */
+  const sheetDragY = useRef<number | null>(null);
   // 고도·경사 상세는 기본으로 접는다. 한 줄 요약만 두고, 궁금한 사람만 편다.
   const [gradeOpen, setGradeOpen] = useState(false);
   // 지도를 만지는 동안에는 오버레이를 비켜준다. 반투명·블러는 실측해보니
@@ -741,8 +745,21 @@ export default function BuildScreen({ api }: { api: AppApi }) {
             {/* 핸들 — 접었을 때는 손잡이 모양만으로는 뭘 하라는 건지 안 보여서
                 (하단 네비에 붙어 애매하게 겹쳐 보였다) 글자로 알려준다. */}
             <button
-              onClick={() => setSheetOpen((v) => !v)}
-              className="flex w-full shrink-0 items-center justify-center gap-1.5 py-2.5"
+              /* 탭이면 토글, 위/아래로 18px 넘게 밀면 그 방향으로 여닫는다.
+                 바텀시트에 손이 익은 사용자는 손잡이를 끌어올리려 하는데,
+                 탭 토글만 있으면 그 제스처가 아무 일도 안 하는 것처럼 느껴진다. */
+              onPointerDown={(e) => {
+                sheetDragY.current = e.clientY;
+              }}
+              onPointerUp={(e) => {
+                const from = sheetDragY.current;
+                sheetDragY.current = null;
+                const dy = from == null ? 0 : e.clientY - from;
+                if (dy < -18) setSheetOpen(true);
+                else if (dy > 18) setSheetOpen(false);
+                else setSheetOpen((v) => !v);
+              }}
+              className="flex w-full shrink-0 touch-none items-center justify-center gap-1.5 py-2.5"
               aria-label={sheetOpen ? '접기' : '펼치기'}
               aria-expanded={sheetOpen}
             >
@@ -754,23 +771,31 @@ export default function BuildScreen({ api }: { api: AppApi }) {
               ) : (
                 <>
                   <ChevronUp size={15} className="text-coral" />
-                  <span className="text-[12.5px] font-bold text-espresso-muted">
-                    {results ? '코스 다시 보기' : '위로 올리기'}
+                  <span className="max-w-[75vw] truncate text-[12.5px] font-bold text-espresso-muted">
+                    {results
+                      ? '코스 다시 보기'
+                      : `세부 취향 · ${returnToStart ? '왕복' : '편도'} · ${
+                          RUN_STYLE_CHOICES.find((x) => x.id === style)?.label ?? ''
+                        }${
+                          pathPref !== 'any'
+                            ? ` · ${PATH_PREFS.find((x) => x.id === pathPref)?.label ?? ''}`
+                            : ''
+                        }`}
                   </span>
                 </>
               )}
             </button>
 
-            <div
-              className={`min-h-0 px-4 ${
-                // 아래 여백은 고정 바가 직접 갖는다. 여기에 pb 를 두면 sticky 바가
-                // 그만큼 위에 떠서, 그 틈으로 스크롤된 글자가 버튼 밑에 비친다.
-                sheetOpen ? 'flex-1 overflow-y-auto pb-0' : 'overflow-hidden pb-0'
-              }`}
-              style={{ maxHeight: sheetOpen ? '46vh' : '0px' }}
-            >
-              {/* 결과 */}
-              {results && headline ? (
+            {/* 결과 */}
+            {results && headline ? (
+              <div
+                className={`min-h-0 px-4 transition-[max-height] duration-300 ease-out ${
+                  // 아래 여백은 고정 바가 직접 갖는다. 여기에 pb 를 두면 sticky 바가
+                  // 그만큼 위에 떠서, 그 틈으로 스크롤된 글자가 버튼 밑에 비친다.
+                  sheetOpen ? 'flex-1 overflow-y-auto pb-0' : 'overflow-hidden pb-0'
+                }`}
+                style={{ maxHeight: sheetOpen ? '46vh' : '0px' }}
+              >
                 <>
                   {/* 헤드라인 + 되돌리기.
                       되돌리기는 원래 위에 한 줄을 따로 차지했는데, 그 46px 이
@@ -962,67 +987,31 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                     </button>
                   </div>
                 </>
-              ) : (
-                <>
-                  {/* 코스를 만드는 입력은 전부 여기 모은다.
-                      예전엔 거리 슬라이더와 왕복/편도가 지도 위에 각각 떠 있어서,
-                      첫 화면이 '판때기 넉 장 사이에 낀 지도 한 줄'이 됐다
-                      (실측: 지도가 보이는 세로가 844px 중 190px). 입력을 시트로
-                      모으면 지도가 하나의 큰 덩어리로 열린다. */}
-                  {mode === 'distance' && (
-                    /* 라벨 · 트랙 · 값을 한 줄(1행)에 두고, 눈금은 그 아래 칸에 따로 둔다.
-                     *
-                     * 예전엔 트랙과 눈금이 같은 칸에 겹쳐 있어서, 세로 가운데
-                     * 정렬이 '트랙+눈금' 덩어리를 기준으로 잡혔다. 그래서
-                     * '거리'·'5km' 글자가 트랙보다 13.5px 아래, 눈금 숫자와
-                     * 같은 줄에 앉아 '거리 1' 처럼 붙어 보였다(실측 390×844).
-                     * grid 로 나누면 글자가 트랙에 맞춰 서고, 눈금은 라벨
-                     * 너비와 무관하게 트랙 칸에 정확히 정렬된다. */
-                    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3">
-                      <span className="text-[12.5px] font-bold text-espresso">거리</span>
-                      <input
-                        type="range"
-                        min={1}
-                        max={15}
-                        step={0.5}
-                        value={targetKm}
-                        onChange={(e) => {
-                          setTargetKm(Number(e.target.value));
-                          reset();
-                        }}
-                        className="coral w-full"
-                        list="km-ticks"
-                        aria-label="목표 거리(km)"
-                      />
-                      <span className="w-[58px] text-right text-[16px] font-extrabold leading-none text-espresso">
-                        {targetKm}
-                        <span className="text-[11px] font-bold text-espresso-muted">km</span>
-                      </span>
-                      {/* 눈금 — 1·5·10·15km. 가운데 칸(col-start-2)에만 놓아 트랙과
-                          x 축이 맞는다. 손잡이가 트랙 아래로 11px 튀어나오고 그림자가
-                          더 번지므로 그만큼 띄운다. 읽기만 하는 글자라 터치는
-                          통과시킨다 — 예전에 이 줄이 슬라이더 탭을 가로챘다. */}
-                      <div className="pointer-events-none relative col-start-2 mt-2.5 h-3.5">
-                        {[1, 5, 10, 15].map((v) => (
-                          <span
-                            key={v}
-                            className="absolute -translate-x-1/2 text-[9.5px] font-medium text-espresso-soft"
-                            style={{ left: `${((v - 1) / 14) * 100}%` }}
-                          >
-                            {v}
-                          </span>
-                        ))}
-                      </div>
-                      <datalist id="km-ticks">
-                        {[1, 5, 10, 15].map((v) => (
-                          <option key={v} value={v} />
-                        ))}
-                      </datalist>
-                    </div>
-                  )}
+                {notice && (
+                  <p className="mt-2.5 rounded-2xl bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700">
+                    {notice}
+                  </p>
+                )}
+                {error && (
+                  <p className="mt-2.5 rounded-2xl bg-coral-50 px-3 py-2 text-[11.5px] text-coral-600">
+                    {error}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <>
+                {/* 세부 취향 서랍 — 기본은 접어 지도에 자리를 내준다.
+                    필수 입력(거리·추천받기)은 아래 고정 영역에 있어 접혀도
+                    코스 만들기 흐름이 끊기지 않는다. */}
+                <div
+                  className={`min-h-0 px-4 transition-[max-height] duration-300 ease-out ${
+                    sheetOpen ? 'overflow-y-auto' : 'overflow-hidden'
+                  }`}
+                  style={{ maxHeight: sheetOpen ? '34vh' : '0px' }}
+                >
 
                   {/* 왕복(시작점 복귀) / 편도 — 두 모드 공통 */}
-                  <div className={`flex rounded-full bg-tint p-1 ${mode === 'distance' ? 'mt-2' : ''}`}>
+                  <div className="mt-1 flex rounded-full bg-tint p-1">
                     <SegBtn
                       active={returnToStart}
                       onClick={() => {
@@ -1092,10 +1081,73 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                       이 앱의 차별점인 '길 종류로 고르기'를 첫 화면에서 아예 못 보고
                       지나쳤다. 칩 이름·이모지만으로 뜻이 통하므로 설명 없이 둔다. */}
 
-                  {/* 화면이 짧으면 시트가 내부 스크롤로 줄어드는데, 그때 이 버튼이
-                      접힌 아래로 밀려나면 처음 쓰는 사람은 다음에 뭘 눌러야 할지
-                      알 수 없다. 바닥에 고정해 어떤 높이에서도 늘 보이게 한다. */}
-                  <div className="sticky bottom-0 -mx-4 mt-3 border-t border-line/60 bg-paper px-4 pb-4 pt-2.5">
+                  <div className="h-2 shrink-0" />
+                </div>
+
+                {/* 필수 입력 — 서랍이 접혀도 늘 보인다. 거리와 추천받기만
+                    있으면 코스는 만들어진다 — 나머지는 취향이다. */}
+                <div className="shrink-0 px-4">
+                  {mode === 'distance' && (
+                    /* 라벨 · 트랙 · 값을 한 줄(1행)에 두고, 눈금은 그 아래 칸에 따로 둔다.
+                     *
+                     * 예전엔 트랙과 눈금이 같은 칸에 겹쳐 있어서, 세로 가운데
+                     * 정렬이 '트랙+눈금' 덩어리를 기준으로 잡혔다. 그래서
+                     * '거리'·'5km' 글자가 트랙보다 13.5px 아래, 눈금 숫자와
+                     * 같은 줄에 앉아 '거리 1' 처럼 붙어 보였다(실측 390×844).
+                     * grid 로 나누면 글자가 트랙에 맞춰 서고, 눈금은 라벨
+                     * 너비와 무관하게 트랙 칸에 정확히 정렬된다. */
+                    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3">
+                      <span className="text-[12.5px] font-bold text-espresso">거리</span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={15}
+                        step={0.5}
+                        value={targetKm}
+                        onChange={(e) => {
+                          setTargetKm(Number(e.target.value));
+                          reset();
+                        }}
+                        className="coral w-full"
+                        list="km-ticks"
+                        aria-label="목표 거리(km)"
+                      />
+                      <span className="w-[58px] text-right text-[16px] font-extrabold leading-none text-espresso">
+                        {targetKm}
+                        <span className="text-[11px] font-bold text-espresso-muted">km</span>
+                      </span>
+                      {/* 눈금 — 1·5·10·15km. 가운데 칸(col-start-2)에만 놓아 트랙과
+                          x 축이 맞는다. 손잡이가 트랙 아래로 11px 튀어나오고 그림자가
+                          더 번지므로 그만큼 띄운다. 읽기만 하는 글자라 터치는
+                          통과시킨다 — 예전에 이 줄이 슬라이더 탭을 가로챘다. */}
+                      <div className="pointer-events-none relative col-start-2 mt-2.5 h-3.5">
+                        {[1, 5, 10, 15].map((v) => (
+                          <span
+                            key={v}
+                            className="absolute -translate-x-1/2 text-[9.5px] font-medium text-espresso-soft"
+                            style={{ left: `${((v - 1) / 14) * 100}%` }}
+                          >
+                            {v}
+                          </span>
+                        ))}
+                      </div>
+                      <datalist id="km-ticks">
+                        {[1, 5, 10, 15].map((v) => (
+                          <option key={v} value={v} />
+                        ))}
+                      </datalist>
+                    </div>                  )}
+                  {notice && (
+                    <p className="mt-2.5 rounded-2xl bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700">
+                      {notice}
+                    </p>
+                  )}
+                  {error && (
+                    <p className="mt-2.5 rounded-2xl bg-coral-50 px-3 py-2 text-[11.5px] text-coral-600">
+                      {error}
+                    </p>
+                  )}
+                  <div className="-mx-4 mt-2.5 border-t border-line/60 bg-paper px-4 pb-4 pt-2.5">
                     <button
                       onClick={generate}
                       disabled={!canGenerate || loading}
@@ -1120,20 +1172,9 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                     )}
                   </div>
 
-                </>
-              )}
-
-              {notice && (
-                <p className="mt-2.5 rounded-2xl bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700">
-                  {notice}
-                </p>
-              )}
-              {error && (
-                <p className="mt-2.5 rounded-2xl bg-coral-50 px-3 py-2 text-[11.5px] text-coral-600">
-                  {error}
-                </p>
-              )}
-            </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
