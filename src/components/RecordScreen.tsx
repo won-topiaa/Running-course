@@ -662,7 +662,10 @@ export default function RecordScreen({
 
             {/* 음성 버튼은 켜져 있는데 엔진이 소리를 못 내는 상태.
                 말해 주지 않으면 사용자는 앱이 조용한 이유를 영영 모른다. */}
-            {voiceBad && voiceNav?.enabled && (
+            {/* supported 가 false 면 브라우저에 음성 기능 자체가 없다는 뜻이라
+                볼륨을 확인하라는 안내는 엉뚱하다(음성 버튼도 안 보인다).
+                '켜 뒀는데 안 들리는' 경우에만 말한다. */}
+            {voiceBad && voiceNav?.supported && voiceNav.enabled && (
               <p className="mt-4 rounded-2xl border border-ink-line bg-ink-soft px-3 py-2.5 text-[11.5px] leading-relaxed text-white/80">
                 <b className="text-volt">음성 안내가 이 기기에서 재생되지 않아요.</b>{' '}
                 볼륨과 무음(벨소리) 스위치를 확인해 주세요. 이어폰을 쓰는 중이면 연결도 함께

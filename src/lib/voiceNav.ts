@@ -289,8 +289,11 @@ export function primeVoice(text = '출발합니다'): boolean {
   voiceActive = true;
   ensureVoices();
   try {
-    // 이전 세션의 잔여 발화가 큐에 남아 있으면 첫마디가 묻힌다
-    speechSynthesis.cancel();
+    // 이전 세션의 잔여 발화가 남아 있으면 첫마디가 묻힌다 — 다만 정말 남아
+    // 있을 때만 끊는다. speak() 와 같은 이유다(크롬 계열은 cancel 직후 같은
+    // 틱의 speak 를 삼키는 일이 있다). 하필 이 한마디가 삼켜지면 엔진이
+    // 안 열려서 그 러닝 전체가 무음이 된다 — 가장 지켜야 할 발화다.
+    if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
     inflight = [];
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'ko-KR';

@@ -377,6 +377,49 @@ console.log('\n[크래시 방어] 손상된 시각이 GPX 내보내기를 죽이
 // ── 음성 안내 시퀀스 ─────────────────────────────────────────────────────
 // 발화를 녹음하는 스텁으로 러닝 전체를 시뮬레이션해, 어떤 안내가 나오고
 // 어떤 안내가 안 나와야 하는지를 문장 단위로 못박는다.
+console.log('\n[음성 안내] 엔진 제어 — 말하고 있을 때만 끊는가');
+{
+  const calls = [];
+  let speaking = false;
+  globalThis.speechSynthesis = {
+    speak(u) { calls.push(['speak', u.text]); u.onend?.(); },
+    cancel() { calls.push(['cancel']); },
+    resume() {},
+    getVoices() { return []; },
+    addEventListener() {},
+    get speaking() { return speaking; },
+    get pending() { return false; },
+  };
+  globalThis.SpeechSynthesisUtterance = class { constructor(t) { this.text = t; } };
+  globalThis.document = { addEventListener() {}, visibilityState: 'visible' };
+  const V = await bundle('src/lib/voiceNav.ts', 'vn0.mjs');
+
+  // 조용한 상태에서 급한 안내 — 끊을 게 없으니 cancel 을 부르지 않는다.
+  // (크롬 계열은 cancel 직후 같은 틱의 speak 를 통째로 삼키는 일이 있다)
+  V.initVoiceNav([], [0]);
+  calls.length = 0;
+  speaking = false;
+  V.announce('테스트', { urgent: true });
+  check(!calls.some((c) => c[0] === 'cancel'), '조용할 때는 cancel 을 부르지 않는다');
+  check(calls.some((c) => c[0] === 'speak'), '조용할 때도 발화는 나간다');
+
+  // 엔진을 여는 첫마디(primeVoice)가 가장 중요하다 — 이게 삼켜지면 그 러닝
+  // 전체가 무음이 된다. 여기서도 불필요한 cancel 을 부르지 않아야 한다.
+  calls.length = 0;
+  speaking = false;
+  check(V.primeVoice('출발합니다') === true, '프라임 발화가 나간다');
+  check(!calls.some((c) => c[0] === 'cancel'), '프라임: 조용할 때 cancel 을 부르지 않는다');
+  check(calls.some((c) => c[1] === '출발합니다'), "프라임 문구는 '출발합니다'");
+
+  // 말하고 있을 때는 끊고 급한 말을 먼저 낸다
+  calls.length = 0;
+  speaking = true;
+  V.announce('급한 안내', { urgent: true });
+  const ci = calls.findIndex((c) => c[0] === 'cancel');
+  const si = calls.findIndex((c) => c[0] === 'speak');
+  check(ci >= 0 && si > ci, '말하는 중이면 끊고 나서 말한다 (순서 유지)');
+}
+
 console.log('\n[음성 안내] 왕복·순환·자유 러닝 발화 시퀀스');
 {
   const texts = [];
@@ -428,6 +471,20 @@ console.log('\n[음성 안내] 왕복·순환·자유 러닝 발화 시퀀스');
   );
   check(obTexts.some((t) => t.includes('마지막 500미터')), '마지막 500미터 안내');
   check(obTexts.filter((t) => t.includes('완주')).length === 1, '완주 안내 한 번');
+
+  // 1-b) 경로 이탈 → 복귀. 이어폰만 끼고 뛰는 사람에게는 이게 유일한 신호다.
+  {
+    texts.length = 0;
+    let st = initVoiceNav(ob, obCum);
+    // 경로 위를 조금 달리다 옆으로 크게 벗어난 뒤 되돌아온다
+    for (let i = 0; i < 12; i++) st = tickVoiceNav(st, i, obCum, obCum[i] / 1000, obCum[obCum.length - 1], ob[i], ob, 60);
+    const off = P(220, 400); // 경로에서 400m 옆
+    for (let k = 0; k < 6; k++) st = tickVoiceNav(st, 11, obCum, 0.22, obCum[obCum.length - 1], off, ob, 70);
+    check(texts.some((t) => t.includes('벗어났어요')), '이탈하면 알려준다');
+    const before = texts.length;
+    for (let i = 12; i < 20; i++) st = tickVoiceNav(st, i, obCum, obCum[i] / 1000, obCum[obCum.length - 1], ob[i], ob, 80);
+    check(texts.slice(before).some((t) => t.includes('경로로 돌아왔어요')), '복귀하면 알려준다');
+  }
 
   // 2) 순환 2.4km (사각 링) — 반환점이 없으니 절반 안내가 나온다
   const ring2 = [];
