@@ -374,6 +374,80 @@ await scenario('12분 검사 자동 종료', {
   );
 });
 
+// 15) 음성 — START 를 누른 그 제스처 안에서 엔진을 깨우는가
+//     iOS Safari 는 사용자 제스처 밖에서 시작된 첫 발화를 조용히 버린다.
+//     예전엔 첫 발화가 GPS 측위 뒤 effect 에서 났고(START 직후 3초간
+//     speak() 호출 0회), 그래서 아이폰에서는 끝까지 무음이었다.
+await scenario('음성 엔진 제스처 활성화', {
+  geolocation: { latitude: 37.5665, longitude: 126.978, accuracy: 6 },
+  init: () => {
+    const log = { spoke: [], played: [], dropped: [] };
+    window.__voiceLog = log;
+    let unlocked = false; // 제스처 안에서 한 번 열려야 이후가 재생된다 (iOS 모델)
+    window.speechSynthesis.speak = (u) => {
+      const active = navigator.userActivation ? navigator.userActivation.isActive : true;
+      log.spoke.push({ text: u.text, gesture: active });
+      if (!unlocked && active) unlocked = true;
+      if (unlocked) {
+        log.played.push(u.text);
+        setTimeout(() => u.dispatchEvent(new Event('start')), 1);
+        setTimeout(() => u.dispatchEvent(new Event('end')), 20);
+      } else {
+        log.dropped.push(u.text);
+      }
+    };
+    window.speechSynthesis.cancel = () => {};
+    window.speechSynthesis.resume = () => {};
+    window.speechSynthesis.getVoices = () => [];
+  },
+}, async (page, _c, expect) => {
+  await page.goto(base, { waitUntil: 'load' }); await settle(page);
+  await page.getByRole('button', { name: '뛰기', exact: true }).first().click();
+  await page.waitForTimeout(700);
+  await page.getByRole('button', { name: 'START' }).click();
+  await page.waitForTimeout(2500);
+  const v = await page.evaluate(() => window.__voiceLog);
+  expect(v.spoke.length > 0, 'START 를 눌러도 아무 발화가 없다 (아이폰이면 끝까지 무음)');
+  expect(
+    v.spoke.some((x) => x.gesture),
+    '제스처 안에서 시작된 발화가 없다 — iOS 가 음성 엔진을 열어 주지 않는다',
+  );
+  expect(v.dropped.length === 0, `버려진 발화 ${v.dropped.length}건`);
+  // 엔진이 소리를 냈으면 '재생 안 됨' 안내는 뜨지 않아야 한다
+  expect(
+    !(await page.getByText(/재생되지 않아요/).isVisible().catch(() => false)),
+    '정상 재생인데 음성 실패 안내가 떴다',
+  );
+});
+
+// 16) 음성 — 엔진이 거부하면 이유를 화면이 말해 주는가
+await scenario('음성 실패 안내', {
+  geolocation: { latitude: 37.5665, longitude: 126.978, accuracy: 6 },
+  init: () => {
+    // 발화를 받되 언제나 error 로 돌려주는 엔진 (TTS 미설치·무음 모드 등)
+    window.speechSynthesis.speak = (u) => {
+      setTimeout(() => {
+        const e = new Event('error');
+        e.error = 'synthesis-failed';
+        u.dispatchEvent(e);
+      }, 5);
+    };
+    window.speechSynthesis.cancel = () => {};
+    window.speechSynthesis.resume = () => {};
+    window.speechSynthesis.getVoices = () => [];
+  },
+}, async (page, _c, expect) => {
+  await page.goto(base, { waitUntil: 'load' }); await settle(page);
+  await page.getByRole('button', { name: '뛰기', exact: true }).first().click();
+  await page.waitForTimeout(700);
+  await page.getByRole('button', { name: 'START' }).click();
+  await page.waitForTimeout(3500);
+  expect(
+    await page.getByText(/재생되지 않아요/).isVisible().catch(() => false),
+    '음성이 안 나오는데 화면이 아무 말도 하지 않는다',
+  );
+});
+
 await browser.close();
 server.close();
 

@@ -249,6 +249,66 @@ function ensureVoices() {
   });
 }
 
+/**
+ * 음성 엔진이 실제로 소리를 냈는지.
+ *
+ * 'unknown' 은 아직 모름, 'ok' 는 한 번이라도 재생됐음, 'failed' 는 엔진이
+ * 거부했거나 응답이 없음. 화면이 이 값을 보고 '왜 조용한지' 를 말해 줄 수 있다.
+ */
+export type VoiceHealth = 'unknown' | 'ok' | 'failed';
+let health: VoiceHealth = 'unknown';
+
+export function voiceHealth(): VoiceHealth {
+  return health;
+}
+
+/**
+ * 음성 엔진 깨우기 — 반드시 사용자 탭 핸들러 '안에서 동기로' 불러야 한다.
+ *
+ * ── 왜 필요한가 ────────────────────────────────────────────────────────────
+ * iOS Safari 는 speechSynthesis 의 첫 발화가 사용자 제스처 안에서 시작되지
+ * 않으면 조용히 버린다(오류도 안 던진다). 지금까지 이 앱의 첫 발화는 GPS
+ * 측위가 들어온 뒤 effect 안에서 났다 — 제스처와 이미 끊긴 시점이라, 아이폰
+ * 사용자는 음성 버튼이 켜져 있는데도 5km 를 뛰는 내내 아무 소리도 못 들었다.
+ * 안드로이드 크롬도 자동재생 정책이 조여지면서 같은 길로 가고 있다.
+ *
+ * START 를 누르는 그 순간에 한마디를 재생해 엔진을 열어 둔다. 덤으로 사용자는
+ * 뛰기 전에 소리가 나는지 바로 알 수 있다 — 다 뛰고 나서 아는 것보다 낫다.
+ */
+export function primeVoice(text = '음성 안내가 켜져 있어요'): boolean {
+  if (
+    typeof speechSynthesis === 'undefined' ||
+    typeof SpeechSynthesisUtterance === 'undefined'
+  ) {
+    health = 'failed';
+    return false;
+  }
+  voiceActive = true;
+  ensureVoices();
+  try {
+    // 이전 세션의 잔여 발화가 큐에 남아 있으면 첫마디가 묻힌다
+    speechSynthesis.cancel();
+    inflight = [];
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ko-KR';
+    if (!koVoice) pickKoVoice();
+    if (koVoice) u.voice = koVoice;
+    // 엔진마다 start 만 주거나 end 만 주는 경우가 있어 둘 다 성공으로 본다
+    u.onstart = () => { health = 'ok'; };
+    u.onend = () => { if (health !== 'ok') health = 'ok'; };
+    u.onerror = () => { if (health !== 'ok') health = 'failed'; };
+    speechSynthesis.resume?.();
+    speechSynthesis.speak(u);
+    // 아무 신호도 없이 조용한 경우 — iOS 가 제스처 밖 발화를 버릴 때가 이렇다.
+    // 오류조차 안 오므로 시간으로 판정한다.
+    later(4000, () => { if (health === 'unknown') health = 'failed'; });
+    return true;
+  } catch {
+    health = 'failed';
+    return false;
+  }
+}
+
 export function initVoiceNav(
   coords: LatLng[],
   cum: number[],
@@ -346,10 +406,17 @@ function speak(
   try {
     const now = Date.now();
     inflight = inflight.filter((t) => now - t < SPEAK_TTL_MS);
+    let deferred = false;
 
     if (level !== 'normal') {
       speechSynthesis.cancel();
       inflight = [];
+      // cancel() 직후 같은 틱에 speak() 를 부르면 크롬 계열에서 새 발화가
+      // 통째로 사라지는 일이 있다(엔진이 취소를 처리하는 중에 들어와서다).
+      // 급한 안내일수록 이걸로 조용해지면 안 되니, 한 틱만 물려서 보낸다.
+      // primeVoice 는 이 경로를 타지 않는다 — 거기서 지연시키면 iOS 가
+      // '제스처 안에서 시작된 발화' 로 안 쳐서 아예 소리가 안 난다.
+      deferred = true;
     } else if (inflight.length >= MAX_QUEUED) {
       return false; // 이미 밀려 있다 — 지금 말해봐야 한참 뒤에 나온다
     }
@@ -367,12 +434,21 @@ function speak(
       const i = inflight.indexOf(now);
       if (i >= 0) inflight.splice(i, 1);
     };
-    u.onend = done;
-    u.onerror = done;
+    u.onstart = () => { health = 'ok'; };
+    u.onend = () => { if (health !== 'ok') health = 'ok'; done(); };
+    u.onerror = () => { if (health !== 'ok') health = 'failed'; done(); };
     // 화면이 꺼졌다 켜지면 브라우저가 음성 엔진을 paused 로 남겨 두기도 한다.
     // 그 상태에서 speak 만 하면 소리 없이 큐에만 쌓인다 — 말하기 전에 깨운다.
     speechSynthesis.resume?.();
-    speechSynthesis.speak(u);
+    if (deferred) later(0, () => {
+      try {
+        speechSynthesis.resume?.();
+        speechSynthesis.speak(u);
+      } catch {
+        done(); // 못 보냈으면 자리를 비워 다음 안내가 막히지 않게 한다
+      }
+    });
+    else speechSynthesis.speak(u);
 
     if (vibrate && navigator.vibrate) {
       navigator.vibrate(level === 'alert' ? VIBRATE_ALERT : VIBRATE_TURN);
@@ -695,6 +771,8 @@ export function toggleVoice(state: VoiceNavState): VoiceNavState {
 /** 정리 — 컴포넌트 언마운트 시 */
 export function stopVoiceNav() {
   voiceActive = false;
+  // health 는 되돌리지 않는다 — 기기가 음성을 못 내는 사정은 기록을 끝낸다고
+  // 달라지지 않는다. 다음 러닝에서 같은 진단을 다시 하느라 헤매지 않게 둔다.
   pendingTimers.forEach(clearTimeout);
   pendingTimers.length = 0;
   inflight = [];

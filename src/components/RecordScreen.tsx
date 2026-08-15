@@ -34,9 +34,11 @@ import type { LatLng } from '../lib/types';
 import {
   announce,
   initVoiceNav,
+  primeVoice,
   tickVoiceNav,
   toggleVoice,
   stopVoiceNav,
+  voiceHealth,
   type VoiceNavState,
 } from '../lib/voiceNav';
 import { COOPER_TEST_SEC, cooperRemainingSec, cooperVo2max } from '../lib/vo2max';
@@ -218,6 +220,15 @@ export default function RecordScreen({
         : tickVoiceNav(voiceNav, 0, [0], rec.distanceKm, 0, null, undefined, rec.elapsedSec);
     if (next !== voiceNav) setVoiceNav(next);
   }, [idx, rec.distanceKm]);
+
+  // 음성이 실제로 나오는지 — START 때 깨운 한마디가 재생됐는지로 판정한다.
+  // 안 나오면 뛰는 내내 조용한 이유를 화면이 말해 줘야 한다.
+  const [voiceBad, setVoiceBad] = useState(false);
+  useEffect(() => {
+    if (rec.status !== 'recording' && rec.status !== 'paused') return;
+    const id = setInterval(() => setVoiceBad(voiceHealth() === 'failed'), 1000);
+    return () => clearInterval(id);
+  }, [rec.status]);
 
   // ── 12분 심폐 검사 (Cooper) ─────────────────────────────────
   // 12분 동안 간 거리가 곧 VO₂max 추정치가 되고, 그 값이 국민체력100 또래
@@ -649,6 +660,16 @@ export default function RecordScreen({
               </p>
             )}
 
+            {/* 음성 버튼은 켜져 있는데 엔진이 소리를 못 내는 상태.
+                말해 주지 않으면 사용자는 앱이 조용한 이유를 영영 모른다. */}
+            {voiceBad && voiceNav?.enabled && (
+              <p className="mt-4 rounded-2xl border border-ink-line bg-ink-soft px-3 py-2.5 text-[11.5px] leading-relaxed text-white/80">
+                <b className="text-volt">음성 안내가 이 기기에서 재생되지 않아요.</b>{' '}
+                볼륨과 무음(벨소리) 스위치를 확인해 주세요. 이어폰을 쓰는 중이면 연결도 함께
+                봐 주세요. 거리·시간 기록은 그대로 됩니다.
+              </p>
+            )}
+
             {rec.gapSec > 0 && (
               <p className="mt-4 rounded-2xl border border-coral/50 bg-coral-50 px-3 py-2.5 text-[11.5px] leading-relaxed text-espresso">
                 <b className="text-coral-600">
@@ -837,6 +858,12 @@ function StartPanel({
       ) : (
         <button
           onClick={() => {
+            // 여기가 유일하게 확실한 사용자 제스처다. iOS 는 제스처 밖에서
+            // 시작된 첫 발화를 조용히 버리므로, 이 자리에서 엔진을 열어 둔다.
+            // 사용자도 뛰기 전에 소리가 나는지 바로 알 수 있다.
+            primeVoice(
+              cooperTest ? '12분 검사를 준비합니다' : '음성 안내가 켜져 있어요',
+            );
             clearInProgress(); // 새로 시작하면 지난 복구본은 치운다
             onStart();
           }}
@@ -858,7 +885,10 @@ function StartPanel({
           자기 값으로 기억한다. */}
       {!cooperTest && (
         <button
-          onClick={() => rec.startDemo(planned?.route.coords)}
+          onClick={() => {
+            primeVoice('음성 안내가 켜져 있어요');
+            rec.startDemo(planned?.route.coords);
+          }}
           className="mt-6 inline-flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-muted active:scale-95"
         >
           <Zap size={13} /> GPS 없이 데모
