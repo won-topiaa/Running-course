@@ -406,17 +406,20 @@ function speak(
   try {
     const now = Date.now();
     inflight = inflight.filter((t) => now - t < SPEAK_TTL_MS);
-    let deferred = false;
 
     if (level !== 'normal') {
-      speechSynthesis.cancel();
+      // 정말 말하고 있을 때만 끊는다.
+      //
+      // 예전엔 급한 안내마다 무조건 cancel() 을 불렀다. 크롬 계열에는
+      // cancel() 직후 같은 틱의 speak() 가 통째로 사라지는 알려진 문제가
+      // 있어서, 끊을 게 없는데 부른 cancel() 하나 때문에 정작 그 안내가
+      // 조용해질 수 있다. 조용한 상태면 끊을 이유도 없다.
+      //
+      // (한 틱 미뤄 speak 하는 우회로도 있지만 쓰지 않는다 — 급한 안내의
+      //  순서가 뒤로 밀려 '반환점 도착'·'완주' 가 제때 안 나오는 걸
+      //  검사에서 확인했다. 발화 순서를 바꾸는 값은 치르지 않는다.)
+      if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
       inflight = [];
-      // cancel() 직후 같은 틱에 speak() 를 부르면 크롬 계열에서 새 발화가
-      // 통째로 사라지는 일이 있다(엔진이 취소를 처리하는 중에 들어와서다).
-      // 급한 안내일수록 이걸로 조용해지면 안 되니, 한 틱만 물려서 보낸다.
-      // primeVoice 는 이 경로를 타지 않는다 — 거기서 지연시키면 iOS 가
-      // '제스처 안에서 시작된 발화' 로 안 쳐서 아예 소리가 안 난다.
-      deferred = true;
     } else if (inflight.length >= MAX_QUEUED) {
       return false; // 이미 밀려 있다 — 지금 말해봐야 한참 뒤에 나온다
     }
@@ -440,15 +443,7 @@ function speak(
     // 화면이 꺼졌다 켜지면 브라우저가 음성 엔진을 paused 로 남겨 두기도 한다.
     // 그 상태에서 speak 만 하면 소리 없이 큐에만 쌓인다 — 말하기 전에 깨운다.
     speechSynthesis.resume?.();
-    if (deferred) later(0, () => {
-      try {
-        speechSynthesis.resume?.();
-        speechSynthesis.speak(u);
-      } catch {
-        done(); // 못 보냈으면 자리를 비워 다음 안내가 막히지 않게 한다
-      }
-    });
-    else speechSynthesis.speak(u);
+    speechSynthesis.speak(u);
 
     if (vibrate && navigator.vibrate) {
       navigator.vibrate(level === 'alert' ? VIBRATE_ALERT : VIBRATE_TURN);
