@@ -454,7 +454,7 @@ console.log('\n[음성 안내] 왕복·순환·자유 러닝 발화 시퀀스');
   texts.length = 0;
   drive(ob, obCum, obCum[obCum.length - 1]);
   const obTexts = [...texts];
-  check(obTexts.some((t) => t.includes('반환점')), `왕복: 반환점 안내가 나온다`);
+  check(obTexts.some((t) => t.includes('왔던 길로 되돌아갑니다')), '왕복: 되돌아간다는 예고가 나온다');
   // '출발합니다' 는 START 탭에서 한 번만 나온다. tick 이 또 말하면 같은 말이
   // 세 번 나오고, 그중 둘은 이미 뛰기 시작한 뒤라 뒷북이다.
   check(!obTexts.some((t) => t.includes('출발')), '따라 뛰기: 출발 인사가 겹치지 않는다');
@@ -462,9 +462,11 @@ console.log('\n[음성 안내] 왕복·순환·자유 러닝 발화 시퀀스');
     obTexts.some((t) => t.includes('경로 안내를 시작합니다')),
     '따라 뛰기: 경로 안내 시작 예고가 나온다',
   );
-  check(obTexts.some((t) => t.includes('왔던 길로 돌아갑니다')), '왕복: 반환점 도착 문구');
-  check(!obTexts.some((t) => t.includes('유턴')), '왕복: 반환점을 유턴이라 부르지 않는다');
-  check(!obTexts.some((t) => t.includes('절반')), '왕복: 반환점과 겹치는 절반 안내는 없다');
+  check(obTexts.some((t) => t.includes('여기서 돌아서')), '왕복: 되돌아갈 지점에 도착하면 그렇게 말한다');
+  // 지점에 이름을 붙이지 않는다 — '반환점'·'유턴' 은 처음 듣는 사람에게 늦게 온다
+  check(!obTexts.some((t) => t.includes('반환점')), "왕복: '반환점' 이라는 말을 쓰지 않는다");
+  check(!obTexts.some((t) => t.includes('유턴')), '왕복: 되돌아가는 지점을 유턴이라 부르지 않는다');
+  check(!obTexts.some((t) => t.includes('절반')), '왕복: 되돌아가기 안내와 겹치는 절반 안내는 없다');
   check(
     obTexts.some((t) => /킬로미터 완료. 지난 1킬로미터 \d+분/.test(t)),
     'km 이정표에 지난 1km 페이스가 붙는다',
@@ -484,6 +486,55 @@ console.log('\n[음성 안내] 왕복·순환·자유 러닝 발화 시퀀스');
     const before = texts.length;
     for (let i = 12; i < 20; i++) st = tickVoiceNav(st, i, obCum, obCum[i] / 1000, obCum[obCum.length - 1], ob[i], ob, 80);
     check(texts.slice(before).some((t) => t.includes('경로로 돌아왔어요')), '복귀하면 알려준다');
+  }
+
+  // 1-c) 모양·점 간격을 바꿔가며 — 되돌아가기 안내가 정확히 한 번만 나오는가.
+  //
+  // 예전엔 점 간격에 따라 깨졌다. 갔던 길을 그대로 되짚는 구간에서는
+  // 반환 지점 20m 앞의 점과 20m 뒤의 점이 물리적으로 같은 자리라,
+  // 그 둘로 잰 방위각(bearingDeg 는 같은 점에 0을 준다)이 유령 턴을 만들고
+  // 정작 180° 유턴을 밀어냈다 — 간격 25m 직선 왕복에서 '반환점' 대신
+  // '크게 좌회전' 이 두 번 나갔다. 간격은 라우터·다운샘플링에 따라 달라지므로
+  // 한 값만 보고 넘어갈 수 없다.
+  {
+    let bad = 0;
+    let total = 0;
+    const trial = (coords, wantBack) => {
+      texts.length = 0;
+      const cum = cumulativeMeters(coords);
+      const totalM = cum[cum.length - 1];
+      let st = initVoiceNav(coords, cum);
+      for (let i = 0; i < coords.length; i++) {
+        st = tickVoiceNav(st, i, cum, cum[i] / 1000, totalM, coords[i], coords, (cum[i] / 1000) * 360);
+      }
+      const back = texts.filter((t) => t.includes('여기서 돌아서')).length;
+      const uturn = texts.filter((t) => t.includes('유턴')).length;
+      total++;
+      if (back !== (wantBack ? 1 : 0) || uturn !== 0) bad++;
+    };
+    for (const step of [8, 10, 12, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100]) {
+      // 직선 왕복 — 한강 산책로처럼 곧게 갔다 그대로 돌아오는 모양
+      const a = [];
+      for (let m = 0; m <= 1200; m += step) a.push(P(m, 0));
+      trial([...a, ...a.slice(0, -1).reverse()], true);
+      // 굽은 왕복 — 곡선 산책로
+      const c = [];
+      for (let m = 0; m <= 1000; m += step) c.push(P(m, Math.sin(m / 200) * 120));
+      trial([...c, ...c.slice(0, -1).reverse()], true);
+      // 원형 링 — 빌더의 '왕복' 이 만드는 기본 모양. 되돌아가지 않는다
+      const ring = [];
+      const n = Math.max(12, Math.round((2 * Math.PI * 400) / step));
+      for (let k = 0; k <= n; k++) {
+        const t = (2 * Math.PI * k) / n;
+        ring.push(P(400 * Math.cos(t), 400 * Math.sin(t)));
+      }
+      trial(ring, false);
+      // 편도 — 돌아오지 않는다
+      const ow = [];
+      for (let m = 0; m <= 1500; m += step) ow.push(P(m, m * 0.3));
+      trial(ow, false);
+    }
+    check(bad === 0, `모양·간격 ${total}가지에서 되돌아가기 안내가 정확히 한 번 (실패 ${bad})`);
   }
 
   // 2) 순환 2.4km (사각 링) — 반환점이 없으니 절반 안내가 나온다
