@@ -408,6 +408,12 @@ await scenario('음성 엔진 제스처 활성화', {
   await page.waitForTimeout(2500);
   const v = await page.evaluate(() => window.__voiceLog);
   expect(v.spoke.length > 0, 'START 를 눌러도 아무 발화가 없다 (아이폰이면 끝까지 무음)');
+  // 자유 러닝은 1km 이정표까지 다른 안내가 없다 — 이 한마디가 출발 인사이자
+  // '음성이 살아 있다' 는 유일한 신호다.
+  expect(
+    v.played.some((t) => t.includes('출발합니다')),
+    `START 에서 '출발합니다' 가 안 나온다 (들린 말: ${JSON.stringify(v.played)})`,
+  );
   expect(
     v.spoke.some((x) => x.gesture),
     '제스처 안에서 시작된 발화가 없다 — iOS 가 음성 엔진을 열어 주지 않는다',

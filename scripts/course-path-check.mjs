@@ -412,6 +412,13 @@ console.log('\n[음성 안내] 왕복·순환·자유 러닝 발화 시퀀스');
   drive(ob, obCum, obCum[obCum.length - 1]);
   const obTexts = [...texts];
   check(obTexts.some((t) => t.includes('반환점')), `왕복: 반환점 안내가 나온다`);
+  // '출발합니다' 는 START 탭에서 한 번만 나온다. tick 이 또 말하면 같은 말이
+  // 세 번 나오고, 그중 둘은 이미 뛰기 시작한 뒤라 뒷북이다.
+  check(!obTexts.some((t) => t.includes('출발')), '따라 뛰기: 출발 인사가 겹치지 않는다');
+  check(
+    obTexts.some((t) => t.includes('경로 안내를 시작합니다')),
+    '따라 뛰기: 경로 안내 시작 예고가 나온다',
+  );
   check(obTexts.some((t) => t.includes('왔던 길로 돌아갑니다')), '왕복: 반환점 도착 문구');
   check(!obTexts.some((t) => t.includes('유턴')), '왕복: 반환점을 유턴이라 부르지 않는다');
   check(!obTexts.some((t) => t.includes('절반')), '왕복: 반환점과 겹치는 절반 안내는 없다');
@@ -450,7 +457,10 @@ console.log('\n[음성 안내] 왕복·순환·자유 러닝 발화 시퀀스');
   );
   check(!texts.some((t) => t.includes('남은 거리')), '자유 러닝: 남은 거리(경로 없음)는 말하지 않는다');
   check(!texts.some((t) => t.includes('완주')), '자유 러닝: 완주 안내 없음');
-  check(!texts.some((t) => t.includes('출발')), '자유 러닝: 코스 출발 안내 없음');
+  // 자유 러닝에는 따라갈 경로가 없으니 tick 은 코스 출발 안내를 하지 않는다.
+  // ('출발합니다' 인사는 START 를 누르는 제스처에서 primeVoice 가 한다 —
+  //  그건 브라우저 검사(scenario-check)가 확인한다)
+  check(!texts.some((t) => t.includes('출발')), '자유 러닝: tick 은 코스 출발 안내를 하지 않는다');
 
   // 페이스 문구가 실제 시간과 맞는지 — 5분 30초/km 로 뛰었다 (330초)
   check(

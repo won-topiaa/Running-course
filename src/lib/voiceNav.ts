@@ -275,7 +275,7 @@ export function voiceHealth(): VoiceHealth {
  * START 를 누르는 그 순간에 한마디를 재생해 엔진을 열어 둔다. 덤으로 사용자는
  * 뛰기 전에 소리가 나는지 바로 알 수 있다 — 다 뛰고 나서 아는 것보다 낫다.
  */
-export function primeVoice(text = '음성 안내가 켜져 있어요'): boolean {
+export function primeVoice(text = '출발합니다'): boolean {
   if (
     typeof speechSynthesis === 'undefined' ||
     typeof SpeechSynthesisUtterance === 'undefined'
@@ -283,6 +283,9 @@ export function primeVoice(text = '음성 안내가 켜져 있어요'): boolean 
     health = 'failed';
     return false;
   }
+  // 음성을 꺼 둔 사람에게는 깨우는 한마디도 하지 않는다. 엔진은 그 사람이
+  // 음성을 켜는 순간(그것도 탭이다) toggleVoice 의 첫마디가 대신 열어 준다.
+  if (!voiceEnabled) return false;
   voiceActive = true;
   ensureVoices();
   try {
@@ -534,7 +537,10 @@ export function tickVoiceNav(
   // ── 출발 안내 (카운트다운 → 5초 뒤 출발 안내) ─────────────────
   if (!spoke && !offRoute && !state.startAnnounced && progressIdx > 0) {
     if (state.startCountdownAt === 0) {
-      if (speak('5초 뒤 코스 출발합니다', { vibrate: false })) {
+      // '출발' 인사는 START 를 누르는 순간 primeVoice 가 이미 했다.
+      // 여기서 또 출발을 말하면 같은 말이 세 번 나온다 — 경로 안내가
+      // 곧 시작된다는 예고로 자리를 바꾼다.
+      if (speak('잠시 후 경로 안내를 시작합니다', { vibrate: false })) {
         next.startCountdownAt = Date.now();
         spoke = true;
       }
@@ -547,10 +553,10 @@ export function tickVoiceNav(
         const toFirst = firstTurn.cumM - currentM;
         said =
           toFirst > AT_TURN_M
-            ? speak(`출발. ${distLabel(Math.round(toFirst))} 앞 ${labelFor(firstTurn)}`)
-            : speak(`출발. 잠시 후 ${labelFor(firstTurn)}`);
+            ? speak(`${distLabel(Math.round(toFirst))} 앞 ${labelFor(firstTurn)}`)
+            : speak(`잠시 후 ${labelFor(firstTurn)}`);
       } else {
-        said = speak(`출발. 쭉 직진`);
+        said = speak(`쭉 직진하세요`);
       }
       if (said) {
         next.startAnnounced = true;

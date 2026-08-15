@@ -858,12 +858,12 @@ function StartPanel({
       ) : (
         <button
           onClick={() => {
-            // 여기가 유일하게 확실한 사용자 제스처다. iOS 는 제스처 밖에서
-            // 시작된 첫 발화를 조용히 버리므로, 이 자리에서 엔진을 열어 둔다.
-            // 사용자도 뛰기 전에 소리가 나는지 바로 알 수 있다.
-            primeVoice(
-              cooperTest ? '12분 검사를 준비합니다' : '음성 안내가 켜져 있어요',
-            );
+            // 출발 인사이자 음성 엔진을 여는 한마디다. iOS 는 제스처 밖에서
+            // 시작된 첫 발화를 조용히 버리므로 반드시 이 자리(탭 핸들러 안)여야
+            // 한다. 자유 러닝은 여기 말고는 1km 이정표까지 안내가 없어서,
+            // 이 한마디가 '음성이 살아 있다' 는 유일한 신호이기도 하다.
+            // 검사는 시계가 첫 측위부터 도는 만큼 '출발' 은 그때 말한다.
+            primeVoice(cooperTest ? '12분 검사를 준비합니다' : '출발합니다');
             clearInProgress(); // 새로 시작하면 지난 복구본은 치운다
             onStart();
           }}
@@ -886,7 +886,7 @@ function StartPanel({
       {!cooperTest && (
         <button
           onClick={() => {
-            primeVoice('음성 안내가 켜져 있어요');
+            primeVoice('출발합니다');
             rec.startDemo(planned?.route.coords);
           }}
           className="mt-6 inline-flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-muted active:scale-95"
