@@ -15,7 +15,8 @@
     "check:output": "node scripts/output-check.mjs",
     "check:paths": "node scripts/course-path-check.mjs",
     "check:fuzz": "node scripts/fuzz-check.mjs",
-    "check": "npm run check:gps && npm run check:local && npm run check:output && npm run check:recorder && npm run check:paths && npm run check:fuzz",
+    "check:fitness": "node scripts/fitness-check.mjs",
+    "check": "npm run check:gps && npm run check:local && npm run check:output && npm run check:recorder && npm run check:paths && npm run check:fuzz && npm run check:fitness",
     "check:smoke": "npm run build && node scripts/smoke-check.mjs",
     "check:scenario": "npm run build && node scripts/scenario-check.mjs",
     "check:recorder": "node scripts/recorder-finalize-check.mjs"

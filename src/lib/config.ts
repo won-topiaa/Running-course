@@ -3,6 +3,7 @@
 // 각 키는 빌드시 주입된 VITE_* 값을 기본값으로, 없으면 사용자가 앱에서 입력한 값을 쓴다.
 // ---------------------------------------------------------------------------
 
+import { emptyFitnessProfile, type FitnessProfile } from './fitness';
 import type { LatLng } from './types';
 
 const KEY = 'run-app-settings-v1';
@@ -26,6 +27,14 @@ export interface Settings {
   supabaseAnonKey: string | null;
   /** 홈/시작 위치 */
   homeLocation: LatLng;
+  /**
+   * 체력 프로필 — 별도 기능이 아니라 기본 항목이다.
+   * 나이·성별만 있어도 또래 기준으로 코스를 맞춰 주고, 측정값이 있으면
+   * 국민체력100 분포와 견줘 처방까지 낸다.
+   */
+  fitness: FitnessProfile;
+  /** 공공데이터포털 서비스 키 (국민체력100 기준 분포 조회용, 선택) */
+  kspoServiceKey: string | null;
 }
 
 // 카카오 JavaScript 키는 도메인 제한으로 보호되는 공개용 클라이언트 키.
@@ -56,6 +65,8 @@ const ENV_MAPBOX = import.meta.env.VITE_MAPBOX_TOKEN?.trim() || null;
 const ENV_STRAVA = import.meta.env.VITE_STRAVA_WORKER_URL?.trim() || null;
 const ENV_SB_URL = import.meta.env.VITE_SUPABASE_URL?.trim() || null;
 const ENV_SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || null;
+// 공공데이터포털 서비스 키 — 국민체력100 기준 분포 조회 (없으면 체력 축을 뺀다)
+const ENV_KSPO = import.meta.env.VITE_KSPO_SERVICE_KEY?.trim() || null;
 
 /** 서울시청 */
 export const DEFAULT_LOCATION: LatLng = [37.5665, 126.978];
@@ -71,7 +82,40 @@ export function defaultSettings(): Settings {
     supabaseUrl: ENV_SB_URL ?? SUPABASE_URL_DEFAULT,
     supabaseAnonKey: ENV_SB_KEY ?? SUPABASE_KEY_DEFAULT,
     homeLocation: DEFAULT_LOCATION,
+    fitness: emptyFitnessProfile(),
+    kspoServiceKey: ENV_KSPO,
   };
+}
+
+/**
+ * 저장된 체력 프로필을 형태까지 확인해 되살린다.
+ *
+ * 손상된 값이 그대로 들어오면 백분위 계산에서 NaN 이 나오고, 그 NaN 이
+ * 추천 점수를 타고 화면까지 올라간다 — 다른 저장값과 같은 규칙으로 거른다.
+ */
+function sanitizeFitness(v: unknown, base: FitnessProfile): FitnessProfile {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return base;
+  const f = v as Partial<FitnessProfile>;
+  const year =
+    typeof f.birthYear === 'number' &&
+    Number.isInteger(f.birthYear) &&
+    f.birthYear >= 1900 &&
+    f.birthYear <= new Date().getFullYear()
+      ? f.birthYear
+      : null;
+  const sex = f.sex === 'male' || f.sex === 'female' ? f.sex : null;
+  const measured: FitnessProfile['measured'] = {};
+  if (f.measured && typeof f.measured === 'object' && !Array.isArray(f.measured)) {
+    for (const [k, val] of Object.entries(f.measured)) {
+      // 0 이하는 '측정 안 함' 이 잘못 저장된 값이다 — 표본 비교에 넣지 않는다
+      if (typeof val === 'number' && Number.isFinite(val) && val > 0) {
+        (measured as Record<string, number>)[k] = val;
+      }
+    }
+  }
+  const measuredAt =
+    typeof f.measuredAt === 'string' && /^\d{4}-\d{2}$/.test(f.measuredAt) ? f.measuredAt : null;
+  return { birthYear: year, sex, measured, measuredAt };
 }
 
 export function loadSettings(): Settings {
@@ -114,6 +158,8 @@ export function loadSettings(): Settings {
         homeLocation: home,
         paceSecPerKm: pace,
         weekGoalKm: weekGoal,
+        fitness: sanitizeFitness(saved.fitness, base.fitness),
+        kspoServiceKey: ENV_KSPO ?? saved.kspoServiceKey ?? null,
         // env 값이 있으면 항상 우선 (배포 환경 주입값)
         kakaoJsKey: ENV_KAKAO ?? savedKakao ?? KAKAO_DEFAULT,
         orsKey: ENV_ORS ?? saved.orsKey ?? ORS_DEFAULT,
