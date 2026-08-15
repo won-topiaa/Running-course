@@ -78,14 +78,37 @@ const AGE_CLASSES = [20, 30, 40, 50, 60, 70];
 const VO2_KEYS = { step: 'item_f037', treadmill: 'item_f035' };
 const VO2_EXCLUDED = { shuttle: 'item_f030' }; // 눈금이 달라 제외 (개수만 기록)
 
-// 응답 필드 → 우리 항목 (Swagger 명세 그대로, src/lib/kspoFitness.ts 의 SPEC 과 동일)
+// 응답 필드 → 우리 항목.
+// 필드명은 공공데이터포털 15108938 의 출력 명세 그대로다 (2026-08-15 대조):
+//   f003 체지방율(%) · f004 허리둘레(cm) · f007 악력_좌(kg) · f008 악력_우(kg)
+//   f022 제자리 멀리뛰기(cm) · f035 트레드밀_출력(VO₂max) · f037 스텝검사_출력(VO₂max)
+//   f030 왕복오래달리기_출력(VO₂max) — 눈금이 달라 제외
 const ITEM_KEYS = {
   vo2max: Object.values(VO2_KEYS),
   bodyFatPct: ['item_f003'],
   longJumpCm: ['item_f022'],
-  gripKg: ['item_f007', 'item_f008'], // 절대악력(f052)은 값이 0% 라 좌·우를 쓴다
+  gripKg: ['item_f007', 'item_f008'],
   waistCm: ['item_f004'],
 };
+
+/**
+ * 여러 필드가 한 항목에 걸릴 때 무엇을 고를 것인가.
+ *
+ * 악력은 '먼저 나오는 값' 을 쓰면 안 된다. 모든 행에 좌·우가 다 있고
+ * (남 30대 1,000행 전부), 좌가 우보다 평균 2.47kg 약하다. 첫 값을 쓰면
+ * 늘 약한 쪽으로 분포가 만들어진다(중앙값 43.2 vs 최대 46.3).
+ *
+ * 공단이 무엇을 '악력' 으로 삼는지는 데이터가 스스로 말해 준다 —
+ * 명세의 상대악력(item_f028)을 역산하면
+ *     상대악력 = max(좌, 우) ÷ 체중 × 100   ← 1,000/1,000행 일치 (100%)
+ *     (좌 기준은 273/1,000, 우 기준은 748/1,000 만 맞는다)
+ * 사용자도 결과지에 찍힌 '악력' 을 그대로 넣을 텐데 그 값이 곧 max 다.
+ * 분포와 입력이 같은 자를 쓰게 맞춘다.
+ *
+ * VO₂max 는 세 방식이 한 행에 동시에 오지 않는다(중복 0/1,000행)므로
+ * first 로 충분하다.
+ */
+const ITEM_AGG = { gripKg: 'max' };
 // 사람이 낼 수 있는 범위 — 밖이면 버린다 (실측에 허리둘레 1cm, 멀리뛰기 2435cm 가 섞여 있다)
 const RANGE = {
   vo2max: [10, 90],
@@ -107,12 +130,23 @@ const num = (v) => {
   const n = Number(String(v ?? '').replace(/[^\d.-]/g, ''));
   return Number.isFinite(n) ? n : null;
 };
-const pick = (row, keys) => {
+const pick = (row, keys, agg) => {
+  if (agg === 'max') {
+    let best = null;
+    for (const k of keys) {
+      const v = num(row[k]);
+      if (v != null && v > 0 && (best == null || v > best)) best = v;
+    }
+    return best;
+  }
   for (const k of keys) if (row[k] != null && row[k] !== '') return row[k];
 };
 const bandOf = (a) => (a < 20 ? '10대' : a >= 70 ? '70대 이상' : `${Math.floor(a / 10) * 10}대`);
 
-const SOURCE = '국민체육진흥공단 「국민체력100 체력인증센터 측정결과」(공공데이터포털 15108938)';
+// 공공데이터포털의 데이터셋 정식 명칭 그대로 (제공기관 법인명 포함).
+// 공모전 제출물에 실릴 문구라 축약하지 않는다.
+const SOURCE =
+  '서울올림픽기념국민체육진흥공단 「국민체력100 체력인증센터 측정결과 정보」(공공데이터포털 15108938)';
 const norms = [];
 let totalRows = 0;
 let dropped = 0;   // 범위 밖 (허리둘레 1cm, 멀리뛰기 2435cm 같은 입력 오류)
@@ -155,7 +189,7 @@ for (const [sex, code] of SEXES) {
         if (row.test_ym) months.add(String(row.test_ym));
         let used = false;
         for (const [item, keys] of Object.entries(ITEM_KEYS)) {
-          const v = num(pick(row, keys));
+          const v = num(pick(row, keys, ITEM_AGG[item]));
           if (v == null) continue;
           const [lo, hi] = RANGE[item];
           // 0 은 '그 항목을 안 쟀다' 는 뜻이다. 범위 밖 이상값과 같이 세면
@@ -238,6 +272,9 @@ writeFileSync(
       vo2maxBasis:
         '심폐지구력은 스텝 검사(item_f037)와 트레드밀(item_f035) 측정값만 사용했습니다. ' +
         '왕복오래달리기(item_f030)는 같은 집단에서 중앙값이 2~3 낮게 나와 눈금이 달라 제외했습니다.',
+      gripBasis:
+        '악력은 좌·우 중 큰 값을 사용했습니다. 명세의 상대악력(item_f028)을 역산하면 ' +
+        'max(좌,우)÷체중×100 이 1,000행 전부 일치해, 공단이 악력으로 삼는 값이 최대값임을 확인했습니다.',
       sampling: '연도별로 같은 양씩 나눠 받아 특정 시기에 쏠리지 않게 했습니다.',
       source: SOURCE,
       norms,

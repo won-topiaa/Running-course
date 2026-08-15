@@ -63,12 +63,24 @@ const SPEC = {
     // 나오므로, 눈금이 맞는 둘만 쓴다. 섞으면 낮은 꼬리가 두꺼워져 백분위가
     // 최대 8%p 밀린다. (근거와 한계는 scripts/fetch-fitness-norm.mjs 참고)
     vo2max: ['item_f037', 'item_f035'],
-    bodyFatPct: ['item_f003'],
-    longJumpCm: ['item_f022'],
-    // 절대악력(f052)은 명세에 있어도 값이 0% 라 좌·우 악력을 쓴다
+    bodyFatPct: ['item_f003'], //  체지방율(%)
+    longJumpCm: ['item_f022'], //  제자리 멀리뛰기(cm)
+    // 악력_좌(f007)·악력_우(f008). 절대악력(f052)은 명세에 있어도 실측 커버리지가
+    // 0% 라(2023·2025·2026년 각 1,000행 전부 빈값) 좌·우에서 만든다.
     gripKg: ['item_f007', 'item_f008'],
-    waistCm: ['item_f004'],
+    waistCm: ['item_f004'], //     허리둘레(cm)
   } as Record<FitnessItem, string[]>,
+  /**
+   * 여러 필드가 걸리는 항목에서 무엇을 고를지.
+   *
+   * 악력은 '먼저 나오는 값' 이면 늘 좌(약한 쪽)가 잡힌다 — 모든 행에 좌·우가
+   * 다 있고 좌가 평균 2.47kg 약하다. 공단이 무엇을 악력으로 삼는지는 명세의
+   * 상대악력(item_f028)을 역산하면 나온다:
+   *     상대악력 = max(좌,우) ÷ 체중 × 100  → 1,000/1,000행 일치
+   * 사용자가 결과지에서 옮겨 적는 '악력' 도 그 최대값이므로, 분포와 입력이
+   * 같은 자를 쓰게 맞춘다.
+   */
+  itemAgg: { gripKg: 'max' } as Partial<Record<FitnessItem, 'max'>>,
   /** 운동처방 내용 — 공단이 측정 결과에 맞춰 내려 준 텍스트 */
   prescriptionKey: 'pres_note',
 } as const;
@@ -137,6 +149,16 @@ function pickValue(row: Record<string, unknown>, keys: readonly string[]): unkno
   return undefined;
 }
 
+/** 후보 필드 중 가장 큰 값 (악력의 좌·우처럼 '더 센 쪽' 이 정답인 항목용) */
+function maxValue(row: Record<string, unknown>, keys: readonly string[]): number | null {
+  let best: number | null = null;
+  for (const k of keys) {
+    const v = toNumber(row[k]);
+    if (v != null && v > 0 && (best == null || v > best)) best = v;
+  }
+  return best;
+}
+
 function toNumber(v: unknown): number | null {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
   if (typeof v === 'string') {
@@ -177,7 +199,10 @@ export function normFromRows(
 
     let used = false;
     for (const item of Object.keys(SPEC.itemKeys) as FitnessItem[]) {
-      const v = toNumber(pickValue(row, SPEC.itemKeys[item]));
+      const v =
+        SPEC.itemAgg[item] === 'max'
+          ? maxValue(row, SPEC.itemKeys[item])
+          : toNumber(pickValue(row, SPEC.itemKeys[item]));
       // 0 은 '측정 안 함' 으로 들어오는 경우가 많다 — 표본에 넣으면 분포가 왜곡된다
       if (v == null || v <= 0) continue;
       (samples[item] ??= []).push(v);
@@ -208,6 +233,23 @@ function bundledNorm(sex: Sex, ageBand: string): FitnessNorm | null {
   if (!Array.isArray(list)) return null;
   const hit = list.find((n) => n.sex === sex && n.ageBand === ageBand);
   return hit && hit.n > 0 ? hit : null;
+}
+
+/**
+ * 앱에 묶인 기준 분포가 이 또래를 다루는지.
+ *
+ * 화면이 '아직 못 불러왔다' 와 '그 또래 표본이 아예 없다' 를 구분해서
+ * 말할 수 있어야 한다. 10대는 공단 표본에 연령대 자체가 없고, 70대 이상은
+ * 있어도 심폐지구력 측정값이 0건이다 — 둘 다 기다린다고 생기지 않는다.
+ */
+export function hasBundledNorm(sex: Sex, age: number): boolean {
+  return bundledNorm(sex, ageBandOf(age)) != null;
+}
+
+/** 그 또래 분포에 심폐지구력 표본이 있는지 (없으면 러닝 처방까지는 못 간다) */
+export function hasCardioNorm(sex: Sex, age: number): boolean {
+  const n = bundledNorm(sex, ageBandOf(age));
+  return (n?.counts?.vo2max ?? 0) > 0;
 }
 
 export async function loadFitnessNorm(

@@ -101,7 +101,7 @@ export function useFitness(
     return {
       age,
       assessment,
-      prescription: prescribe(assessment.overall, age),
+      prescription: prescribe(assessment, age),
       loading,
       vo2maxEstimate,
     };

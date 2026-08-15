@@ -17,6 +17,7 @@ import {
   type FitnessProfile,
   type Sex,
 } from '../lib/fitness';
+import { hasBundledNorm, hasCardioNorm } from '../lib/kspoFitness';
 import type { FitnessState } from '../lib/useFitness';
 import { CONFIDENCE_LABEL } from '../lib/vo2max';
 import type { AppApi } from '../ui/appApi';
@@ -55,8 +56,11 @@ export default function FitnessSection({
     patch({ measured: next });
   };
 
-  const { assessment, prescription, loading, vo2maxEstimate } = fitness;
+  const { assessment, prescription, loading, vo2maxEstimate, age } = fitness;
   const thisYear = new Date().getFullYear();
+  // 이 또래에 기준 표본이 있는지 — '아직 못 불러왔다' 와 '아예 없다' 는 다르다
+  const cohortKnown = profile.sex != null && age != null && hasBundledNorm(profile.sex, age);
+  const cardioKnown = profile.sex != null && age != null && hasCardioNorm(profile.sex, age);
 
   return (
     <div className="mt-4 rounded-3xl border border-line bg-paper p-4 shadow-soft">
@@ -201,7 +205,12 @@ export default function FitnessSection({
         {loading ? (
           <p className="text-[12px] text-espresso-muted">체력 기준 데이터를 불러오는 중…</p>
         ) : assessment.missing ? (
-          <p className="text-[12px] leading-relaxed text-espresso-muted">{assessment.missing}</p>
+          <p className="text-[12px] leading-relaxed text-espresso-muted">
+            {/* 표본이 아예 없는 또래에게 '아직 못 불러왔다' 고 하면 계속 기다리게 된다 */}
+            {!assessment.norm && profile.sex && age != null && !cohortKnown
+              ? '공단 체력인증센터 표본은 20대부터 있어서, 지금 나이대는 또래 기준을 만들 수 없어요. 러닝 기록과 코스 추천은 그대로 쓸 수 있어요.'
+              : assessment.missing}
+          </p>
         ) : (
           <>
             <div className="flex flex-wrap gap-x-3 gap-y-1">
@@ -215,10 +224,24 @@ export default function FitnessSection({
                 </span>
               ))}
             </div>
-            {prescription && (
+            {prescription ? (
               <p className="mt-2 text-[12.5px] leading-relaxed text-espresso">
                 지금 체력이면 <b>한 번에 {prescription.sessionKm.min}~{prescription.sessionKm.max}km</b>,
                 주 <b>{prescription.perWeek}회</b>가 알맞아요. 추천 탭이 이 기준으로 코스를 골라 줘요.
+              </p>
+            ) : cardioKnown ? (
+              /* 심폐지구력 없이도 백분위는 보여주되 '얼마나 뛰어라' 는 말하지 않는다.
+                 왜 안 나오는지를 말해야 사용자가 다음 걸음을 뗄 수 있다. */
+              <p className="mt-2 text-[12.5px] leading-relaxed text-espresso-muted">
+                코스 처방은 <b>심폐지구력</b>을 알아야 낼 수 있어요. 러닝을 한 번 기록하거나
+                12분 검사를 하면 바로 나와요.
+              </p>
+            ) : (
+              /* 기다린다고 생기지 않는 경우다. 70대 이상은 공단 표본에 심폐지구력
+                 측정값이 0건이라, '검사하면 나온다' 고 하면 거짓말이 된다. */
+              <p className="mt-2 text-[12.5px] leading-relaxed text-espresso-muted">
+                이 연령대는 공단 표본에 심폐지구력 측정값이 없어서 <b>또래 대비</b> 코스
+                처방까지는 낼 수 없어요. 다른 항목의 상위 %는 위에 그대로 나와 있어요.
               </p>
             )}
             {/* 어디서 온 숫자인지 밝힌다 — 국가 기준으로 진단받았다고 오해하지 않게 */}

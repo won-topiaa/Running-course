@@ -19,6 +19,21 @@ const bundle = async (e, n) => {
   return import(o);
 };
 
+/**
+ * 처방은 이제 평가 결과 전체를 받는다 — 심폐지구력을 알 때만 내주기 때문이다.
+ * 검사에서는 '심폐를 잰 평가' 를 만들어 넘긴다.
+ */
+const withCardio = (overall) =>
+  overall == null
+    ? { overall: null, items: [], missing: 'x', coverage: 0, norm: null }
+    : {
+        overall,
+        items: [{ item: 'vo2max', value: 45, percentile: overall, estimated: false }],
+        missing: null,
+        coverage: 0.45,
+        norm: null,
+      };
+
 const ok = [];
 const bad = [];
 const check = (c, m) => {
@@ -73,14 +88,14 @@ console.log('\n[평가] 모르면 모른다고 한다');
 }
 
 console.log('\n[처방] 근거 없이는 처방하지 않는다');
-check(F.prescribe(null, 30) === null, '백분위를 모르면 처방 없음');
-check(F.prescribe(50, null) === null, '나이를 모르면 처방 없음');
+check(F.prescribe(withCardio(null), 30) === null, '백분위를 모르면 처방 없음');
+check(F.prescribe(withCardio(50), null) === null, '나이를 모르면 처방 없음');
 {
-  const low = F.prescribe(10, 30), mid = F.prescribe(50, 30), high = F.prescribe(90, 30);
+  const low = F.prescribe(withCardio(10), 30), mid = F.prescribe(withCardio(50), 30), high = F.prescribe(withCardio(90), 30);
   check(low.sessionKm.max < high.sessionKm.max, `체력이 좋을수록 긴 거리 (${low.sessionKm.max} < ${high.sessionKm.max}km)`);
   check(low.maxAscentPerKm < high.maxAscentPerKm, `체력이 좋을수록 경사 허용 (${low.maxAscentPerKm} < ${high.maxAscentPerKm}m/km)`);
   check(mid.sessionKm.min > 0 && mid.perWeek > 0, '중간 등급도 유효한 처방');
-  const old = F.prescribe(50, 65);
+  const old = F.prescribe(withCardio(50), 65);
   check(old.sessionKm.max < mid.sessionKm.max, `같은 백분위라도 고령은 완충 (${old.sessionKm.max} < ${mid.sessionKm.max}km)`);
   check(
     low.basis.includes('국민체육진흥공단') && low.basis.includes('앱이 정한'),
@@ -93,7 +108,7 @@ console.log('\n[코스 적합도] 처방이 없으면 축을 빼고 돈다');
   const c = COURSES[0];
   check(F.courseFitScore(c, null) === null, '처방이 없으면 null (0점이 아니다)');
   check(F.fitLabel(c, null) === null, '처방이 없으면 라벨도 없다');
-  const rx = F.prescribe(50, 30);
+  const rx = F.prescribe(withCardio(50), 30);
   for (const course of COURSES) {
     const s = F.courseFitScore(course, rx);
     if (!(s >= 0 && s <= 1)) { check(false, `${course.id}: 적합도 ${s}`); break; }
@@ -111,7 +126,7 @@ console.log('\n[추천 통합] 체력을 몰라도 기존과 똑같이 돈다');
   const same = S.recommend(COURSES, prefs, null).map((r) => `${r.course.id}:${r.matchScore}`).join('|');
   check(before === same, '처방 없이 부르면 결과가 이전과 동일 (회귀 없음)');
 
-  const rx = F.prescribe(20, 30); // 체력이 낮은 사람
+  const rx = F.prescribe(withCardio(20), 30); // 체력이 낮은 사람
   const withRx = S.recommend(COURSES, prefs, rx);
   check(withRx.length === COURSES.length, '체력 축이 붙어도 전체 코스를 반환');
   check(withRx.every((r) => r.matchScore >= 0 && r.matchScore <= 100), '점수는 여전히 0~100');
@@ -239,7 +254,7 @@ console.log('\n[처방 연속성] 백분위가 1 오르내릴 때 권장량이 �
   let intWeek = true;
   let prev = null;
   for (let p = 0; p <= 100; p++) {
-    const rx = F.prescribe(p, 32);
+    const rx = F.prescribe(withCardio(p), 32);
     if (!Number.isInteger(rx.perWeek)) intWeek = false;
     if (prev) {
       const jump = Math.abs(rx.sessionKm.max - prev.sessionKm.max);
@@ -255,7 +270,7 @@ console.log('\n[처방 연속성] 백분위가 1 오르내릴 때 권장량이 �
   check(intWeek, "주간 횟수는 항상 정수다 ('주 3.5회' 는 지킬 수 없는 지시다)");
 
   // 기준점의 값은 그대로여야 한다 — 절벽만 없앤 것이지 설계를 바꾼 게 아니다
-  const at = (p) => F.prescribe(p, 32);
+  const at = (p) => F.prescribe(withCardio(p), 32);
   check(at(15).sessionKm.min === 2 && at(15).sessionKm.max === 4, '기준점 상위 85% → 2~4km 유지');
   check(at(50).sessionKm.min === 3 && at(50).sessionKm.max === 6, '기준점 상위 50% → 3~6km 유지');
   check(at(85).sessionKm.min === 5 && at(85).sessionKm.max === 10, '기준점 상위 15% → 5~10km 유지');
@@ -265,8 +280,36 @@ console.log('\n[처방 연속성] 백분위가 1 오르내릴 때 권장량이 �
   check(at(0).sessionKm.min === at(15).sessionKm.min, '최하위도 기준점 밖으로 줄이지 않는다');
 
   // 나이 완충은 그대로 산다
-  check(F.prescribe(85, 65).sessionKm.max < F.prescribe(85, 32).sessionKm.max,
+  check(F.prescribe(withCardio(85), 65).sessionKm.max < F.prescribe(withCardio(85), 32).sessionKm.max,
     '같은 백분위라도 60대는 권장량이 낮다');
+}
+
+console.log('\n[처방 근거] 심폐지구력 없이 러닝 처방을 내지 않는가');
+{
+  // 종합 백분위는 '잰 항목만' 으로 가중평균한다. 그래서 악력(가중치 0.10)
+  // 하나만 넣어도 그 값이 곧 종합이 되어, 러닝을 얼마나 견디는지 아무것도
+  // 모르는 사람에게 '한 번에 5~10km, 주 4회' 가 나갔다.
+  const asc = Array.from({ length: 101 }, (_, i) => 20 + i * 0.4);
+  const norm = { sex: 'male', ageBand: '30대', n: 3000, counts: { gripKg: 3000 }, samples: { gripKg: asc } };
+  const gripOnly = F.assess(
+    { birthYear: 1994, sex: 'male', measured: { gripKg: 55 }, measuredAt: null }, norm, {},
+  );
+  check(gripOnly.overall != null, `악력만 넣어도 백분위 자체는 낸다 (상위 ${100 - gripOnly.overall}%)`);
+  check(F.prescribe(gripOnly, 32) === null, '심폐지구력이 없으면 러닝 처방은 내지 않는다');
+  check(Math.abs(gripOnly.coverage - 0.1) < 1e-9, `근거 폭(coverage)이 함께 실린다 (${gripOnly.coverage})`);
+
+  // 같은 사람이 심폐를 알게 되면 그때 처방이 나온다 — 막다른 길이 아니다
+  const vo2Norm = {
+    ...norm,
+    counts: { gripKg: 3000, vo2max: 3000 },
+    samples: { gripKg: asc, vo2max: Array.from({ length: 101 }, (_, i) => 25 + i * 0.3) },
+  };
+  const both = F.assess(
+    { birthYear: 1994, sex: 'male', measured: { gripKg: 55 }, measuredAt: null },
+    vo2Norm, { vo2max: 45 },
+  );
+  check(F.prescribe(both, 32) != null, '심폐지구력이 들어오면 처방이 나온다');
+  check(both.coverage > gripOnly.coverage, `근거 폭이 넓어진다 (${gripOnly.coverage} → ${both.coverage.toFixed(2)})`);
 }
 
 console.log('\n[기준 데이터] 묶어 둔 분포가 무엇으로 만들어졌는가');
@@ -293,6 +336,15 @@ console.log('\n[기준 데이터] 묶어 둔 분포가 무엇으로 만들어졌
     // 표본 수 — '상위 몇 %' 를 말하려면 그만한 근거가 있어야 한다
     const minN = Math.min(...withVo2.map((n) => n.counts.vo2max));
     check(minN >= 1000, `가장 적은 집단의 심폐 표본도 ${minN}명`);
+
+    // 악력은 좌·우 중 큰 값이어야 한다. 첫 값(좌)을 쓰면 분포가 통째로
+    // 약한 쪽으로 내려가고, 결과지의 '악력'(=최대값)을 넣는 사용자의
+    // 백분위가 체계적으로 부풀려진다.
+    const grip30 = norm.norms.find((n) => n.sex === 'male' && n.ageBand === '30대')?.samples.gripKg;
+    check(grip30 != null && grip30[50] >= 45,
+      `남 30대 악력 중앙값 ${grip30?.[50]} — 좌 기준(43.2)이 아니라 최대 기준(46.3)에 가깝다`);
+    check(typeof norm.gripBasis === 'string' && norm.gripBasis.includes('max'),
+      '악력 산출 근거가 데이터에 함께 실려 있다');
 
     // 나이가 오르면 심폐지구력 중앙값은 내려간다 — 뒤집히면 표본이 섞인 것이다
     for (const sex of ['male', 'female']) {

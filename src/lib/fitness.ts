@@ -20,13 +20,18 @@ export type Sex = 'male' | 'female';
 /**
  * 측정 항목 — 실제 응답의 '채워진 비율' 을 재서 고른 것들이다.
  *
- * 2023년 이후 30대 남성 1,000행 실측:
- *   체지방율 100% · 악력 99.8% · VO₂max 합계 ~100%(스텝 70/왕복 20/트레드밀 10)
- *   제자리멀리뛰기 65% · 허리둘레 54%
+ * 남 30대 4,000행 실측 커버리지 (2026-08-15 재수집분):
+ *   악력 100% · 체지방율 99% · VO₂max 70% · 제자리멀리뛰기 63% · 허리둘레 56%
+ *   (VO₂max 70% 는 스텝·트레드밀만 센 값이다. 왕복오래달리기를 더하면
+ *    90%를 넘지만 눈금이 달라 쓰지 않는다 — kspoFitness.ts 의 SPEC 참고)
  *   윗몸말아올리기·반복점프·절대악력(f052) 은 0% — 명세엔 있어도 값이 없다.
  *
  * 그래서 명세에 있는 40여 항목 중 실제로 쓸 수 있는 것만 남겼다. 없는 항목을
  * 입력칸으로 두면 사용자는 넣을 수 없는 값을 찾아 헤매고, 기준 분포도 못 만든다.
+ *
+ * 필드명은 공공데이터포털 15108938 출력 명세와 대조해 확정했다(2026-08-15):
+ *   f003 체지방율(%) · f004 허리둘레(cm) · f007 악력_좌 · f008 악력_우
+ *   f022 제자리 멀리뛰기(cm) · f035 트레드밀_출력 · f037 스텝검사_출력
  *
  * 왕복오래달리기(회)는 VO₂max 로 이미 환산돼 들어오므로 따로 두지 않는다 —
  * 같은 검사를 두 번 세면 심폐 축에 이중 가중치가 걸린다.
@@ -155,7 +160,25 @@ export interface FitnessNorm {
   source: string;
 }
 
-/** 만 나이 (생년만 아는 값이라 근사치다) */
+/**
+ * 나이 — 올해에서 태어난 해를 뺀 값(이른바 '연 나이').
+ *
+ * ── 남아 있는 불확실성 (확인 못 한 것은 확인 못 했다고 적는다) ─────────────
+ * 공단 응답의 age_degree(측정자나이)가 만 나이인지 연 나이인지는 공개 명세에
+ * 적혀 있지 않고, 데이터만으로도 가릴 수 없었다. 확인된 것은 이것뿐이다:
+ *   age_class = floor(age_degree / 10) × 10   (1,000행 전부 일치, 어긋남 0건)
+ * 즉 우리의 ageBandOf 와 구간 나누는 방식은 같다.
+ *
+ * 만약 age_degree 가 만 나이라면, 생일이 아직 안 지난 사람 중 연 나이가 딱
+ * 10의 배수인 경우(전체의 약 5%)는 한 구간 위와 비교된다. 남 20대 중앙값
+ * 45.0 · 30대 42.1 이므로 백분위가 20점 남짓 부풀 수 있다.
+ *
+ * 그래도 계산을 바꾸지 않는다. 근거 없이 만 나이로 옮기면 age_degree 가 연
+ * 나이일 때 오히려 없던 오차를 만든다 — 모르는 것을 아는 척하는 쪽이 더
+ * 나쁘다. 대신 화면 각주에 어느 또래와 견줬는지(예: '30대 남성 표본 4,000명')
+ * 를 항상 노출해 사용자가 스스로 알아볼 수 있게 해 둔다.
+ * 해소하려면 공단에 기준을 확인하거나 생년월까지 입력받아야 한다.
+ */
 export function ageFromBirthYear(birthYear: number, now = new Date()): number {
   return now.getFullYear() - birthYear;
 }
@@ -216,6 +239,14 @@ export interface FitnessAssessment {
   items: ItemPercentile[];
   /** 못 잰 이유 — 화면에 그대로 보여 준다 */
   missing: string | null;
+  /**
+   * 백분위를 실제로 낸 항목들의 가중치 합 (0~1).
+   *
+   * 종합 백분위는 잰 항목만으로 가중평균한다. 그래서 가중치 0.10 짜리
+   * 악력 하나만 넣어도 그 값이 그대로 '종합' 이 된다 — 근거의 폭이
+   * 숫자에는 안 남는다. 처방이 그걸 보고 판단할 수 있게 함께 돌려준다.
+   */
+  coverage: number;
   norm: FitnessNorm | null;
 }
 
@@ -237,6 +268,7 @@ export function assess(
     overall: null,
     items: [],
     missing,
+    coverage: 0,
     norm,
   });
 
@@ -285,7 +317,7 @@ export function assess(
     sum += w * it.percentile;
     wSum += w;
   }
-  return { overall: Math.round(sum / wSum), items, missing: null, norm };
+  return { overall: Math.round(sum / wSum), items, missing: null, coverage: wSum, norm };
 }
 
 // ---------------------------------------------------------------------------
@@ -333,10 +365,23 @@ const RX_ANCHORS = [
  * 백분위를 못 낸 경우(null)에는 처방도 하지 않는다. 모르면 모른다고 한다.
  */
 export function prescribe(
-  overall: number | null,
+  assessment: FitnessAssessment | null,
   age: number | null,
 ): RunPrescription | null {
-  if (overall == null || age == null) return null;
+  const overall = assessment?.overall ?? null;
+  if (assessment == null || overall == null || age == null) return null;
+
+  // 러닝 처방은 심폐지구력을 알 때만 낸다.
+  //
+  // 종합 백분위는 '잰 항목만' 으로 가중평균한다. 그래서 악력(가중치 0.10)
+  // 하나만 넣으면 그 값이 곧 종합이 되고, 악력 55kg 인 사람에게 '한 번에
+  // 5~10km, 주 4회' 가 나갔다 — 러닝을 얼마나 견디는지에 대해 아무것도
+  // 모르는 상태에서 나온 숫자다. 가중치를 0.45 로 준 이유가 무색해진다.
+  //
+  // 백분위 자체는 그대로 보여준다(체성분·근력도 알 가치가 있다). 다만
+  // '얼마나 뛰어라' 는 심폐지구력 없이 말하지 않는다. 이 앱은 러닝 기록만
+  // 있으면 VO₂max 를 추정하므로 막다른 길도 아니다.
+  if (!assessment.items.some((it) => it.item === 'vo2max')) return null;
 
   // 기준점 사이를 선형으로 잇는다. 양 끝 밖은 끝 값으로 고정한다 —
   // 상위 1% 라고 해서 10km 를 넘겨 권하지 않는다(그건 근거가 없는 외삽이다).

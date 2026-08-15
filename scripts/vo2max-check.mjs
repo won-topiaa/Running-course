@@ -214,7 +214,7 @@ console.log('\n[사슬] 검사 결과가 정말 코스 추천까지 가는가');
     const est = V.estimateVo2max([{ distanceKm: m / 1000, durationSec: 720, at, isCooperTest: true }]);
     const a = F.assess({ birthYear: 1994, sex: 'male', measured: {}, measuredAt: null }, norm,
       est ? { vo2max: est.value } : {});
-    return { est, a, rx: F.prescribe(a.overall, 32) };
+    return { est, a, rx: F.prescribe(a, 32) };
   };
 
   const weak = run(2000);
