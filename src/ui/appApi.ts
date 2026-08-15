@@ -1,5 +1,6 @@
 import type { Screen } from '../components/BottomNav';
 import type { Settings } from '../lib/config';
+import type { FitnessState } from '../lib/useFitness';
 import type { RouteResult } from '../lib/routing';
 import type { RunStyle } from '../lib/routeStyle';
 import type { SavedRoute } from '../lib/savedRoutes';
@@ -29,6 +30,11 @@ export interface AppApi {
   settings: Settings;
   setSettings: (s: Settings) => void;
   conditions: RunConditions | null;
+  /**
+   * 체력 상태 — 별도 기능이 아니라 앱 전역의 기본 값이다.
+   * 처방이 있으면 추천 순서에 언제나 반영된다(모르면 그 축만 빠진다).
+   */
+  fitness: FitnessState;
   // 즐겨찾기(하트) — 커뮤니티/큐레이션 코스
   savedIds: string[];
   isSaved: (id: string) => boolean;

@@ -1,4 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useFitness } from './lib/useFitness';
 import BottomNav, { type Screen } from './components/BottomNav';
 import InstallPrompt from './components/InstallPrompt';
 import BuildScreen from './screens/BuildScreen';
@@ -170,12 +171,17 @@ export default function App() {
     setSavedRoutes((cur) => cur.filter((r) => r.id !== id));
   }, []);
 
+  // 체력은 앱 전역의 기본 값이라 여기서 한 번만 계산한다.
+  // 화면마다 부르면 같은 기준 분포를 화면 수만큼 받아 오게 된다.
+  const fitness = useFitness(settings.fitness, settings.kspoServiceKey);
+
   const api: AppApi = useMemo(
     () => ({
       nav: setScreen,
       settings,
       setSettings: setSettingsState,
       conditions,
+      fitness,
       savedIds,
       isSaved: (id) => savedIds.includes(id),
       toggleSaved,
@@ -189,7 +195,16 @@ export default function App() {
       },
       viewRoute: setRouteView,
     }),
-    [settings, conditions, savedIds, savedRoutes, toggleSaved, addSavedRoute, removeSavedRoute],
+    [
+      settings,
+      conditions,
+      fitness,
+      savedIds,
+      savedRoutes,
+      toggleSaved,
+      addSavedRoute,
+      removeSavedRoute,
+    ],
   );
 
   return (

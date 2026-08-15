@@ -3,6 +3,7 @@ import { Moon } from 'lucide-react';
 import ScenePhoto from '../components/ScenePhoto';
 import { COURSES } from '../data/courses';
 import { defaultPreferences, recommend } from '../lib/scoring';
+import { fitLabel, type RunPrescription } from '../lib/fitness';
 import { sceneForCourse } from '../lib/scene';
 import { formatDistance } from '../lib/format';
 import {
@@ -32,7 +33,10 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
     session = { prefs };
   }, [prefs]);
 
-  const recs = useMemo(() => recommend(COURSES, prefs), [prefs]);
+  // 체력 처방을 언제나 넘긴다 — 사용자가 켜고 끄는 기능이 아니다.
+  // 모르면 null 이고, 그때는 기존과 똑같이 6요소로만 고른다.
+  const rx = api.fitness.prescription;
+  const recs = useMemo(() => recommend(COURSES, prefs, rx), [prefs, rx]);
   const set = (patch: Partial<Preferences>) => setPrefs({ ...prefs, ...patch });
   const toggleType = (t: CourseType) =>
     set({
@@ -137,15 +141,27 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
       </div>
       <div className="space-y-4">
         {recs.map((r, i) => (
-          <RecoCard key={r.course.id} rec={r} rank={i} api={api} />
+          <RecoCard key={r.course.id} rec={r} rank={i} api={api} rx={rx} />
         ))}
       </div>
     </div>
   );
 }
 
-function RecoCard({ rec, rank, api }: { rec: Recommendation; rank: number; api: AppApi }) {
+function RecoCard({
+  rec,
+  rank,
+  api,
+  rx,
+}: {
+  rec: Recommendation;
+  rank: number;
+  api: AppApi;
+  rx: RunPrescription | null;
+}) {
   const { course, matchScore, reasons } = rec;
+  // 체력을 아는 경우에만 붙는다 — 모르면 아무 말도 하지 않는다
+  const fit = fitLabel(course, rx);
   const scoreColor =
     matchScore >= 80 ? 'text-sage-600' : matchScore >= 60 ? 'text-coral-600' : 'text-espresso-soft';
   return (
@@ -168,6 +184,19 @@ function RecoCard({ rec, rank, api }: { rec: Recommendation; rank: number; api: 
       <div className="p-4">
         <h3 className="text-[16px] font-bold tracking-tightish text-espresso">{course.name}</h3>
         <div className="mt-2 flex flex-wrap gap-1.5">
+          {fit && (
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                fit.tone === 'good'
+                  ? 'bg-sage-50 text-sage-600'
+                  : fit.tone === 'push'
+                    ? 'bg-coral-50 text-coral-600'
+                    : 'bg-tint text-espresso-muted'
+              }`}
+            >
+              {fit.text}
+            </span>
+          )}
           <MiniTag>{formatDistance(course.distanceKm)}</MiniTag>
           <MiniTag>{ELEVATION_LABEL[course.elevation.category]}</MiniTag>
           {course.courseTypes.slice(0, 2).map((t) => (

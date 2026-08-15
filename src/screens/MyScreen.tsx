@@ -28,6 +28,7 @@ import {
   type CloudConfig,
   type CloudSession,
 } from '../lib/cloud';
+import FitnessSection from '../components/FitnessSection';
 import type { AppApi } from '../ui/appApi';
 
 // --- 러닝화 등록제: 등록일 이후의 실제 기록 거리로 마일리지를 누적 -------------
@@ -323,6 +324,9 @@ export default function MyScreen({ api }: { api: AppApi }) {
           이 페이스는 코스별 예상 소요 시간에도 함께 반영돼요.
         </p>
       </div>
+
+      {/* 체력 — 추천 코스의 기준이 되는 기본 항목 */}
+      <FitnessSection api={api} fitness={api.fitness} />
 
       {/* 의견 보내기 — 베타에서 가장 중요한 길. 계정·백업보다 위에 둔다. */}
       <FeedbackSection api={api} />
