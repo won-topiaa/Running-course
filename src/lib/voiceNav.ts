@@ -21,9 +21,14 @@ export interface TurnPoint {
   deltaDeg: number;
   kind: 'left' | 'right' | 'sharp-left' | 'sharp-right' | 'u-turn';
   /**
-   * 왕복 코스의 반환점인가. 유턴 중 코스 중간(총거리의 절반 ±15%)에 있는
-   * 것 하나만 표시한다. '유턴'은 도로 내비 말투라 코스 반환점에는 어색하다 —
-   * "반환점. 왔던 길로 돌아갑니다" 쪽이 러너가 기대하는 말이다.
+   * 갔던 길을 되짚어 돌아오는 지점인가. 유턴 중 코스 중간(총거리의 절반
+   * ±15%)에 있는 것 하나만 표시한다 — 막다른 길 핀을 다녀오는 유턴까지
+   * 전부 그렇게 부르면 거짓말이 된다.
+   *
+   * 안내는 지점에 이름을 붙이지 않고 할 일을 말한다:
+   * "잠시 후 왔던 길로 되돌아갑니다" → "여기서 돌아서, 왔던 길로 되돌아가세요".
+   * '유턴' 은 도로 내비 말투이고 '반환점' 은 러너들끼리 쓰는 말이라,
+   * 둘 다 처음 듣는 사람에게는 무슨 뜻인지 한 박자 늦게 온다.
    */
   turnaround?: boolean;
 }
@@ -44,6 +49,26 @@ function classifyTurn(delta: number): TurnPoint['kind'] {
 
 const TURN_THRESHOLD_DEG = 30;
 const MIN_SEG_M = 15;
+/**
+ * 방위각을 재는 두 점 사이의 최소 '직선' 거리(m).
+ *
+ * 길 위 누적거리가 아니라 실제 간격이다 — 되짚어 오는 구간에서는 둘이
+ * 크게 다르다. 8m 는 도시 보행로의 한 칸 정도라, 이보다 가까운 두 점으로
+ * 방향을 논하는 건 GPS 오차를 읽는 것과 다르지 않다.
+ */
+const APART_M = 8;
+/** 이 거리 안에서 잡힌 턴 후보들은 한 지점으로 본다 */
+const TURN_MERGE_M = 40;
+/**
+ * 유턴끼리는 더 넓게 묶는다.
+ *
+ * 갔던 길을 되짚는 지점에서는 반환 직전과 직후가 둘 다 180° 로 잡힌다
+ * (점 간격에 따라 50~80m 벌어진다). 그 둘을 따로 두면 하나만 '되돌아가기'
+ * 로 표시되고 나머지는 "유턴" 으로 안내돼, 한 번 돌아서는 자리에서
+ * 돌아가라는 말과 유턴하라는 말이 번갈아 나온다.
+ * 100m 안에서 두 번 돌아서는 러닝 코스는 없으므로 한 지점으로 본다.
+ */
+const U_TURN_MERGE_M = 120;
 
 /**
  * 경로에서 의미 있는 방향 전환 지점을 뽑는다.
@@ -67,20 +92,60 @@ export function detectTurns(
 
     if (cum[i] - cum[back] < MIN_SEG_M || cum[fwd] - cum[i] < MIN_SEG_M) continue;
 
+    // 방위각을 잴 두 점이 '길 위에서' 가 아니라 '실제로' 떨어져 있어야 한다.
+    //
+    // 갔던 길을 그대로 되짚는 왕복에서는 누적거리가 늘어도 두 점이 같은 자리일
+    // 수 있다 — 반환점 20m 앞의 점과 반환점 20m 뒤의 점은 물리적으로 같은
+    // 지점이다. bearingDeg 는 같은 점에 0(북쪽)을 돌려주므로, 거기서 나온
+    // 방위각은 아무 의미가 없다. 실측: 점 간격 25m 짜리 직선 왕복에서
+    // 반환점 양옆에 유령 '크게 좌회전' 이 두 개 생기고, 정작 180° 유턴은
+    // 아래 디바운스에 밀려 사라졌다 — 반환점 대신 좌회전을 두 번 안내했다.
+    while (back > 0 && haversineMeters(coords[back], coords[i]) < APART_M) back--;
+    while (
+      fwd < coords.length - 1 &&
+      haversineMeters(coords[i], coords[fwd]) < APART_M
+    ) {
+      fwd++;
+    }
+    if (
+      haversineMeters(coords[back], coords[i]) < APART_M ||
+      haversineMeters(coords[i], coords[fwd]) < APART_M
+    ) {
+      continue; // 끝까지 벌어지지 않는다 — 방위각을 낼 수 없다
+    }
+
     const bIn = bearingDeg(coords[back], coords[i]);
     const bOut = bearingDeg(coords[i], coords[fwd]);
     const delta = normalizeAngle(bOut - bIn);
 
     if (Math.abs(delta) < TURN_THRESHOLD_DEG) continue;
-    if (cum[i] - lastTurnCumM < 40) continue;
 
-    turns.push({
+    const turn: TurnPoint = {
       idx: i,
       pos: coords[i],
       cumM: cum[i],
       deltaDeg: delta,
       kind: classifyTurn(delta),
-    });
+    };
+
+    // 같은 자리에서 후보가 여럿 잡히면 더 크게 꺾인 쪽이 진짜다.
+    // 예전엔 먼저 온 것을 남기고 나머지를 버렸는데, 그러면 반환점 직전에
+    // 잡힌 완만한 후보가 정작 180° 유턴을 밀어낸다.
+    const prevTurn = turns[turns.length - 1];
+    const mergeM =
+      turn.kind === 'u-turn' && prevTurn?.kind === 'u-turn'
+        ? U_TURN_MERGE_M
+        : TURN_MERGE_M;
+    if (cum[i] - lastTurnCumM < mergeM) {
+      const prev = prevTurn;
+      if (prev && Math.abs(delta) > Math.abs(prev.deltaDeg)) {
+        turns[turns.length - 1] = turn;
+        lastTurnCumM = cum[i];
+      }
+      continue;
+    }
+
+    turns.push(turn);
     lastTurnCumM = cum[i];
   }
   return turns;
@@ -89,7 +154,11 @@ export function detectTurns(
 // ── 안내 문구 ───────────────────────────────────────────────────────────────
 
 function labelFor(turn: TurnPoint): string {
-  return turn.turnaround ? '반환점' : turnLabel(turn.kind);
+  // '반환점' 은 러너들끼리 쓰는 말이라, 처음 듣는 사람에게는 무슨 지점인지
+  // 와닿지 않는다. 해야 할 행동을 그대로 말한다 — 어차피 안내의 목적은
+  // 지점에 이름을 붙이는 게 아니라 무엇을 할지 알려 주는 것이다.
+  // ('{거리} 앞 왔던 길로 되돌아갑니다' / '잠시 후 왔던 길로 되돌아갑니다')
+  return turn.turnaround ? '왔던 길로 되돌아갑니다' : turnLabel(turn.kind);
 }
 
 function turnLabel(kind: TurnPoint['kind']): string {
@@ -618,7 +687,9 @@ export function tickVoiceNav(
         ti > next.lastAtTurn
       ) {
         speak(
-          turn.turnaround ? '반환점. 왔던 길로 돌아갑니다' : `지금 ${turnLabel(turn.kind)}`,
+          turn.turnaround
+            ? '여기서 돌아서, 왔던 길로 되돌아가세요'
+            : `지금 ${turnLabel(turn.kind)}`,
           { level: 'now' },
         );
         next.lastAtTurn = ti;
