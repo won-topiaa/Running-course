@@ -142,6 +142,15 @@ export interface FitnessNorm {
   counts?: Partial<Record<FitnessItem, number>>;
   /** 표본 수 */
   n: number;
+  /**
+   * VO₂max 표본이 어느 검사에서 왔는지 (스텝·트레드밀 건수).
+   *
+   * 왕복오래달리기는 같은 집단에서 중앙값이 2~3 낮아 눈금이 달라 빼 두었다.
+   * 어느 자로 잰 분포인지는 '상위 몇 %' 만큼이나 중요한 정보라 함께 싣는다.
+   */
+  vo2Methods?: Record<string, number>;
+  /** 표본을 모은 기간 (측정연월 기준) */
+  period?: { from: string; to: string; months: number } | null;
   /** 출처 문구 — 화면에 그대로 노출해 어디서 온 숫자인지 밝힌다 */
   source: string;
 }
@@ -295,11 +304,31 @@ export interface RunPrescription {
 }
 
 /**
+ * 처방의 기준점 — 이 세 지점 사이를 이어서 쓴다.
+ *
+ * 값 자체는 공단이 준 게 아니라 우리가 정한 초기 기준이다(basis 에 밝힌다).
+ * 공단 API 의 '운동처방' 필드를 받아오면 그쪽으로 대체하는 게 맞다.
+ */
+const RX_ANCHORS = [
+  { p: 15, minKm: 2, maxKm: 4, perWeek: 3, ascent: 12 },
+  { p: 50, minKm: 3, maxKm: 6, perWeek: 3, ascent: 25 },
+  { p: 85, minKm: 5, maxKm: 10, perWeek: 4, ascent: 45 },
+] as const;
+
+/**
  * 종합 백분위 + 나이 → 러닝 처방.
  *
- * 여기 숫자(거리 구간·주간 횟수·경사 상한)는 공단이 준 값이 아니라 우리가
- * 정한 초기 기준이다. 공단 API 의 '운동처방' 필드를 받아오면 그쪽으로
- * 대체하는 게 맞다 — basis 에 출처를 남겨 두는 이유다.
+ * ── 왜 3단계가 아니라 이어진 값인가 ────────────────────────────────────────
+ * 예전에는 백분위 34·67 에서 뚝 끊었다. 그런데 기준 분포를 페이스로 환산해
+ * 보니 그 경계가 너무 촘촘했다 — 남 30대는 12분 검사 5:11/km 와 4:51/km,
+ * 딱 20초 사이에서 처방이 갈렸다. 그 20초를 넘느냐 마느냐로 권장량이
+ * 2~4km·주3회에서 5~10km·주4회로 2.5배 뛰었다.
+ *
+ * 일반 인구의 VO₂max 분포가 좁아서(표준편차 4~5) 작은 기록 차이가 큰 백분위
+ * 차이로 증폭되기 때문이다. 바람 부는 날, GPS 오차 한 번, 컨디션 난조 하나로
+ * 밴드가 뒤집히는데 사용자에게는 그게 '앱이 갑자기 두 배를 시킨다' 로 보인다.
+ *
+ * 기준점은 그대로 두고 사이를 이어서 쓴다. 같은 설계 의도인데 절벽만 없앴다.
  *
  * 백분위를 못 낸 경우(null)에는 처방도 하지 않는다. 모르면 모른다고 한다.
  */
@@ -309,14 +338,23 @@ export function prescribe(
 ): RunPrescription | null {
   if (overall == null || age == null) return null;
 
-  // 백분위 → 3단계. 경계에서 처방이 튀지 않게 폭을 넉넉히 둔다.
-  const band = overall >= 67 ? 'high' : overall >= 34 ? 'mid' : 'low';
-  const base =
-    band === 'high'
-      ? { sessionKm: { min: 5, max: 10 }, perWeek: 4, maxAscentPerKm: 45 }
-      : band === 'mid'
-        ? { sessionKm: { min: 3, max: 6 }, perWeek: 3, maxAscentPerKm: 25 }
-        : { sessionKm: { min: 2, max: 4 }, perWeek: 3, maxAscentPerKm: 12 };
+  // 기준점 사이를 선형으로 잇는다. 양 끝 밖은 끝 값으로 고정한다 —
+  // 상위 1% 라고 해서 10km 를 넘겨 권하지 않는다(그건 근거가 없는 외삽이다).
+  const lerp = (pick: (a: (typeof RX_ANCHORS)[number]) => number): number => {
+    const first = RX_ANCHORS[0];
+    const last = RX_ANCHORS[RX_ANCHORS.length - 1];
+    if (overall <= first.p) return pick(first);
+    if (overall >= last.p) return pick(last);
+    for (let i = 1; i < RX_ANCHORS.length; i++) {
+      const a = RX_ANCHORS[i - 1];
+      const b = RX_ANCHORS[i];
+      if (overall <= b.p) {
+        const t = (overall - a.p) / (b.p - a.p);
+        return pick(a) + (pick(b) - pick(a)) * t;
+      }
+    }
+    return pick(last);
+  };
 
   // 나이에 따른 완충 — 같은 백분위라도 60대는 회복이 더 걸린다.
   // (또래 대비 백분위라 이미 나이가 반영돼 있으므로 조정은 작게 둔다)
@@ -325,11 +363,12 @@ export function prescribe(
 
   return {
     sessionKm: {
-      min: round1(base.sessionKm.min * easeOff),
-      max: round1(base.sessionKm.max * easeOff),
+      min: round1(lerp((a) => a.minKm) * easeOff),
+      max: round1(lerp((a) => a.maxKm) * easeOff),
     },
-    perWeek: base.perWeek,
-    maxAscentPerKm: Math.round(base.maxAscentPerKm * easeOff),
+    // 횟수만은 정수여야 말이 된다 ('주 3.5회' 는 지킬 수 없는 지시다)
+    perWeek: Math.round(lerp((a) => a.perWeek)),
+    maxAscentPerKm: Math.round(lerp((a) => a.ascent) * easeOff),
     basis:
       '국민체력100 측정결과(국민체육진흥공단) 기준 또래 백분위로 산출했습니다. ' +
       '거리·횟수·경사 상한은 앱이 정한 초기 기준입니다.',

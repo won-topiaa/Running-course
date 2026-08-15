@@ -12,7 +12,10 @@ import { join } from 'node:path';
 const dir = mkdtempSync(join(tmpdir(), 'ft-'));
 const bundle = async (e, n) => {
   const o = join(dir, n);
-  await build({ entryPoints: [e], bundle: true, format: 'esm', outfile: o, logLevel: 'error' });
+  await build({
+    entryPoints: [e], bundle: true, format: 'esm', outfile: o, logLevel: 'error',
+    loader: { '.json': 'json' },
+  });
   return import(o);
 };
 
@@ -222,6 +225,83 @@ console.log('\n[버전 변화 방어] 예전에 저장된 항목이 남아 있�
   try { F.assess(stale, { sex: 'male', ageBand: '30대', n: 100, samples: { vo2max: seq(100) } }); }
   catch { threw = true; }
   check(!threw, '옛 항목이 섞인 프로필로 평가해도 예외 없음');
+}
+
+console.log('\n[처방 연속성] 백분위가 1 오르내릴 때 권장량이 절벽처럼 뛰지 않는가');
+{
+  // 예전엔 백분위 34·67 에서 뚝 끊었다. 기준 분포를 페이스로 환산해 보면
+  // 남 30대는 12분 검사 5:11/km 와 4:51/km 사이 20초에서 처방이 갈렸고,
+  // 그 20초로 권장량이 2~4km 에서 5~10km 로 2.5배 뛰었다. 바람 부는 날
+  // 하나로 밴드가 뒤집히는데 사용자에겐 '앱이 갑자기 두 배를 시킨다' 로 보인다.
+  let worstJump = 0;
+  let worstAt = -1;
+  let monotonic = true;
+  let intWeek = true;
+  let prev = null;
+  for (let p = 0; p <= 100; p++) {
+    const rx = F.prescribe(p, 32);
+    if (!Number.isInteger(rx.perWeek)) intWeek = false;
+    if (prev) {
+      const jump = Math.abs(rx.sessionKm.max - prev.sessionKm.max);
+      if (jump > worstJump) { worstJump = jump; worstAt = p; }
+      if (rx.sessionKm.max < prev.sessionKm.max - 1e-9) monotonic = false;
+      if (rx.maxAscentPerKm < prev.maxAscentPerKm) monotonic = false;
+    }
+    prev = rx;
+  }
+  check(worstJump <= 0.3,
+    `백분위 1칸당 권장 최대거리 변화가 ${worstJump.toFixed(1)}km 이하 (최대 지점 상위 ${100 - worstAt}%)`);
+  check(monotonic, '백분위가 오르면 권장량·경사 상한이 줄지 않는다');
+  check(intWeek, "주간 횟수는 항상 정수다 ('주 3.5회' 는 지킬 수 없는 지시다)");
+
+  // 기준점의 값은 그대로여야 한다 — 절벽만 없앤 것이지 설계를 바꾼 게 아니다
+  const at = (p) => F.prescribe(p, 32);
+  check(at(15).sessionKm.min === 2 && at(15).sessionKm.max === 4, '기준점 상위 85% → 2~4km 유지');
+  check(at(50).sessionKm.min === 3 && at(50).sessionKm.max === 6, '기준점 상위 50% → 3~6km 유지');
+  check(at(85).sessionKm.min === 5 && at(85).sessionKm.max === 10, '기준점 상위 15% → 5~10km 유지');
+
+  // 끝 밖으로는 외삽하지 않는다 — 상위 1% 라고 10km 를 넘겨 권할 근거가 없다
+  check(at(100).sessionKm.max === at(85).sessionKm.max, '상위 0% 도 기준점 밖으로 늘리지 않는다');
+  check(at(0).sessionKm.min === at(15).sessionKm.min, '최하위도 기준점 밖으로 줄이지 않는다');
+
+  // 나이 완충은 그대로 산다
+  check(F.prescribe(85, 65).sessionKm.max < F.prescribe(85, 32).sessionKm.max,
+    '같은 백분위라도 60대는 권장량이 낮다');
+}
+
+console.log('\n[기준 데이터] 묶어 둔 분포가 무엇으로 만들어졌는가');
+{
+  const norm = await import('../src/data/fitnessNorm.json', { with: { type: 'json' } })
+    .then((m) => m.default)
+    .catch(() => null);
+  check(norm != null, '기준 분포 JSON 이 앱에 묶여 있다');
+  if (norm) {
+    const withVo2 = norm.norms.filter((n) => n.samples.vo2max);
+    check(withVo2.length >= 8, `VO₂max 분포가 있는 집단 ${withVo2.length}개`);
+
+    // 방식 분리 — 왕복오래달리기가 섞여 들어오면 백분위가 최대 8%p 밀린다
+    const methodsOk = withVo2.every(
+      (n) => n.vo2Methods && Object.keys(n.vo2Methods).every((k) => k === 'step' || k === 'treadmill'),
+    );
+    check(methodsOk, '심폐 표본은 스텝·트레드밀뿐 (왕복오래달리기 미포함)');
+
+    // 시기 쏠림 — pageNo 는 측정 시기순이라, 앞 페이지만 받으면 한 분기 표본이 된다
+    const spans = withVo2.map((n) => n.period?.months ?? 0);
+    const minSpan = Math.min(...spans);
+    check(minSpan >= 12, `가장 좁은 집단도 ${minSpan}개월에 걸쳐 모았다 (한 시기 쏠림 방지)`);
+
+    // 표본 수 — '상위 몇 %' 를 말하려면 그만한 근거가 있어야 한다
+    const minN = Math.min(...withVo2.map((n) => n.counts.vo2max));
+    check(minN >= 1000, `가장 적은 집단의 심폐 표본도 ${minN}명`);
+
+    // 나이가 오르면 심폐지구력 중앙값은 내려간다 — 뒤집히면 표본이 섞인 것이다
+    for (const sex of ['male', 'female']) {
+      const bands = ['20대', '30대', '40대', '50대'];
+      const meds = bands.map((b) => withVo2.find((n) => n.sex === sex && n.ageBand === b)?.samples.vo2max?.[50]);
+      const desc = meds.every((v, i) => i === 0 || (v != null && v < meds[i - 1]));
+      check(desc, `${sex === 'male' ? '남' : '여'} 20→50대 중앙값이 단조 감소 (${meds.join(' > ')})`);
+    }
+  }
 }
 
 console.log(`\n결과: ${ok.length} 통과, ${bad.length} 실패`);

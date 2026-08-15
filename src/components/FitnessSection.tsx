@@ -225,7 +225,16 @@ export default function FitnessSection({
             {assessment.norm && (
               <p className="mt-2 text-[10.5px] leading-relaxed text-espresso-soft">
                 {assessment.norm.ageBand} {SEX_LABEL[assessment.norm.sex]} 표본{' '}
-                {assessment.norm.n.toLocaleString()}명 기준 · {assessment.norm.source}
+                {assessment.norm.n.toLocaleString()}명 기준
+                {assessment.norm.period && (
+                  <> · {assessment.norm.period.from}~{assessment.norm.period.to} 측정</>
+                )}
+                {' · '}
+                {assessment.norm.source}
+                {/* 어느 자로 잰 분포인지 — '상위 몇 %' 만큼 중요한 정보다 */}
+                {assessment.norm.vo2Methods && (
+                  <> · 심폐지구력은 스텝·트레드밀 측정분만 사용(왕복오래달리기는 눈금이 달라 제외)</>
+                )}
                 {prescription && <> · {prescription.basis}</>}
               </p>
             )}
@@ -233,20 +242,17 @@ export default function FitnessSection({
         )}
       </div>
 
+      {/* 남는 한계는 측정 방식이 아니라 '누구와 비교하는가' 다.
+          방식 차이는 실제로 재서 처리했다 — 스텝·트레드밀은 눈금이 같아
+          함께 쓰고, 2~3 낮게 나오는 왕복오래달리기는 기준에서 뺐다.
+          하지만 비교 대상은 여전히 체력인증센터를 찾은 '일반인' 이다.
+          꾸준히 달리는 사람은 대개 위쪽에 자리하는 게 정상이고, 그걸
+          말해 주지 않으면 '상위 5%' 를 러너들 사이 등수로 오해한다. */}
       <p className="mt-2 text-[11px] leading-relaxed text-espresso-soft">
-        가장 정확한 값은 가까운 국민체력100 체력인증센터에서 무료로 측정받을 수 있어요.
-        실측값을 넣으면 추정 대신 그 값을 씁니다.
-        {vo2maxEstimate && (
-          <>
-            {' '}
-            {/* 두 값은 같은 이름을 쓰지만 재는 방법이 다르다. 센터 표본은
-                대부분 스텝 검사에서 환산한 값이고 우리 추정은 실제로 달린
-                기록에서 낸 값이라, 백분위가 한쪽으로 치우칠 수 있다.
-                모르는 척하면 사용자는 국가 기준으로 진단받았다고 믿는다. */}
-            다만 앱 추정치는 센터의 측정 방식(주로 스텝 검사)과 달라, 상위 %가 실제보다
-            다소 높거나 낮게 나올 수 있어요.
-          </>
-        )}
+        비교 대상은 체력인증센터에서 측정받은 <b>또래 일반인</b>이에요 — 러너끼리의 등수가
+        아니라서, 꾸준히 달리는 분은 대체로 위쪽에 나와요. 가장 정확한 값은 가까운
+        국민체력100 체력인증센터에서 무료로 측정받을 수 있고, 실측값을 넣으면 추정 대신
+        그 값을 씁니다.
       </p>
     </div>
   );
