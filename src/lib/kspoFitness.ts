@@ -18,6 +18,7 @@
 // 조용히 null 을 돌려준다 — 체력 축이 빠질 뿐 앱은 그대로 돈다.
 // ---------------------------------------------------------------------------
 
+import bundled from '../data/fitnessNorm.json';
 import { fetchWithTimeout } from './fetchTimeout';
 import {
   ageBandOf,
@@ -26,7 +27,9 @@ import {
   type Sex,
 } from './fitness';
 
-const BASE = 'https://apis.data.go.kr/B551014/SRVC_MSRMNT_RESULT';
+// 활용신청 승인 화면의 End Point 를 그대로 쓴다 (2026-08-15 승인 기준).
+// 데이터포맷 JSON+XML — resultType=json 으로 JSON 을 받는다.
+const BASE = 'https://apis.data.go.kr/B551014/SRVC_NFA_TEST_RESULT';
 
 /**
  * 응답 → 우리 항목 매핑.
@@ -35,27 +38,34 @@ const BASE = 'https://apis.data.go.kr/B551014/SRVC_MSRMNT_RESULT';
  * 배열로 둔다(포털 API 는 같은 데이터도 버전마다 필드명이 달라지곤 한다).
  */
 const SPEC = {
-  /** 목록을 감싸는 경로 후보 */
+  /** 오퍼레이션명 — 활용신청 상세기능정보의 경로 (2026-08-15 실호출 확인) */
+  operation: '/TODZ_NFA_TEST_RESULT_NEW',
+  /** 목록 경로 */
   itemsPath: [
     ['response', 'body', 'items', 'item'],
     ['response', 'body', 'items'],
-    ['body', 'items', 'item'],
-    ['items'],
   ],
-  /** 성별 필드 후보와 값 해석 */
-  sexKeys: ['sexdstn', 'sexdstnCode', 'sex', 'gender'],
-  maleValues: ['M', '1', '남', '남성', 'male'],
-  femaleValues: ['F', '2', '여', '여성', 'female'],
-  /** 나이 필드 후보 */
-  ageKeys: ['age', 'agrde', 'ageVl', 'measureAge'],
-  /** 측정 항목 필드 후보 */
+  /** 성별 — 응답은 'M'/'F', 요청 파라미터도 같은 값을 받는다 */
+  sexKey: 'test_sex',
+  maleValue: 'M',
+  femaleValue: 'F',
+  /** 나이 — age_degree 가 실제 나이, age_class 가 연령대(요청 필터용) */
+  ageKey: 'age_degree',
+  ageClassKey: 'age_class',
+  /** 측정 항목 → 응답 필드 (Swagger 명세 그대로) */
   itemKeys: {
-    bodyFatPct: ['bdfatRt', 'bodyFatRt', 'bdfat'],
-    waistCm: ['wstCrcmfrnc', 'waist', 'wstVl'],
-    gripKg: ['grpStrgth', 'gripStrength', 'grip'],
-    sitUpReps: ['stpUpCnt', 'sitUpCnt', 'curlUp'],
-    jumpReps: ['rptJumpCnt', 'repeatJump', 'jumpCnt'],
+    // VO₂max 는 세 검사(스텝·왕복오래달리기·트레드밀) 중 받은 것에만 값이
+    // 있다. 셋 다 같은 단위(ml/kg/min)라 먼저 나오는 값을 쓴다 — 실측에서
+    // 셋을 합치면 2023년 이후 거의 전원이 하나는 갖고 있다.
+    vo2max: ['item_f037', 'item_f030', 'item_f035'],
+    bodyFatPct: ['item_f003'],
+    longJumpCm: ['item_f022'],
+    // 절대악력(f052)은 명세에 있어도 값이 0% 라 좌·우 악력을 쓴다
+    gripKg: ['item_f007', 'item_f008'],
+    waistCm: ['item_f004'],
   } as Record<FitnessItem, string[]>,
+  /** 운동처방 내용 — 공단이 측정 결과에 맞춰 내려 준 텍스트 */
+  prescriptionKey: 'pres_note',
 } as const;
 
 const CACHE_KEY = 'runcourse.fitnessNorm.v1';
@@ -132,11 +142,11 @@ function toNumber(v: unknown): number | null {
 }
 
 function sexOf(row: Record<string, unknown>): Sex | null {
-  const v = pickValue(row, SPEC.sexKeys);
+  const v = row[SPEC.sexKey];
   if (v == null) return null;
-  const s = String(v).trim();
-  if ((SPEC.maleValues as readonly string[]).includes(s)) return 'male';
-  if ((SPEC.femaleValues as readonly string[]).includes(s)) return 'female';
+  const s = String(v).trim().toUpperCase();
+  if (s === SPEC.maleValue) return 'male';
+  if (s === SPEC.femaleValue) return 'female';
   return null;
 }
 
@@ -157,7 +167,7 @@ export function normFromRows(
     if (!r || typeof r !== 'object') continue;
     const row = r as Record<string, unknown>;
     if (sexOf(row) !== sex) continue;
-    const age = toNumber(pickValue(row, SPEC.ageKeys));
+    const age = toNumber(row[SPEC.ageKey]);
     if (age == null || ageBandOf(age) !== ageBand) continue;
 
     let used = false;
@@ -181,19 +191,43 @@ export function normFromRows(
  * 같은 성별·연령대의 기준 분포를 가져온다.
  * 키가 없거나 응답이 예상과 다르면 null — 호출부는 체력 축을 빼고 돌아간다.
  */
+/**
+ * 빌드 시점에 묶어 둔 기준 분포에서 찾는다 (scripts/fetch-fitness-norm.mjs).
+ *
+ * 이게 기본 경로다 — 포털 API 는 CORS 헤더를 주지 않는 경우가 많아 브라우저
+ * 에서 직접 부르면 차단되고, 클라이언트에 서비스 키를 넣으면 번들에 그대로
+ * 실려 일일 한도가 털린다. 분포는 자주 바뀌지 않으니 묶어 두는 편이 낫다.
+ */
+function bundledNorm(sex: Sex, ageBand: string): FitnessNorm | null {
+  const list = (bundled as { norms?: FitnessNorm[] }).norms;
+  if (!Array.isArray(list)) return null;
+  const hit = list.find((n) => n.sex === sex && n.ageBand === ageBand);
+  return hit && hit.n > 0 ? hit : null;
+}
+
 export async function loadFitnessNorm(
   serviceKey: string | null,
   sex: Sex,
   age: number,
 ): Promise<FitnessNorm | null> {
   const ageBand = ageBandOf(age);
+  // 묶어 둔 값이 있으면 그걸 쓴다 — 네트워크도 키도 필요 없다
+  const packed = bundledNorm(sex, ageBand);
+  if (packed) return packed;
+
   const cached = readCache(sex, ageBand);
   if (cached) return cached;
+  // 키를 직접 넣은 경우(개발·검증용)에만 실시간 호출을 시도한다
   if (!serviceKey) return null;
 
+  // 또래 필터를 서버에 맡긴다 — 294만 건을 다 받아 거르는 건 말이 안 된다.
+  // age_class 는 연령대(20·30·40…), test_sex 는 M/F 를 그대로 받는다.
+  const ageClass = Math.floor(age / 10) * 10;
   const url =
-    `${BASE}?serviceKey=${encodeURIComponent(serviceKey)}` +
-    `&pageNo=1&numOfRows=${FETCH_ROWS}&resultType=json`;
+    `${BASE}${SPEC.operation}?serviceKey=${encodeURIComponent(serviceKey)}` +
+    `&pageNo=1&numOfRows=${FETCH_ROWS}&resultType=json` +
+    `&test_sex=${sex === 'male' ? SPEC.maleValue : SPEC.femaleValue}` +
+    `&age_class=${ageClass}`;
 
   try {
     const res = await fetchWithTimeout(url);

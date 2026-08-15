@@ -12,6 +12,7 @@
 import { Activity } from 'lucide-react';
 import {
   FITNESS_ITEM_LABEL,
+  FITNESS_ITEM_UNIT,
   type FitnessItem,
   type FitnessProfile,
   type Sex,
@@ -19,13 +20,16 @@ import {
 import type { FitnessState } from '../lib/useFitness';
 import type { AppApi } from '../ui/appApi';
 
-/** 입력받을 항목과 단위 — 체력인증센터 결과지에 적힌 순서대로 */
-const INPUTS: { item: FitnessItem; unit: string; step: number }[] = [
-  { item: 'bodyFatPct', unit: '%', step: 0.1 },
-  { item: 'waistCm', unit: 'cm', step: 0.1 },
-  { item: 'gripKg', unit: 'kg', step: 0.1 },
-  { item: 'sitUpReps', unit: '회', step: 1 },
-  { item: 'jumpReps', unit: '회', step: 1 },
+/**
+ * 입력받을 항목 — 결과지에서 찾기 쉬운 순서.
+ * 심폐지구력이 러닝에 가장 크게 걸리므로 맨 위에 둔다.
+ */
+const INPUTS: { item: FitnessItem; step: number }[] = [
+  { item: 'vo2max', step: 0.1 },
+  { item: 'bodyFatPct', step: 0.1 },
+  { item: 'longJumpCm', step: 1 },
+  { item: 'gripKg', step: 0.1 },
+  { item: 'waistCm', step: 0.1 },
 ];
 
 const SEX_LABEL: Record<Sex, string> = { male: '남성', female: '여성' };
@@ -112,10 +116,10 @@ export default function FitnessSection({
           체력인증센터 측정값 <span className="font-normal">(아는 것만 넣어도 돼요)</span>
         </p>
         <div className="mt-1.5 grid grid-cols-2 gap-2">
-          {INPUTS.map(({ item, unit, step }) => (
+          {INPUTS.map(({ item, step }) => (
             <label key={item} className="block">
               <span className="text-[11px] text-espresso-soft">
-                {FITNESS_ITEM_LABEL[item]} ({unit})
+                {FITNESS_ITEM_LABEL[item]} ({FITNESS_ITEM_UNIT[item]})
               </span>
               <input
                 type="number"

@@ -48,7 +48,7 @@ check(F.percentileOf(seq(100), NaN, false) === null, '값이 NaN 이면 null');
 console.log('\n[평가] 모르면 모른다고 한다');
 {
   const norm = { sex: 'male', ageBand: '30대', n: 100, source: 'test',
-    samples: { jumpReps: seq(100), bodyFatPct: seq(100) } };
+    samples: { vo2max: seq(100), bodyFatPct: seq(100) } };
   const empty = F.emptyFitnessProfile();
   const a1 = F.assess(empty, norm);
   check(a1.overall === null && !!a1.missing, `프로필이 비면 null + 안내 문구 ("${a1.missing}")`);
@@ -57,15 +57,15 @@ console.log('\n[평가] 모르면 모른다고 한다');
   const a2 = F.assess(noMeasure, norm);
   check(a2.overall === null && a2.missing.includes('측정값'), '나이·성별만 있으면 측정값을 요청한다');
 
-  const withM = { ...noMeasure, measured: { jumpReps: 51, bodyFatPct: 51 } };
+  const withM = { ...noMeasure, measured: { vo2max: 51, bodyFatPct: 51 } };
   check(F.assess(withM, null).overall === null, '기준 분포를 못 받으면 백분위를 내지 않는다');
 
   const a3 = F.assess(withM, norm);
   check(a3.overall != null && a3.items.length === 2, `측정값+분포가 다 있으면 계산한다 (종합 ${a3.overall}%)`);
   check(a3.overall >= 0 && a3.overall <= 100, '종합 백분위는 0~100');
 
-  const thin = { ...norm, samples: { jumpReps: seq(10) } };
-  const a4 = F.assess({ ...noMeasure, measured: { jumpReps: 5 } }, thin);
+  const thin = { ...norm, samples: { vo2max: seq(10) }, counts: { vo2max: 10 } };
+  const a4 = F.assess({ ...noMeasure, measured: { vo2max: 45 } }, thin);
   check(a4.overall === null && a4.missing.includes('표본'), '표본이 모자라면 그 이유를 말한다');
 }
 
@@ -128,18 +128,73 @@ console.log('\n[추천 통합] 체력을 몰라도 기존과 똑같이 돈다');
 console.log('\n[응답 파싱] 쓰레기 값이 분포를 오염시키지 않는다');
 {
   const rows = [
-    { sexdstn: 'M', age: 33, rptJumpCnt: 40, bdfatRt: 18 },
-    { sexdstn: 'M', age: 35, rptJumpCnt: 50, bdfatRt: 0 },   // 0 = 측정 안 함
-    { sexdstn: 'F', age: 33, rptJumpCnt: 99 },               // 다른 성별
-    { sexdstn: 'M', age: 55, rptJumpCnt: 99 },               // 다른 연령대
-    { sexdstn: 'M', age: 31, rptJumpCnt: '30' },             // 문자열 숫자
-    null, 'garbage', { },                                     // 깨진 행
+    { test_sex: 'M', age_degree: 33, item_f037: 40, item_f003: 18 },
+    { test_sex: 'M', age_degree: 35, item_f037: 50, item_f003: 0 },  // 0 = 측정 안 함
+    { test_sex: 'F', age_degree: 33, item_f037: 99 },                // 다른 성별
+    { test_sex: 'M', age_degree: 55, item_f037: 99 },                // 다른 연령대
+    { test_sex: 'M', age_degree: 31, item_f037: '30' },              // 문자열 숫자
+    null, 'garbage', { },                                            // 깨진 행
   ];
   const n = K.normFromRows(rows, 'male', '30대', 'test');
   check(n.n === 3, `30대 남성 3명만 집계 (${n.n}명)`);
-  check(JSON.stringify(n.samples.jumpReps) === '[30,40,50]', `문자열 숫자 변환 + 오름차순 정렬 (${n.samples.jumpReps})`);
+  check(JSON.stringify(n.samples.vo2max) === '[30,40,50]', `문자열 숫자 변환 + 오름차순 정렬 (${n.samples.vo2max})`);
   check(JSON.stringify(n.samples.bodyFatPct) === '[18]', '0 은 표본에서 제외 (측정 안 함)');
   check(K.normFromRows([], 'male', '30대', 't').n === 0, '빈 응답이면 표본 0');
+}
+
+console.log('\n[번들 데이터] 공단 API 로 수집한 실제 기준 분포');
+{
+  const bundled = JSON.parse(
+    (await import('node:fs')).readFileSync('src/data/fitnessNorm.json', 'utf8'),
+  );
+  check(Array.isArray(bundled.norms) && bundled.norms.length >= 10,
+    `집단 ${bundled.norms?.length ?? 0}개 (남녀 × 연령대)`);
+  check(typeof bundled.source === 'string' && bundled.source.includes('국민체육진흥공단'),
+    '출처가 기록돼 있다 (보고서에 그대로 쓴다)');
+  check(!!bundled.fetchedAt && !!bundled.endpoint, `수집일 ${bundled.fetchedAt} · 엔드포인트 기록`);
+
+  // 분포가 사람 값인지 — 생리학적으로 알려진 방향을 확인한다
+  const find = (sex, band) => bundled.norms.find((n) => n.sex === sex && n.ageBand === band);
+  const med = (n, item) => { const a = n?.samples?.[item]; return a ? a[Math.floor(a.length / 2)] : null; };
+  const m20 = find('male', '20대'), m60 = find('male', '60대'), f20 = find('female', '20대');
+  check(med(m20, 'vo2max') > med(m60, 'vo2max'),
+    `VO₂max 가 나이 들며 낮아진다 (남 20대 ${med(m20, 'vo2max')} > 60대 ${med(m60, 'vo2max')})`);
+  check(med(m20, 'gripKg') > med(f20, 'gripKg'),
+    `악력 남>여 (${med(m20, 'gripKg')} > ${med(f20, 'gripKg')})`);
+  check(med(f20, 'bodyFatPct') > med(m20, 'bodyFatPct'),
+    `체지방율 여>남 (${med(f20, 'bodyFatPct')} > ${med(m20, 'bodyFatPct')})`);
+  for (const n of bundled.norms) {
+    for (const [item, arr] of Object.entries(n.samples)) {
+      const sorted = arr.every((v, i) => i === 0 || arr[i - 1] <= v);
+      if (!sorted) { check(false, `${n.sex} ${n.ageBand} ${item}: 정렬 깨짐`); break; }
+      const bad = arr.filter((v) => !F.isPlausible(item, v));
+      if (bad.length) { check(false, `${n.sex} ${n.ageBand} ${item}: 상식 밖 값 ${bad.length}개`); break; }
+    }
+  }
+  check(true, '모든 집단의 표본이 정렬돼 있고 상식 범위 안');
+
+  // 실제 분포로 백분위를 내 본다 — 중앙값을 넣으면 50% 근처여야 한다
+  const midVo2 = med(m20, 'vo2max');
+  const a = F.assess(
+    { birthYear: new Date().getFullYear() - 25, sex: 'male', measured: { vo2max: midVo2 }, measuredAt: null },
+    m20,
+  );
+  check(a.overall != null && Math.abs(a.overall - 50) <= 8,
+    `중앙값(VO₂max ${midVo2})을 넣으면 상위 ${a.overall == null ? '?' : 100 - a.overall}% 근처`);
+}
+
+console.log('\n[버전 변화 방어] 예전에 저장된 항목이 남아 있어도 안 터진다');
+{
+  // 항목 집합은 API 커버리지에 따라 바뀐다. 기기에 남은 옛 항목이 그대로
+  // 되살아나면 범위 검사가 없는 항목을 만나 렌더 중에 터진다.
+  check(F.isPlausible('jumpReps', 40) === false, '모르는 항목은 false (터지지 않는다)');
+  check(F.isKnownItem('vo2max') === true, '현재 항목은 known');
+  check(F.isKnownItem('sitUpReps') === false, '삭제된 항목은 unknown');
+  const stale = { birthYear: 1994, sex: 'male', measured: { jumpReps: 40, vo2max: 45 }, measuredAt: null };
+  let threw = false;
+  try { F.assess(stale, { sex: 'male', ageBand: '30대', n: 100, samples: { vo2max: seq(100) } }); }
+  catch { threw = true; }
+  check(!threw, '옛 항목이 섞인 프로필로 평가해도 예외 없음');
 }
 
 console.log(`\n결과: ${ok.length} 통과, ${bad.length} 실패`);

@@ -3,7 +3,7 @@
 // 각 키는 빌드시 주입된 VITE_* 값을 기본값으로, 없으면 사용자가 앱에서 입력한 값을 쓴다.
 // ---------------------------------------------------------------------------
 
-import { emptyFitnessProfile, type FitnessProfile } from './fitness';
+import { emptyFitnessProfile, isKnownItem, type FitnessProfile } from './fitness';
 import type { LatLng } from './types';
 
 const KEY = 'run-app-settings-v1';
@@ -107,6 +107,10 @@ function sanitizeFitness(v: unknown, base: FitnessProfile): FitnessProfile {
   const measured: FitnessProfile['measured'] = {};
   if (f.measured && typeof f.measured === 'object' && !Array.isArray(f.measured)) {
     for (const [k, val] of Object.entries(f.measured)) {
+      // 지금 버전이 모르는 항목은 버린다. 항목 집합은 API 커버리지에 따라
+      // 바뀌는데, 기기에는 예전 항목이 남아 있어 그대로 되살리면 범위 검사가
+      // 없는 항목을 만나 터진다.
+      if (!isKnownItem(k)) continue;
       // 0 이하는 '측정 안 함' 이 잘못 저장된 값이다 — 표본 비교에 넣지 않는다
       if (typeof val === 'number' && Number.isFinite(val) && val > 0) {
         (measured as Record<string, number>)[k] = val;

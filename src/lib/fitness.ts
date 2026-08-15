@@ -18,19 +18,27 @@ import type { Course } from './types';
 export type Sex = 'male' | 'female';
 
 /**
- * 측정 항목. 포털 설명에 명시된 항목만 둔다.
- * (신장·체중·체지방률·허리둘레·혈압·악력·윗몸말아올리기·반복점프)
+ * 측정 항목 — 실제 응답의 '채워진 비율' 을 재서 고른 것들이다.
  *
- * 심폐지구력(왕복오래달리기 등)은 설명문에 명시돼 있지 않아 넣지 않았다.
- * 실제 응답 필드에 있으면 여기에 추가하면 되고, 그 전까지 없는 항목을
- * 있는 척 두지 않는다.
+ * 2023년 이후 30대 남성 1,000행 실측:
+ *   체지방율 100% · 악력 99.8% · VO₂max 합계 ~100%(스텝 70/왕복 20/트레드밀 10)
+ *   제자리멀리뛰기 65% · 허리둘레 54%
+ *   윗몸말아올리기·반복점프·절대악력(f052) 은 0% — 명세엔 있어도 값이 없다.
+ *
+ * 그래서 명세에 있는 40여 항목 중 실제로 쓸 수 있는 것만 남겼다. 없는 항목을
+ * 입력칸으로 두면 사용자는 넣을 수 없는 값을 찾아 헤매고, 기준 분포도 못 만든다.
+ *
+ * 왕복오래달리기(회)는 VO₂max 로 이미 환산돼 들어오므로 따로 두지 않는다 —
+ * 같은 검사를 두 번 세면 심폐 축에 이중 가중치가 걸린다.
+ * BMI 는 뺐다. '낮을수록 좋음' 으로 다루면 저체중이 만점을 받는데 그건
+ * 러너에게 좋은 신호가 아니다.
  */
 export type FitnessItem =
-  | 'bodyFatPct' //   체지방률(%)      낮을수록 좋음
-  | 'waistCm' //      허리둘레(cm)     낮을수록 좋음
-  | 'gripKg' //       악력(kg)         높을수록 좋음
-  | 'sitUpReps' //    윗몸말아올리기(회) 높을수록 좋음
-  | 'jumpReps'; //    반복점프(회)      높을수록 좋음
+  | 'vo2max' //       최대산소섭취량(ml/kg/min)  높을수록 좋음 ★ 러닝 핵심
+  | 'bodyFatPct' //   체지방율(%)                낮을수록 좋음
+  | 'longJumpCm' //   제자리 멀리뛰기(cm)         높을수록 좋음 (하지 순발력)
+  | 'gripKg' //       악력(kg)                   높을수록 좋음
+  | 'waistCm'; //     허리둘레(cm)               낮을수록 좋음
 
 /** 값이 낮을수록 좋은 항목 — 백분위를 뒤집어 계산한다 */
 const LOWER_IS_BETTER: ReadonlySet<FitnessItem> = new Set<FitnessItem>([
@@ -39,26 +47,67 @@ const LOWER_IS_BETTER: ReadonlySet<FitnessItem> = new Set<FitnessItem>([
 ]);
 
 export const FITNESS_ITEM_LABEL: Record<FitnessItem, string> = {
-  bodyFatPct: '체지방률',
-  waistCm: '허리둘레',
+  vo2max: '심폐지구력(VO₂max)',
+  bodyFatPct: '체지방율',
+  longJumpCm: '제자리 멀리뛰기',
   gripKg: '악력',
-  sitUpReps: '윗몸말아올리기',
-  jumpReps: '반복점프',
+  waistCm: '허리둘레',
 };
+
+export const FITNESS_ITEM_UNIT: Record<FitnessItem, string> = {
+  vo2max: 'ml/kg/min',
+  bodyFatPct: '%',
+  longJumpCm: 'cm',
+  gripKg: 'kg',
+  waistCm: 'cm',
+};
+
+/**
+ * 사람이 낼 수 있는 값의 범위. 밖이면 버린다.
+ *
+ * 실측 응답에 허리둘레 1cm, 제자리멀리뛰기 2435cm(24m), BMI 0.6 같은 값이
+ * 섞여 있다. 입력 실수나 단위 오류로 보이는데, 그대로 표본에 넣으면 백분위가
+ * 통째로 밀린다 — '상위 30%' 가 거짓말이 되는 가장 흔한 경로다.
+ */
+export const PLAUSIBLE_RANGE: Record<FitnessItem, [number, number]> = {
+  vo2max: [10, 90],
+  bodyFatPct: [3, 60],
+  longJumpCm: [50, 380],
+  gripKg: [5, 100],
+  waistCm: [40, 160],
+};
+
+/**
+ * 표본·입력값이 상식 범위 안인지.
+ *
+ * 모르는 항목이면 false 다. 항목 집합은 실제 API 커버리지에 따라 바뀌는데,
+ * 사용자 기기에는 예전 버전에서 저장한 항목이 그대로 남아 있다 — 그걸
+ * 그대로 구조분해하면 렌더 중에 터진다(실제로 검사에서 잡혔다).
+ */
+export function isPlausible(item: FitnessItem, v: number): boolean {
+  const range = PLAUSIBLE_RANGE[item];
+  if (!range) return false;
+  return Number.isFinite(v) && v >= range[0] && v <= range[1];
+}
+
+/** 지금 버전이 다루는 항목인지 */
+export function isKnownItem(k: string): k is FitnessItem {
+  return Object.prototype.hasOwnProperty.call(PLAUSIBLE_RANGE, k);
+}
 
 /**
  * 러닝에 얼마나 직결되는지의 가중치.
  *
- * 반복점프(하지 근지구력·탄성)와 체지방률(체중 부하)이 달리기에 가장 크게
- * 걸리고, 악력은 전신 근력의 대리 지표라 약하게 본다. 이 가중치는 우리가
- * 정한 값이지 공단이 준 값이 아니다 — prescribe() 의 basis 에 그렇게 밝힌다.
+ * VO₂max 가 달리기 능력을 가장 직접 설명하므로 지배적으로 둔다. 체성분이
+ * 다음인데, 같은 심폐능력이라도 체중을 옮기는 비용이 다르기 때문이다.
+ * 이 가중치는 우리가 정한 값이지 공단이 준 값이 아니다 — basis 에 밝힌다.
  */
 const RUN_WEIGHT: Record<FitnessItem, number> = {
-  jumpReps: 0.3,
+  vo2max: 0.45,
   bodyFatPct: 0.25,
-  sitUpReps: 0.2,
-  waistCm: 0.15,
+  longJumpCm: 0.12,
   gripKg: 0.1,
+  waistCm: 0.08,
 };
 
 /** 사용자가 입력하는 체력 프로필. 나이·성별만 있어도 시작할 수 있다. */
@@ -83,8 +132,14 @@ export interface FitnessNorm {
   sex: Sex;
   /** 연령대 라벨 (예: '30대') */
   ageBand: string;
-  /** 항목별 오름차순 표본값 */
+  /**
+   * 항목별 오름차순 백분위 지점(p0~p100).
+   * 원본 표본을 다 싣지 않는다 — 분포의 모양만 있으면 백분위는 낼 수 있고,
+   * 원본을 통째로 묶으면 파일이 앱 전체보다 커진다.
+   */
   samples: Partial<Record<FitnessItem, number[]>>;
+  /** 항목별 원본 표본 수 — 신뢰도 판정은 압축본이 아니라 이 값으로 한다 */
+  counts?: Partial<Record<FitnessItem, number>>;
   /** 표본 수 */
   n: number;
   /** 출처 문구 — 화면에 그대로 노출해 어디서 온 숫자인지 밝힌다 */
@@ -180,6 +235,11 @@ export function assess(
   const items: ItemPercentile[] = [];
   for (const item of measuredKeys) {
     const value = profile.measured[item] as number;
+    if (!isPlausible(item, value)) continue;
+    // 신뢰도는 압축본 길이(101 고정)가 아니라 원본 표본 수로 본다.
+    // counts 가 없는 옛 캐시는 압축본 길이로 판정한다(예전과 같은 동작).
+    const raw = norm.counts?.[item];
+    if (raw != null && raw < MIN_SAMPLES) continue;
     const p = percentileOf(norm.samples[item], value, LOWER_IS_BETTER.has(item));
     if (p != null) items.push({ item, value, percentile: p });
   }
