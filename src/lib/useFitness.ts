@@ -55,7 +55,14 @@ export function useFitness(
       estimateVo2max(
         savedRoutes
           .filter((r) => r.kind === 'recorded' && r.durationSec != null)
-          .map((r) => ({ distanceKm: r.distanceKm, durationSec: r.durationSec, at: r.createdAt })),
+          .map((r) => ({
+            distanceKm: r.distanceKm,
+            durationSec: r.durationSec,
+            at: r.createdAt,
+            // 12분 테스트 표시를 함께 넘긴다. 이게 빠지면 테스트를 하고도
+            // 늘 '참고용' 에 머문다 — 검사한 보람이 화면에 안 나타난다.
+            isCooperTest: r.isCooperTest,
+          })),
       ),
     [savedRoutes],
   );

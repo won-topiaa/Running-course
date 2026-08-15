@@ -10,7 +10,10 @@ import { join } from 'node:path';
 const dir = mkdtempSync(join(tmpdir(), 'vo-'));
 const bundle = async (e, n) => {
   const o = join(dir, n);
-  await build({ entryPoints: [e], bundle: true, format: 'esm', outfile: o, logLevel: 'error' });
+  await build({
+    entryPoints: [e], bundle: true, format: 'esm', outfile: o, logLevel: 'error',
+    loader: { '.json': 'json' },
+  });
   return import(o);
 };
 const V = await bundle('src/lib/vo2max.ts', 'v.mjs');
@@ -115,6 +118,130 @@ console.log('\n[단조성] 같은 거리면 빠를수록 높게 나온다');
   const a = V.danielsVdot(5, toSec('19:57'));
   const b = V.danielsVdot(21.0975, toSec('1:31:35'));
   check(Math.abs(a - b) <= 0.6, `등가 기록은 거리가 달라도 같은 VDOT (5km ${a} vs 하프 ${b})`);
+}
+
+console.log('\n[검사 모드] 12분 타이머 — 벽시계로 재는가');
+{
+  const now = 1_700_000_000_000;
+  check(V.cooperRemainingSec(null, now) === 720, '시작 전에는 12분이 통째로 남아 있다');
+  check(V.cooperRemainingSec(now - 60_000, now) === 660, '1분 지나면 11분 남는다');
+  check(V.cooperRemainingSec(now - 719_000, now) === 1, '11분 59초 지나면 1초 남는다');
+  check(V.cooperRemainingSec(now - 900_000, now) === 0, '한참 지나도 음수로 안 간다 (0에서 멈춤)');
+  // 벽시계라는 게 핵심이다. 활성 시간으로 재면 신호 대기마다 시계가 서서
+  // 결국 12분보다 오래 달리게 되고, 그만큼 거리가 부풀려진다.
+  check(V.COOPER_TEST_SEC === 720, '검사 길이는 Cooper 프로토콜 그대로 720초');
+}
+
+console.log('\n[검사 인정] 무엇을 검사로 칠 것인가');
+{
+  const at = Date.now();
+  // 12분에 1.05km — 일반 기록이면 최소 거리(1.2km)에 걸려 버려진다.
+  // 하지만 본인이 직접 한 검사다. 이 사람이야말로 자기 상태를 알아야 한다.
+  const slow = V.estimateVo2max([{ distanceKm: 1.05, durationSec: 720, at, isCooperTest: true }]);
+  check(slow?.method === 'cooper', `12분에 1.05km 도 검사로 인정한다 (${slow?.value})`);
+
+  // 거의 걸었다면(900m) 공식은 8.8 을 낸다 — 사람이 낼 수 있는 하한(10) 밑이다.
+  const walked = V.estimateVo2max([{ distanceKm: 0.9, durationSec: 720, at, isCooperTest: true }]);
+  check(walked == null, '거의 걸은 검사는 숫자를 만들어 내지 않는다');
+
+  // 걸었더라도 평소 기록이 있으면 그쪽으로 넘어간다 (조용히 사라지지 않는다)
+  const fallback = V.estimateVo2max([
+    { distanceKm: 0.9, durationSec: 720, at, isCooperTest: true },
+    { distanceKm: 5, durationSec: 1800, at },
+  ]);
+  check(fallback?.method === 'daniels', '검사가 쓸 수 없으면 평소 기록으로 넘어간다');
+
+  // 검사는 설계상 최대 노력이라, 평소 최고 기록보다 우선한다
+  const both = V.estimateVo2max([
+    { distanceKm: 10, durationSec: 2700, at },
+    { distanceKm: 2.4, durationSec: 720, at, isCooperTest: true },
+  ]);
+  check(both?.method === 'cooper' && both.confidence === 'high',
+    `검사가 있으면 평소 기록보다 우선하고 '정확도 높음' 이 된다 (${both?.value})`);
+
+  // 12분을 못 채운 기록에 표시만 붙어 있으면 검사로 안 친다
+  const short = V.estimateVo2max([
+    { distanceKm: 2.0, durationSec: 600, at, isCooperTest: true },
+    { distanceKm: 5, durationSec: 1500, at },
+  ]);
+  check(short?.method === 'daniels', '10분에 끝난 기록은 표시가 있어도 Cooper 로 안 친다');
+}
+
+console.log('\n[저장] 검사 표시가 아무 기록에나 붙지 않는가');
+{
+  const SR = await bundle('src/lib/savedRoutes.ts', 'sr.mjs');
+  const route = {
+    coords: [[37.5, 127.0], [37.501, 127.001]],
+    elevations: [10, 12],
+    distanceKm: 2.4, ascentM: 2, maxGradePct: 1,
+  };
+  const real = SR.savedFromView({
+    name: '검사', route, kind: 'recorded', source: 'gps', durationSec: 720, isCooperTest: true,
+  });
+  check(real.isCooperTest === true, '실제로 기록한 검사에는 표시가 붙는다');
+
+  // 데모는 kind 가 'built' 다. 지어낸 2.4km 가 심폐지구력 42.4 로 둔갑하면 안 된다.
+  const demo = SR.savedFromView({
+    name: '검사(데모)', route, kind: 'built', source: 'demo', durationSec: 720, isCooperTest: true,
+  });
+  check(!demo.isCooperTest, '데모에는 검사 표시가 붙지 않는다');
+
+  const plain = SR.savedFromView({
+    name: '러닝', route, kind: 'recorded', source: 'gps', durationSec: 1800,
+  });
+  check(!plain.isCooperTest, '평소 러닝에는 표시가 없다');
+
+  // 저장소에서 온 값은 무엇이든 들어올 수 있다 — true 하나만 통과해야 한다
+  const dirty = SR.sanitizeRoutes([
+    { ...real, isCooperTest: 'true' },
+    { ...real, id: 'x2', isCooperTest: 1 },
+    { ...real, id: 'x3', isCooperTest: true },
+  ]);
+  check(dirty.length === 3 && !dirty[0].isCooperTest && !dirty[1].isCooperTest && dirty[2].isCooperTest,
+    "문자열 'true'·숫자 1 은 검사로 안 읽는다 (참 같은 값이 검사로 둔갑하지 않게)");
+}
+
+console.log('\n[사슬] 검사 결과가 정말 코스 추천까지 가는가');
+{
+  const F = await bundle('src/lib/fitness.ts', 'f.mjs');
+  const K = await bundle('src/lib/kspoFitness.ts', 'k.mjs');
+  const C = await bundle('src/data/courses.ts', 'c.mjs');
+  const norm = await K.loadFitnessNorm(null, 'male', 32);
+  check(norm != null, `기준 분포를 앱에 묶어 두고 바로 쓴다 (${norm?.sex} ${norm?.ageBand} n=${norm?.n})`);
+
+  const at = Date.now();
+  const run = (m) => {
+    const est = V.estimateVo2max([{ distanceKm: m / 1000, durationSec: 720, at, isCooperTest: true }]);
+    const a = F.assess({ birthYear: 1994, sex: 'male', measured: {}, measuredAt: null }, norm,
+      est ? { vo2max: est.value } : {});
+    return { est, a, rx: F.prescribe(a.overall, 32) };
+  };
+
+  const weak = run(2000);
+  const strong = run(2900);
+  check(weak.a.overall != null && strong.a.overall != null, '검사만으로도 또래 백분위가 나온다');
+  check(strong.a.overall > weak.a.overall,
+    `멀리 간 사람이 더 높은 백분위 (2000m 상위 ${100 - weak.a.overall}% vs 2900m 상위 ${100 - strong.a.overall}%)`);
+  check(strong.rx.sessionKm.max > weak.rx.sessionKm.max,
+    `처방 거리가 달라진다 (${weak.rx.sessionKm.min}~${weak.rx.sessionKm.max}km vs ${strong.rx.sessionKm.min}~${strong.rx.sessionKm.max}km)`);
+  check(strong.rx.maxAscentPerKm > weak.rx.maxAscentPerKm,
+    `경사 상한도 달라진다 (${weak.rx.maxAscentPerKm} vs ${strong.rx.maxAscentPerKm} m/km)`);
+
+  // 그래서 코스 순서가 실제로 바뀌는가 — 이게 사용자가 체감하는 전부다
+  const courses = C.COURSES ?? C.courses ?? [];
+  check(courses.length > 0, `코스 데이터 ${courses.length}개`);
+  const top = ({ rx }) =>
+    courses
+      .map((c) => ({ c, s: F.courseFitScore(c, rx) }))
+      .filter((x) => x.s != null)
+      .sort((a, b) => b.s - a.s || a.c.distanceKm - b.c.distanceKm)[0];
+  const weakTop = top(weak);
+  const strongTop = top(strong);
+  check(weakTop.c.distanceKm < strongTop.c.distanceKm,
+    `추천 1순위가 바뀐다 (2000m → ${weakTop.c.name} ${weakTop.c.distanceKm}km · 2900m → ${strongTop.c.name} ${strongTop.c.distanceKm}km)`);
+
+  // 체력을 모르면 이 축은 통째로 빠진다 — 0점으로 두면 멀쩡한 코스가 밀린다
+  check(F.courseFitScore(courses[0], null) === null, '체력을 모르면 적합도는 null (0점이 아니다)');
 }
 
 console.log(`\n결과: ${ok.length} 통과, ${bad.length} 실패`);

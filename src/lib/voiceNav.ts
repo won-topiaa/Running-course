@@ -384,6 +384,20 @@ function speak(
 }
 
 /**
+ * 화면이 직접 안내를 내보내야 할 때 (12분 심폐 검사의 시작·남은 시간·종료).
+ *
+ * 검사는 최대 노력으로 뛰는 12분이라 화면을 볼 여유가 없다 — 남은 시간을
+ * 눈으로 확인하려고 속도를 늦추면 그게 곧 결과를 깎는다. 그래서 이 구간만은
+ * 소리가 본선이고 화면이 보조다.
+ *
+ * 음성 토글(voiceEnabled)은 그대로 존중한다. 끈 사람에게 검사라고 해서
+ * 말을 걸지 않는다 — 그때는 화면의 카운트다운과 진동이 대신한다.
+ */
+export function announce(text: string, opts: { urgent?: boolean } = {}): boolean {
+  return speak(text, { level: opts.urgent ? 'now' : 'normal' });
+}
+
+/**
  * GPS 측위가 들어올 때마다 호출한다. 안내가 필요하면 음성을 재생하고
  * state 를 갱신한 새 객체를 돌려준다 (불변).
  */

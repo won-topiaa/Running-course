@@ -9,7 +9,7 @@
 // 못 받았으면 '상위 몇 %' 를 만들어 내지 않고 왜 못 냈는지를 말한다.
 // ---------------------------------------------------------------------------
 
-import { Activity } from 'lucide-react';
+import { Activity, Timer } from 'lucide-react';
 import {
   FITNESS_ITEM_LABEL,
   FITNESS_ITEM_UNIT,
@@ -157,11 +157,42 @@ export default function FitnessSection({
             {CONFIDENCE_LABEL[vo2maxEstimate.confidence]} · {vo2maxEstimate.note}
           </p>
           {vo2maxEstimate.method !== 'cooper' && (
-            <p className="mt-1 text-[10.5px] leading-relaxed text-espresso-soft">
-              더 정확히 재려면 <b>12분 동안 최대한 멀리</b> 달려 보세요. 그 기록이 있으면
-              Cooper 공식으로 더 정확하게 추정해요.
-            </p>
+            <>
+              <p className="mt-1 text-[10.5px] leading-relaxed text-espresso-soft">
+                평소 기록은 최대로 달린 게 아니라서 실제보다 낮게 나와요.
+                12분 검사를 하면 <b>정확도 높음</b>으로 올라가요.
+              </p>
+              {/* 안내 문장이 아니라 버튼이어야 한다. 숫자를 처음 본 직후가
+                  그 숫자의 정확도에 관심이 생기는 유일한 순간인데, 거기서
+                  '어디서 하지?' 를 찾게 만들면 대부분 그냥 넘어간다. */}
+              <button
+                onClick={() => api.startRecord(null, { cooperTest: true })}
+                className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-sage-600 py-2.5 text-[12.5px] font-bold text-white active:scale-[0.98]"
+              >
+                <Timer size={14} /> 12분 검사로 정확하게 재기
+              </button>
+            </>
           )}
+        </div>
+      )}
+
+      {/* 아직 추정할 기록이 없는 사람 — 이 사람에게는 검사가 유일한 출발선이다.
+          '러닝을 몇 번 하면 나와요' 만 적어 두면, 오늘 당장 자기 상태를 알고
+          싶은 사람은 아무것도 못 받고 나간다. */}
+      {/* 센터 실측값을 이미 넣은 사람에게는 권하지 않는다 — 그쪽이 더 정확하다 */}
+      {!vo2maxEstimate && profile.measured.vo2max == null && (
+        <div className="mt-3 rounded-2xl border border-sage-600/25 bg-sage-50/60 p-3">
+          <p className="text-[11.5px] font-bold text-sage-600">심폐지구력을 아직 몰라요</p>
+          <p className="mt-1 text-[10.5px] leading-relaxed text-espresso-soft">
+            러닝을 몇 번 기록하면 그 기록으로 자동 추정해 드려요. 지금 바로 알고 싶으면
+            12분 검사를 해 보세요 — 12분 동안 간 거리로 계산해요.
+          </p>
+          <button
+            onClick={() => api.startRecord(null, { cooperTest: true })}
+            className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-sage-600 py-2.5 text-[12.5px] font-bold text-white active:scale-[0.98]"
+          >
+            <Timer size={14} /> 12분 검사 시작
+          </button>
         </div>
       )}
 
@@ -203,9 +234,19 @@ export default function FitnessSection({
       </div>
 
       <p className="mt-2 text-[11px] leading-relaxed text-espresso-soft">
-        {vo2maxEstimate
-          ? '더 정확한 값은 가까운 국민체력100 체력인증센터에서 무료로 측정받을 수 있어요. 실측값을 넣으면 추정 대신 그 값을 씁니다.'
-          : '러닝을 몇 번 기록하면 그 기록으로 심폐지구력을 추정해 드려요. 국민체력100 체력인증센터에서 무료로 정확히 측정받을 수도 있어요.'}
+        가장 정확한 값은 가까운 국민체력100 체력인증센터에서 무료로 측정받을 수 있어요.
+        실측값을 넣으면 추정 대신 그 값을 씁니다.
+        {vo2maxEstimate && (
+          <>
+            {' '}
+            {/* 두 값은 같은 이름을 쓰지만 재는 방법이 다르다. 센터 표본은
+                대부분 스텝 검사에서 환산한 값이고 우리 추정은 실제로 달린
+                기록에서 낸 값이라, 백분위가 한쪽으로 치우칠 수 있다.
+                모르는 척하면 사용자는 국가 기준으로 진단받았다고 믿는다. */}
+            다만 앱 추정치는 센터의 측정 방식(주로 스텝 검사)과 달라, 상위 %가 실제보다
+            다소 높거나 낮게 나올 수 있어요.
+          </>
+        )}
       </p>
     </div>
   );

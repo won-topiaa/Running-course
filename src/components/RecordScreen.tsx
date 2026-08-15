@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Pause, Play, Square, Volume2, VolumeX, X, Zap } from 'lucide-react';
+import { Heart, Loader2, Pause, Play, Square, Timer, Volume2, VolumeX, X, Zap } from 'lucide-react';
 import LiveMap from './LiveMap';
 import RouteSheet from './RouteSheet';
 import { savedFromView } from '../lib/savedRoutes';
@@ -32,12 +32,14 @@ import { kmSplits, type Split } from '../lib/splits';
 import type { RouteResult } from '../lib/routing';
 import type { LatLng } from '../lib/types';
 import {
+  announce,
   initVoiceNav,
   tickVoiceNav,
   toggleVoice,
   stopVoiceNav,
   type VoiceNavState,
 } from '../lib/voiceNav';
+import { COOPER_TEST_SEC, cooperRemainingSec, cooperVo2max } from '../lib/vo2max';
 import type { AppApi, RouteView } from '../ui/appApi';
 
 /**
@@ -61,6 +63,30 @@ async function realElevations(coords: LatLng[]): Promise<number[] | null> {
   }
 }
 
+/**
+ * 12분 검사 중 소리로 알려 줄 지점 (남은 초 → 문장).
+ *
+ * 최대 노력으로 뛰는 중에는 화면을 볼 여유가 없다 — 남은 시간을 눈으로
+ * 확인하려고 고개를 들면 그 순간 속도가 떨어지고, 그게 곧 결과를 깎는다.
+ */
+const TEST_CUES: [number, string][] = [
+  [600, '10분 남았습니다.'],
+  [300, '5분 남았습니다.'],
+  [180, '3분 남았습니다.'],
+  [60, '1분 남았습니다. 남은 힘을 쓰세요.'],
+  [10, '10초.'],
+];
+
+/**
+ * 검사 기록의 이름. 목록에서 평소 러닝과 구별돼야 한다 —
+ * 이 기록 하나가 심폐지구력 추정의 근거가 되므로, 나중에 '이게 뭐였지' 가
+ * 되면 안 된다.
+ */
+function testName(): string {
+  const d = new Date();
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 12분 심폐 검사`;
+}
+
 function runName(): string {
   const d = new Date();
   const h = d.getHours();
@@ -71,15 +97,20 @@ function runName(): string {
 export default function RecordScreen({
   api,
   planned,
+  cooperTest = false,
   onClose,
 }: {
   api: AppApi;
   /** 따라 뛸 계획 경로 (없으면 자유 러닝) */
   planned?: { name: string; route: RouteResult } | null;
+  /** 12분 심폐 검사 모드 — 경로 없이 12분을 재고 자동으로 끝낸다 */
+  cooperTest?: boolean;
   onClose: () => void;
 }) {
   const rec = useRunRecorder(planned?.route.coords[0] ?? api.settings.homeLocation);
-  const [name] = useState(() => (planned ? `${planned.name} 따라 뛰기` : runName()));
+  const [name] = useState(() =>
+    cooperTest ? testName() : planned ? `${planned.name} 따라 뛰기` : runName(),
+  );
 
   // 종료 시 자동 저장된 기록 id — 마이 통계의 데이터 원천이 된다
   const autoSaved = useRef<string | null>(null);
@@ -188,6 +219,57 @@ export default function RecordScreen({
     if (next !== voiceNav) setVoiceNav(next);
   }, [idx, rec.distanceKm]);
 
+  // ── 12분 심폐 검사 (Cooper) ─────────────────────────────────
+  // 12분 동안 간 거리가 곧 VO₂max 추정치가 되고, 그 값이 국민체력100 또래
+  // 분포와 견줘져 추천 코스의 거리·경사 상한을 정한다.
+  //
+  // 시계는 START 가 아니라 '첫 측위' 부터 잰다. 누른 순간부터 재면 위치를
+  // 잡느라 서 있는 시간이 검사 시간에서 깎이고, 그렇게 덜 뛴 결과가 그대로
+  // 자기 심폐지구력으로 남는다(실내에서는 20초 넘게 걸리기도 한다).
+  const testStartAtRef = useRef<number | null>(null);
+  const [testStarted, setTestStarted] = useState(false);
+  const [remainSec, setRemainSec] = useState(COOPER_TEST_SEC);
+  // 12분을 채우고 자동으로 끝났는지. 중간에 그만두면 false 로 남아 평범한
+  // 러닝으로 저장된다 — 검사 표시는 12분을 채운 기록에만 붙는다.
+  const testDoneRef = useRef(false);
+  const [showResult, setShowResult] = useState(true);
+  const cuedRef = useRef<Set<number>>(new Set());
+  // finish 는 아래(이른 반환 뒤)에서 정의되는데 이 effect 가 먼저다.
+  // 렌더마다 최신 함수를 담아 두고 그걸 부른다.
+  const finishRef = useRef<((opts?: { cooper?: boolean }) => void) | null>(null);
+
+  useEffect(() => {
+    if (!cooperTest || rec.status !== 'recording') return;
+    if (testStartAtRef.current != null) return;
+    if (rec.coords.length < 1) return; // 아직 위치를 못 잡았다 — 시계도 안 간다
+    testStartAtRef.current = Date.now();
+    setTestStarted(true);
+    announce('검사를 시작합니다. 12분 동안 최대한 멀리 달리세요.', { urgent: true });
+  }, [cooperTest, rec.status, rec.coords.length]);
+
+  useEffect(() => {
+    if (!cooperTest || rec.status !== 'recording' || !testStarted) return;
+    const id = setInterval(() => {
+      const left = cooperRemainingSec(testStartAtRef.current, Date.now());
+      setRemainSec(left);
+      // 지점을 '막 지날 때'만 말한다. 앱이 백그라운드에 있다 돌아오면 여러
+      // 지점을 한꺼번에 지나쳐 있는데, 밀린 안내를 몰아서 들려주면 지금 몇 분
+      // 남았는지가 오히려 더 헷갈린다.
+      for (const [mark, text] of TEST_CUES) {
+        if (left <= mark && left > mark - 20 && !cuedRef.current.has(mark)) {
+          cuedRef.current.add(mark);
+          announce(text);
+        }
+      }
+      if (left <= 0 && !testDoneRef.current) {
+        testDoneRef.current = true;
+        announce('12분 끝났습니다. 천천히 걸으며 숨을 고르세요.', { urgent: true });
+        finishRef.current?.({ cooper: true });
+      }
+    }, 250);
+    return () => clearInterval(id);
+  }, [cooperTest, rec.status, testStarted]);
+
   // 지나온 구간은 경사 색상, 남은 구간은 눈금(점선)
   const { traveled, remainPath, remainM, ratio } = useMemo(() => {
     if (!planned) return { traveled: undefined, remainPath: undefined, remainM: 0, ratio: 0 };
@@ -240,12 +322,32 @@ export default function RecordScreen({
       route,
       kind: rec.demo ? 'built' : 'recorded',
       source: rec.demo ? 'demo' : 'gps',
-      durationSec: rec.elapsedSec,
+      // 검사는 벽시계 12분이 프로토콜 그 자체다. 저장할 때도 같은 값을 쓰므로
+      // (아래 finish 참고) 요약 화면과 내 코스의 시간이 어긋나지 않는다.
+      durationSec: testDoneRef.current ? COOPER_TEST_SEC : rec.elapsedSec,
       times: rec.times,
       activeTimes: rec.activeTimes,
       cumDist: rec.cumDist,
       savedId: autoSaved.current ?? undefined,
+      isCooperTest: testDoneRef.current || undefined,
     };
+    // 12분을 채운 검사는 결과부터 보여준다. 힘들게 뛴 12분의 답이
+    // 저장 목록 어딘가에 숨어 있으면 안 된다.
+    if (testDoneRef.current && showResult) {
+      return (
+        <CooperResult
+          api={api}
+          distanceKm={rec.distanceKm}
+          gapSec={rec.gapSec}
+          onDetail={() => setShowResult(false)}
+          onMy={() => {
+            rec.reset();
+            api.nav('my');
+            onClose();
+          }}
+        />
+      );
+    }
     return (
       <RouteSheet
         view={view}
@@ -332,7 +434,7 @@ export default function RecordScreen({
     }
   };
 
-  const finish = async () => {
+  const finish = async (opts: { cooper?: boolean } = {}) => {
     if (saving) return;
     setSaving(true);
     // 먼저 기록을 멈춰 좌표를 얼린다. 이걸 안 하면 아래 고도 조회를 기다리는
@@ -359,7 +461,13 @@ export default function RecordScreen({
           route,
           kind: 'recorded',
           source: 'gps',
-          durationSec: snap.elapsedSec,
+          // 검사는 벽시계 12분이 곧 프로토콜이다. 활성 시간(신호 대기 등을
+          // 뺀 값)으로 저장하면 두 번 멈춘 사람은 '12분에 간 거리' 가 아니라
+          // '움직인 10분에 간 거리' 로 채점돼 실제보다 높게 나온다 —
+          // 게다가 11분 30초~12분 30초 창을 벗어나면 Cooper 로 인정되지도
+          // 않아, 12분을 다 뛰고도 결과가 '참고용' 으로 떨어진다.
+          durationSec: opts.cooper ? COOPER_TEST_SEC : snap.elapsedSec,
+          isCooperTest: opts.cooper === true,
         });
         api.addSavedRoute(saved);
         autoSaved.current = saved.id;
@@ -372,6 +480,8 @@ export default function RecordScreen({
       setSaving(false);
     }
   };
+  // 12분 타이머가 스스로 끝낼 수 있게 최신 finish 를 넘겨 둔다
+  finishRef.current = finish;
 
   return (
     <div className="fixed inset-0 z-[2000] flex flex-col bg-ink text-white">
@@ -433,6 +543,10 @@ export default function RecordScreen({
           <StartPanel
             rec={rec}
             planned={planned}
+            cooperTest={cooperTest}
+            needProfile={
+              !api.settings.fitness.sex || api.settings.fitness.birthYear == null
+            }
             acquiring={acquiring}
             onStart={rec.start}
             recovered={recovered}
@@ -455,6 +569,31 @@ export default function RecordScreen({
                 </span>
                 <span className="text-[20px] font-black tracking-[0.06em] text-ink-muted">KM</span>
               </div>
+
+              {cooperTest && (
+                <div className="mt-3">
+                  <div className="mb-1.5 flex items-baseline justify-between">
+                    <Label>{testStarted ? '남은 시간' : '준비'}</Label>
+                    <span
+                      className={`text-[17px] font-black tabular-nums ${
+                        testStarted && remainSec <= 60 ? 'text-volt' : 'text-white'
+                      }`}
+                    >
+                      {testStarted ? formatClock(Math.ceil(remainSec)) : '위치 잡는 중…'}
+                    </span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-ink-line">
+                    <div
+                      className="h-full rounded-full bg-volt transition-[width] duration-300"
+                      style={{
+                        width: `${Math.round(
+                          Math.min(1, Math.max(0, 1 - remainSec / COOPER_TEST_SEC)) * 100,
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
 
               {planned && (
                 <div className="mt-3">
@@ -522,8 +661,21 @@ export default function RecordScreen({
             <SplitList splits={splits} />
 
             {/* 컨트롤 — 볼트는 '계속 간다', 흰 테두리는 '멈춘다' */}
+            {/* 검사 중에는 일시정지를 두지 않는다. 시계는 벽시계로 가므로
+                멈춰도 시간은 흐르고, 버튼만 보고 '쉬어도 되는구나' 로 읽으면
+                결과만 나빠진다. 대신 언제든 그만둘 수 있는 길은 열어 둔다 —
+                몸이 안 좋으면 멈추는 게 맞고, 그때 기록은 평범한 러닝으로
+                저장된다(검사 표시가 안 붙는다). */}
             <div className="flex items-center gap-3 pt-4">
-              {rec.status === 'recording' ? (
+              {cooperTest ? (
+                <button
+                  onClick={() => void finish()}
+                  disabled={saving}
+                  className="flex h-[58px] flex-1 items-center justify-center gap-2 rounded-full border-2 border-ink-line text-[14px] font-black text-white active:scale-[0.98] disabled:opacity-70"
+                >
+                  <Square size={16} fill="currentColor" /> {saving ? '저장 중…' : '검사 중단'}
+                </button>
+              ) : rec.status === 'recording' ? (
                 <button
                   onClick={rec.pause}
                   className="grid h-[58px] w-[58px] shrink-0 place-items-center rounded-full border-2 border-ink-line text-white active:scale-95"
@@ -540,17 +692,21 @@ export default function RecordScreen({
                   <Play size={26} fill="currentColor" />
                 </button>
               )}
-              <button
-                onClick={finish}
-                disabled={saving}
-                className="flex h-[58px] flex-1 items-center justify-center gap-2 rounded-full bg-white text-[15px] font-black uppercase tracking-[0.08em] text-ink active:scale-[0.98] disabled:opacity-70"
-              >
-                <Square size={17} fill="currentColor" /> {saving ? '저장 중…' : '종료 · 저장'}
-              </button>
+              {!cooperTest && (
+                <button
+                  onClick={() => void finish()}
+                  disabled={saving}
+                  className="flex h-[58px] flex-1 items-center justify-center gap-2 rounded-full bg-white text-[15px] font-black uppercase tracking-[0.08em] text-ink active:scale-[0.98] disabled:opacity-70"
+                >
+                  <Square size={17} fill="currentColor" /> {saving ? '저장 중…' : '종료 · 저장'}
+                </button>
+              )}
             </div>
 
-            <p className="mt-2 h-4 text-center text-[11px] font-bold uppercase tracking-[0.14em]">
-              {rec.status === 'paused' ? (
+            <p className="mt-2 h-4 text-center text-[11px] font-bold tracking-[0.06em]">
+              {cooperTest ? (
+                <span className="text-ink-muted">12분이 지나면 자동으로 끝나요</span>
+              ) : rec.status === 'paused' ? (
                 <span className="text-volt">PAUSED</span>
               ) : rec.autoPaused ? (
                 /* 서 있는 게 확인돼 시계를 멈춘 상태. 알려주지 않으면 시간이
@@ -569,6 +725,8 @@ export default function RecordScreen({
 function StartPanel({
   rec,
   planned,
+  cooperTest = false,
+  needProfile = false,
   acquiring = false,
   onStart,
   recovered,
@@ -578,6 +736,10 @@ function StartPanel({
 }: {
   rec: ReturnType<typeof useRunRecorder>;
   planned?: { name: string; route: RouteResult } | null;
+  /** 12분 심폐 검사 모드 */
+  cooperTest?: boolean;
+  /** 생년·성별이 아직 없어 백분위까지는 못 내는 상태 */
+  needProfile?: boolean;
   /** START 를 눌렀지만 아직 위치를 못 잡은 중 — 스피너 + 취소로 바꾼다 */
   acquiring?: boolean;
   onStart: () => void;
@@ -618,15 +780,36 @@ function StartPanel({
           </div>
         </div>
       )}
-      <Label>{planned ? 'FOLLOW COURSE' : 'FREE RUN'}</Label>
+      <Label>{cooperTest ? '12분 심폐 검사' : planned ? 'FOLLOW COURSE' : 'FREE RUN'}</Label>
       <h2 className="mt-1.5 max-w-[19rem] text-[19px] font-black leading-snug">
-        {planned ? planned.name : '지금 바로 뛰기'}
+        {cooperTest ? '12분 동안 최대한 멀리' : planned ? planned.name : '지금 바로 뛰기'}
       </h2>
       <p className="mt-1.5 max-w-[19rem] text-[12.5px] leading-relaxed text-ink-muted">
-        {planned
-          ? `점선을 따라 ${formatDistance(planned.route.distanceKm)}. 지나간 구간은 경사 색으로 채워져요.`
-          : '위치를 추적해 거리·시간·페이스를 실시간으로 기록해요.'}
+        {cooperTest
+          ? '12분이 지나면 자동으로 끝나요. 그 거리로 심폐지구력(VO₂max)을 계산하고, 추천 코스의 거리·경사가 그 결과에 맞춰져요.'
+          : planned
+            ? `점선을 따라 ${formatDistance(planned.route.distanceKm)}. 지나간 구간은 경사 색으로 채워져요.`
+            : '위치를 추적해 거리·시간·페이스를 실시간으로 기록해요.'}
       </p>
+
+      {/* 검사 안내 — 최대 노력으로 12분을 뛰라는 요구다. 원래 이 검사는
+          준비운동과 건강 문진을 전제로 하는 현장 검사이므로, 눌러서 바로
+          시작시키기 전에 그 전제를 말해 준다. */}
+      {cooperTest && !acquiring && (
+        <ul className="mt-3.5 w-full max-w-[19rem] space-y-1.5 rounded-2xl bg-ink-soft p-3.5 text-left text-[11.5px] leading-relaxed text-ink-muted">
+          <li>· 가볍게 <b className="text-white">5분쯤 몸을 푼 뒤</b> 시작하세요.</li>
+          <li>· 12분을 <b className="text-white">끝까지 유지할 수 있는 가장 빠른 속도</b>로. 초반에 다 쓰면 결과가 낮게 나와요.</li>
+          <li>· 신호등 없는 <b className="text-white">트랙·공원 직선 구간</b>이 좋아요. 멈춰 서면 그만큼 결과가 깎여요.</li>
+          <li>· 몸이 안 좋거나 심장·호흡기 질환이 있으면 하지 마세요. 어지러우면 즉시 멈추세요.</li>
+        </ul>
+      )}
+
+      {cooperTest && needProfile && !acquiring && (
+        <p className="mt-2.5 max-w-[19rem] rounded-2xl border border-volt/40 px-3.5 py-2.5 text-[11.5px] leading-relaxed text-ink-muted">
+          마이 탭에 <b className="text-volt">출생연도·성별</b>을 넣으면 또래 기준 상위 몇 %인지와
+          코스 처방까지 나와요. 지금 시작해도 되고, 나중에 넣어도 결과에 반영돼요.
+        </p>
+      )}
 
       {!acquiring && (rec.error === 'no-geo' || rec.error === 'denied') && (
         <p className="mt-3 max-w-[19rem] rounded-2xl bg-ink-soft px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-muted">
@@ -670,12 +853,17 @@ function StartPanel({
           : '이 브라우저는 화면 자동 유지가 안 돼요. 화면이 꺼지면 위치 기록이 멈추니 켜 둔 채로 뛰어 주세요. 그때까지의 기록은 자동으로 보관됩니다.'}
       </p>
 
-      <button
-        onClick={() => rec.startDemo(planned?.route.coords)}
-        className="mt-6 inline-flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-muted active:scale-95"
-      >
-        <Zap size={13} /> GPS 없이 데모
-      </button>
+      {/* 검사에는 데모를 두지 않는다. 지어낸 2.4km 로 '내 심폐지구력 42.4' 가
+          화면에 뜨면, 저장되지 않는다는 사실과 무관하게 그 숫자를 본 사람은
+          자기 값으로 기억한다. */}
+      {!cooperTest && (
+        <button
+          onClick={() => rec.startDemo(planned?.route.coords)}
+          className="mt-6 inline-flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-muted active:scale-95"
+        >
+          <Zap size={13} /> GPS 없이 데모
+        </button>
+      )}
     </div>
   );
 }
@@ -750,6 +938,120 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
       >
         {value}
       </p>
+    </div>
+  );
+}
+
+/**
+ * 12분 검사 결과.
+ *
+ * 힘들게 뛴 12분의 답을 저장 목록 어딘가에 숨겨 두지 않는다. 다만 여기서
+ * 지키는 선이 하나 있다 — 낼 수 있는 것만 낸다:
+ *   · VO₂max 는 뛴 거리에서 바로 나온다 → 항상 보여준다
+ *   · '또래 상위 몇 %' 는 기준 분포가 있어야 한다. 생년·성별이 없거나
+ *     분포를 아직 못 받았으면 숫자를 지어내지 않고 왜 없는지를 말한다
+ *   · 화면이 꺼져 GPS 가 비었으면 그 결과는 실제보다 낮다 — 그렇다고 말한다
+ */
+function CooperResult({
+  api,
+  distanceKm,
+  gapSec,
+  onDetail,
+  onMy,
+}: {
+  api: AppApi;
+  distanceKm: number;
+  /** 검사 중 위치가 비었던 시간(초) — 있으면 거리가 실제보다 짧다 */
+  gapSec: number;
+  onDetail: () => void;
+  onMy: () => void;
+}) {
+  const vo2 = cooperVo2max(distanceKm * 1000);
+  const { assessment, prescription, loading } = api.fitness;
+  const profile = api.settings.fitness;
+  const needProfile = !profile.sex || profile.birthYear == null;
+
+  return (
+    <div className="fixed inset-0 z-[2000] flex flex-col items-center justify-center overflow-y-auto bg-ink px-7 py-10 text-center text-white">
+      <span className="inline-flex items-center gap-1.5 text-[10.5px] font-black uppercase tracking-[0.2em] text-volt">
+        <Timer size={13} /> 12분 심폐 검사 완료
+      </span>
+
+      <p className="mt-5 text-[13px] font-bold text-ink-muted">12분 동안</p>
+      <p className="text-[44px] font-black leading-none tabular-nums tracking-[-0.04em]">
+        {formatDistance(distanceKm)}
+      </p>
+
+      {vo2 != null ? (
+        <>
+          <div className="mt-7 w-full max-w-[19rem] rounded-3xl border border-volt/40 bg-ink-soft p-5">
+            <p className="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-ink-muted">
+              <Heart size={13} className="text-volt" /> 심폐지구력 (VO₂max)
+            </p>
+            <p className="mt-1.5 text-[38px] font-black leading-none tabular-nums text-volt">
+              {vo2}
+              <span className="ml-1 text-[12px] font-bold text-ink-muted">ml/kg/min</span>
+            </p>
+            {loading ? (
+              <p className="mt-3 text-[11.5px] text-ink-muted">또래 기준을 불러오는 중…</p>
+            ) : needProfile ? (
+              <p className="mt-3 text-[11.5px] leading-relaxed text-ink-muted">
+                마이 탭에 <b className="text-white">출생연도·성별</b>을 넣으면 또래 기준 상위 몇
+                %인지와 코스 처방까지 나와요.
+              </p>
+            ) : assessment.overall != null ? (
+              <p className="mt-3 text-[12.5px] leading-relaxed text-white">
+                또래 기준 <b className="text-volt">상위 {100 - assessment.overall}%</b>
+                {prescription && (
+                  <>
+                    <br />
+                    <span className="text-[11.5px] text-ink-muted">
+                      한 번에 {prescription.sessionKm.min}~{prescription.sessionKm.max}km · 주{' '}
+                      {prescription.perWeek}회가 알맞아요
+                    </span>
+                  </>
+                )}
+              </p>
+            ) : (
+              <p className="mt-3 text-[11.5px] leading-relaxed text-ink-muted">
+                {assessment.missing ?? '또래 기준 분포를 받지 못해 백분위는 낼 수 없었어요.'}
+              </p>
+            )}
+          </div>
+
+          <p className="mt-4 max-w-[19rem] text-[11.5px] leading-relaxed text-ink-muted">
+            Cooper(1968) 12분 달리기 공식으로 계산했어요. 이 결과가 추천 탭의 코스 거리·경사에
+            바로 반영돼요.
+          </p>
+        </>
+      ) : (
+        /* 12분에 505m 도 못 갔다 — 공식이 다루는 구간이 아니다.
+           숫자를 억지로 내는 대신 무슨 일이 있었는지 짚는다. */
+        <p className="mt-7 max-w-[19rem] rounded-2xl bg-ink-soft px-4 py-3.5 text-[12px] leading-relaxed text-ink-muted">
+          이동 거리가 너무 짧아 심폐지구력을 계산하지 못했어요. GPS 가 안 잡혔거나 대부분 서
+          있었던 것 같아요. 기록 자체는 저장했어요.
+        </p>
+      )}
+
+      {gapSec > 0 && (
+        <p className="mt-4 max-w-[19rem] rounded-2xl border border-coral/50 px-3.5 py-2.5 text-[11.5px] leading-relaxed text-ink-muted">
+          검사 중 약 {formatClock(gapSec)} 동안 위치가 기록되지 않았어요. 그만큼 거리가 빠져 있어서
+          실제보다 낮게 나왔을 수 있어요 — 다시 잰다면 화면을 켜 둔 채로 해 주세요.
+        </p>
+      )}
+
+      <button
+        onClick={onMy}
+        className="mt-7 w-full max-w-[19rem] rounded-full bg-volt py-3.5 text-[14px] font-black text-ink active:scale-[0.98]"
+      >
+        내 체력 보기
+      </button>
+      <button
+        onClick={onDetail}
+        className="mt-2.5 w-full max-w-[19rem] rounded-full border border-ink-line py-3.5 text-[13px] font-semibold text-ink-muted active:scale-[0.98]"
+      >
+        기록 자세히 보기
+      </button>
     </div>
   );
 }

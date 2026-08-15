@@ -93,13 +93,39 @@ export function cooperVo2max(meters: number): number | null {
   return Number.isFinite(v) ? Math.round(v * 10) / 10 : null;
 }
 
+/** 12분 테스트 길이(초) — Cooper 프로토콜 그대로 */
+export const COOPER_TEST_SEC = 12 * 60;
+
 /** 12분 테스트로 인정할 시간 범위(초) — 오차를 감안해 조금 넉넉히 */
 const COOPER_MIN_SEC = 11 * 60 + 30;
 const COOPER_MAX_SEC = 12 * 60 + 30;
 
+/**
+ * 테스트 남은 시간(초). 아직 시작 전(startedAt=null)이면 전체 길이.
+ *
+ * 벽시계로 잰다 — 활성 시간(일시정지 제외)으로 재면 안 된다. Cooper 는
+ * '12분 동안 간 거리' 인데, 멈춘 시간을 빼 주면 신호 대기마다 시계가 서고
+ * 결국 12분보다 오래 달려 거리가 부풀려진다. 서 있었으면 그만큼 덜 간 게
+ * 맞고, 그게 이 검사가 재려는 것이다.
+ */
+export function cooperRemainingSec(startedAt: number | null, now: number): number {
+  if (startedAt == null) return COOPER_TEST_SEC;
+  const left = COOPER_TEST_SEC - (now - startedAt) / 1000;
+  return left > 0 ? left : 0;
+}
+
 /** 추정에 쓸 수 있는 러닝의 최소 조건 */
 const MIN_DURATION_SEC = 6 * 60; // 너무 짧으면 GPS 오차 비중이 커진다
 const MIN_DISTANCE_KM = 1.2;
+
+/**
+ * 사람이 낼 수 있는 VO₂max 의 하한 (fitness.ts 의 PLAUSIBLE_RANGE 와 같은 값).
+ *
+ * 여기서 한 번 더 막는 이유: 12분을 거의 걸어서 900m 를 갔다면 Cooper 공식은
+ * 8.8 을 낸다. 그 값은 평가 단계(isPlausible)에서 어차피 버려지지만, 그 전에
+ * 화면의 추정 카드에는 '내 심폐지구력 8.8' 이 그대로 찍힌다.
+ */
+const MIN_PLAUSIBLE_VO2 = 10;
 
 export interface RunSummary {
   distanceKm: number;
@@ -116,25 +142,24 @@ export interface RunSummary {
  * 만하다. 없으면 일반 기록 중 가장 좋은 노력을 Daniels 로 환산한다.
  */
 export function estimateVo2max(runs: RunSummary[]): Vo2maxEstimate | null {
-  const usable = runs.filter(
-    (r) =>
-      typeof r.durationSec === 'number' &&
-      r.durationSec >= MIN_DURATION_SEC &&
-      r.distanceKm >= MIN_DISTANCE_KM,
-  );
-  if (usable.length === 0) return null;
-
-  // 1) 12분 테스트 — 있으면 이게 가장 정확하다
-  const tests = usable.filter(
+  // 1) 12분 테스트 — 있으면 이게 가장 정확하다.
+  //
+  //    일반 기록의 최소 거리(1.2km)를 여기엔 걸지 않는다. 12분에 1.1km 밖에
+  //    못 간 사람도 자기가 직접 한 검사의 결과는 받아야 한다 — 그 사람이야말로
+  //    '지금 내 몸이 어느 정도인지' 를 알아야 할 사람이다. 대신 사람이 낼 수
+  //    있는 값의 하한을 밑돌면(=거의 걸었다면) 결과로 쓰지 않고 아래로 넘긴다.
+  const tests = runs.filter(
     (r) =>
       r.isCooperTest &&
-      r.durationSec! >= COOPER_MIN_SEC &&
-      r.durationSec! <= COOPER_MAX_SEC,
+      typeof r.durationSec === 'number' &&
+      r.durationSec >= COOPER_MIN_SEC &&
+      r.durationSec <= COOPER_MAX_SEC &&
+      r.distanceKm > 0,
   );
   if (tests.length > 0) {
     const best = tests.reduce((a, b) => (b.distanceKm > a.distanceKm ? b : a));
     const value = cooperVo2max(best.distanceKm * 1000);
-    if (value != null) {
+    if (value != null && value >= MIN_PLAUSIBLE_VO2) {
       return {
         value,
         method: 'cooper',
@@ -146,6 +171,13 @@ export function estimateVo2max(runs: RunSummary[]): Vo2maxEstimate | null {
   }
 
   // 2) 일반 기록 중 가장 좋은 노력
+  const usable = runs.filter(
+    (r) =>
+      typeof r.durationSec === 'number' &&
+      r.durationSec >= MIN_DURATION_SEC &&
+      r.distanceKm >= MIN_DISTANCE_KM,
+  );
+  if (usable.length === 0) return null;
   let best: { run: RunSummary; vdot: number } | null = null;
   for (const r of usable) {
     const vdot = danielsVdot(r.distanceKm, r.durationSec!);

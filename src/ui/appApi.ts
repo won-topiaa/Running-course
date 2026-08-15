@@ -22,6 +22,8 @@ export interface RouteView {
   cumDist?: number[];
   /** 이미 저장된 항목이면 id */
   savedId?: string;
+  /** 앱이 안내한 12분 테스트로 뛴 기록인지 */
+  isCooperTest?: boolean;
 }
 
 /** 화면 컴포넌트에 전달되는 공용 앱 API */
@@ -45,7 +47,13 @@ export interface AppApi {
   addSavedRoute: (r: SavedRoute) => void;
   removeSavedRoute: (id: string) => void;
   // 실시간 기록 / 경로 보기
-  /** planned 를 주면 그 경로를 따라 뛰는 모드로 시작한다 */
-  startRecord: (planned?: { name: string; route: RouteResult } | null) => void;
+  /**
+   * planned 를 주면 그 경로를 따라 뛰는 모드로 시작한다.
+   * cooperTest 를 주면 12분 심폐 검사 모드로 연다 (경로 없이).
+   */
+  startRecord: (
+    planned?: { name: string; route: RouteResult } | null,
+    opts?: { cooperTest?: boolean },
+  ) => void;
   viewRoute: (v: RouteView) => void;
 }

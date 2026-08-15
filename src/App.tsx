@@ -49,6 +49,8 @@ export default function App() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
   const [plannedRun, setPlannedRun] = useState<{ name: string; route: RouteResult } | null>(null);
+  // 12분 심폐 검사 모드로 기록 화면을 열었는지 (평소 기록과 다른 화면을 쓴다)
+  const [cooperTest, setCooperTest] = useState(false);
   const [routeView, setRouteView] = useState<RouteView | null>(null);
   const [storageFull, setStorageFull] = useState(false);
 
@@ -189,8 +191,12 @@ export default function App() {
       savedRoutes,
       addSavedRoute,
       removeSavedRoute,
-      startRecord: (planned) => {
-        setPlannedRun(planned ?? null);
+      startRecord: (planned, opts) => {
+        // 검사는 '12분 동안 최대한 멀리' 가 전부라 따라갈 경로가 없다.
+        // 둘 다 들어오면 검사를 우선한다 — 그쪽이 명시적 요청이다.
+        const test = opts?.cooperTest === true;
+        setCooperTest(test);
+        setPlannedRun(test ? null : (planned ?? null));
         setRecordOpen(true);
       },
       viewRoute: setRouteView,
@@ -245,9 +251,11 @@ export default function App() {
           <RecordScreen
             api={api}
             planned={plannedRun}
+            cooperTest={cooperTest}
             onClose={() => {
               setRecordOpen(false);
               setPlannedRun(null);
+              setCooperTest(false);
             }}
           />
         )}
