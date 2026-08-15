@@ -192,6 +192,12 @@ export interface ItemPercentile {
   value: number;
   /** 0~100, 클수록 좋음 */
   percentile: number;
+  /**
+   * 이 값이 실측인지 앱 추정인지.
+   * 화면에서 반드시 구분해 보여 준다 — 추정치를 실측인 척하면,
+   * 사용자는 국가 기준으로 진단받았다고 믿는다.
+   */
+  estimated?: boolean;
 }
 
 /** 체력 평가 결과 — 잴 수 없으면 전부 null 이다 */
@@ -211,6 +217,12 @@ export interface FitnessAssessment {
 export function assess(
   profile: FitnessProfile,
   norm: FitnessNorm | null,
+  /**
+   * 앱이 러닝 기록에서 추정한 값 (vo2max.ts).
+   * 사용자가 직접 넣은 실측값이 있으면 그쪽이 언제나 이긴다 — 추정은
+   * 실측을 대신하는 게 아니라 실측이 없는 사람을 위한 출발점이다.
+   */
+  estimates: Partial<Record<FitnessItem, number>> = {},
 ): FitnessAssessment {
   const none = (missing: string): FitnessAssessment => ({
     overall: null,
@@ -222,11 +234,21 @@ export function assess(
   if (!profile.sex || profile.birthYear == null) {
     return none('나이와 성별을 알려주면 같은 또래와 견줘 볼 수 있어요.');
   }
-  const measuredKeys = (Object.keys(profile.measured) as FitnessItem[]).filter((k) =>
-    Number.isFinite(profile.measured[k]),
-  );
+  // 실측 + 추정을 합치되, 겹치면 실측이 이긴다
+  const merged: Partial<Record<FitnessItem, { v: number; est: boolean }>> = {};
+  for (const [k, v] of Object.entries(estimates)) {
+    if (isKnownItem(k) && typeof v === 'number' && Number.isFinite(v)) {
+      merged[k] = { v, est: true };
+    }
+  }
+  for (const [k, v] of Object.entries(profile.measured)) {
+    if (isKnownItem(k) && typeof v === 'number' && Number.isFinite(v)) {
+      merged[k] = { v, est: false };
+    }
+  }
+  const measuredKeys = Object.keys(merged) as FitnessItem[];
   if (measuredKeys.length === 0) {
-    return none('체력인증센터 측정값을 넣으면 또래 대비 내 체력을 볼 수 있어요.');
+    return none('러닝을 몇 번 기록하거나 체력인증센터 측정값을 넣으면 또래 대비 내 체력을 볼 수 있어요.');
   }
   if (!norm) {
     return none('체력 기준 데이터를 아직 불러오지 못했어요.');
@@ -234,14 +256,14 @@ export function assess(
 
   const items: ItemPercentile[] = [];
   for (const item of measuredKeys) {
-    const value = profile.measured[item] as number;
+    const { v: value, est } = merged[item]!;
     if (!isPlausible(item, value)) continue;
     // 신뢰도는 압축본 길이(101 고정)가 아니라 원본 표본 수로 본다.
     // counts 가 없는 옛 캐시는 압축본 길이로 판정한다(예전과 같은 동작).
     const raw = norm.counts?.[item];
     if (raw != null && raw < MIN_SAMPLES) continue;
     const p = percentileOf(norm.samples[item], value, LOWER_IS_BETTER.has(item));
-    if (p != null) items.push({ item, value, percentile: p });
+    if (p != null) items.push({ item, value, percentile: p, estimated: est });
   }
   if (items.length === 0) {
     return none('넣어 주신 항목은 기준 표본이 모자라 비교하지 못했어요.');

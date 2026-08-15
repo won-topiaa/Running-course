@@ -16,6 +16,8 @@ import {
   type RunPrescription,
 } from './fitness';
 import { loadFitnessNorm } from './kspoFitness';
+import { estimateVo2max, type Vo2maxEstimate } from './vo2max';
+import type { SavedRoute } from './savedRoutes';
 
 export interface FitnessState {
   /** 만 나이 — 생년을 모르면 null */
@@ -25,11 +27,18 @@ export interface FitnessState {
   prescription: RunPrescription | null;
   /** 기준 분포를 받아오는 중인지 (화면이 '불러오는 중'을 말할 수 있게) */
   loading: boolean;
+  /**
+   * 러닝 기록에서 추정한 VO₂max. 실측값이 있으면 평가에는 실측이 쓰이지만,
+   * 이 값은 화면에 '앱 추정' 으로 따로 보여 준다.
+   */
+  vo2maxEstimate: Vo2maxEstimate | null;
 }
 
 export function useFitness(
   profile: FitnessProfile,
   serviceKey: string | null,
+  /** 기록한 러닝 — VO₂max 추정 근거 */
+  savedRoutes: SavedRoute[] = [],
 ): FitnessState {
   const [norm, setNorm] = useState<FitnessNorm | null>(null);
   const [loading, setLoading] = useState(false);
@@ -39,9 +48,26 @@ export function useFitness(
   // 나이·성별이 있어야 어느 집단과 견줄지가 정해진다. 측정값이 하나도 없으면
   // 분포를 받아 봐야 쓸 데가 없으므로 호출하지 않는다 — 남의 서버를 괜히
   // 두드리지 않는다.
-  const hasMeasured = Object.values(profile.measured).some(
-    (v) => typeof v === 'number' && Number.isFinite(v) && v > 0,
+  // 러닝 기록에서 VO₂max 를 추정한다. 체력인증센터에 안 가 본 사람도
+  // 출발선에 설 수 있게 하는 경로다 (대부분이 여기 해당한다).
+  const vo2maxEstimate = useMemo(
+    () =>
+      estimateVo2max(
+        savedRoutes
+          .filter((r) => r.kind === 'recorded' && r.durationSec != null)
+          .map((r) => ({ distanceKm: r.distanceKm, durationSec: r.durationSec, at: r.createdAt })),
+      ),
+    [savedRoutes],
   );
+  const estimates = useMemo(
+    () => (vo2maxEstimate ? { vo2max: vo2maxEstimate.value } : {}),
+    [vo2maxEstimate],
+  );
+
+  const hasMeasured =
+    Object.values(profile.measured).some(
+      (v) => typeof v === 'number' && Number.isFinite(v) && v > 0,
+    ) || vo2maxEstimate != null;
   const sex = profile.sex;
 
   useEffect(() => {
@@ -64,12 +90,13 @@ export function useFitness(
   }, [sex, age, hasMeasured, serviceKey]);
 
   return useMemo(() => {
-    const assessment = assess(profile, norm);
+    const assessment = assess(profile, norm, estimates);
     return {
       age,
       assessment,
       prescription: prescribe(assessment.overall, age),
       loading,
+      vo2maxEstimate,
     };
-  }, [profile, norm, age, loading]);
+  }, [profile, norm, age, loading, estimates, vo2maxEstimate]);
 }

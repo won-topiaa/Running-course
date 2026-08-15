@@ -18,6 +18,7 @@ import {
   type Sex,
 } from '../lib/fitness';
 import type { FitnessState } from '../lib/useFitness';
+import { CONFIDENCE_LABEL } from '../lib/vo2max';
 import type { AppApi } from '../ui/appApi';
 
 /**
@@ -54,7 +55,7 @@ export default function FitnessSection({
     patch({ measured: next });
   };
 
-  const { assessment, prescription, loading } = fitness;
+  const { assessment, prescription, loading, vo2maxEstimate } = fitness;
   const thisYear = new Date().getFullYear();
 
   return (
@@ -113,7 +114,10 @@ export default function FitnessSection({
       {/* 측정값 — 체력인증센터에서 받은 결과지를 그대로 옮겨 적는다 */}
       <div className="mt-3">
         <p className="text-[11.5px] font-semibold text-espresso-muted">
-          체력인증센터 측정값 <span className="font-normal">(아는 것만 넣어도 돼요)</span>
+          체력인증센터 측정값{' '}
+          <span className="font-normal">
+            (아는 것만 넣어도 돼요{vo2maxEstimate ? ' · 넣으면 추정 대신 실측을 씁니다' : ''})
+          </span>
         </p>
         <div className="mt-1.5 grid grid-cols-2 gap-2">
           {INPUTS.map(({ item, step }) => (
@@ -135,6 +139,32 @@ export default function FitnessSection({
         </div>
       </div>
 
+      {/* 러닝 기록에서 추정한 심폐지구력.
+          실측이 아니라는 걸 눈에 띄게 적는다 — 추정치를 실측인 척하면
+          사용자는 국가 기준으로 진단받았다고 믿는다. */}
+      {vo2maxEstimate && (
+        <div className="mt-3 rounded-2xl border border-sage-600/25 bg-sage-50/60 p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[11.5px] font-bold text-sage-600">
+              내 러닝 기록으로 추정한 심폐지구력
+            </span>
+            <span className="text-[15px] font-extrabold text-sage-600">
+              {vo2maxEstimate.value}
+              <span className="ml-0.5 text-[10px] font-semibold">ml/kg/min</span>
+            </span>
+          </div>
+          <p className="mt-1 text-[10.5px] leading-relaxed text-espresso-soft">
+            {CONFIDENCE_LABEL[vo2maxEstimate.confidence]} · {vo2maxEstimate.note}
+          </p>
+          {vo2maxEstimate.method !== 'cooper' && (
+            <p className="mt-1 text-[10.5px] leading-relaxed text-espresso-soft">
+              더 정확히 재려면 <b>12분 동안 최대한 멀리</b> 달려 보세요. 그 기록이 있으면
+              Cooper 공식으로 더 정확하게 추정해요.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* 결과 — 낼 수 있으면 백분위와 처방, 못 내면 그 이유 */}
       <div className="mt-3 rounded-2xl bg-tint/70 p-3">
         {loading ? (
@@ -146,7 +176,10 @@ export default function FitnessSection({
             <div className="flex flex-wrap gap-x-3 gap-y-1">
               {assessment.items.map((it) => (
                 <span key={it.item} className="text-[11.5px] text-espresso-muted">
-                  {FITNESS_ITEM_LABEL[it.item]}{' '}
+                  {FITNESS_ITEM_LABEL[it.item]}
+                  {it.estimated && (
+                    <span className="ml-0.5 text-[10px] text-sage-600">(추정)</span>
+                  )}{' '}
                   <b className="text-espresso">상위 {100 - it.percentile}%</b>
                 </span>
               ))}
@@ -170,8 +203,9 @@ export default function FitnessSection({
       </div>
 
       <p className="mt-2 text-[11px] leading-relaxed text-espresso-soft">
-        가까운 국민체력100 체력인증센터에서 <b>무료로 측정</b>받을 수 있어요.
-        측정값을 넣으면 또래와 견준 내 체력과 그에 맞는 코스를 볼 수 있어요.
+        {vo2maxEstimate
+          ? '더 정확한 값은 가까운 국민체력100 체력인증센터에서 무료로 측정받을 수 있어요. 실측값을 넣으면 추정 대신 그 값을 씁니다.'
+          : '러닝을 몇 번 기록하면 그 기록으로 심폐지구력을 추정해 드려요. 국민체력100 체력인증센터에서 무료로 정확히 측정받을 수도 있어요.'}
       </p>
     </div>
   );

@@ -173,7 +173,7 @@ export default function App() {
 
   // 체력은 앱 전역의 기본 값이라 여기서 한 번만 계산한다.
   // 화면마다 부르면 같은 기준 분포를 화면 수만큼 받아 오게 된다.
-  const fitness = useFitness(settings.fitness, settings.kspoServiceKey);
+  const fitness = useFitness(settings.fitness, settings.kspoServiceKey, savedRoutes);
 
   const api: AppApi = useMemo(
     () => ({

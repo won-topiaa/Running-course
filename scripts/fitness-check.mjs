@@ -142,6 +142,33 @@ console.log('\n[응답 파싱] 쓰레기 값이 분포를 오염시키지 않는
   check(K.normFromRows([], 'male', '30대', 't').n === 0, '빈 응답이면 표본 0');
 }
 
+console.log('\n[추정 통합] 실측이 없으면 추정으로, 있으면 실측이 이긴다');
+{
+  const norm = { sex: 'male', ageBand: '30대', n: 3000, source: 'test',
+    samples: { vo2max: seq(100).map((v) => 25 + v * 0.3) },
+    counts: { vo2max: 3000 } };
+  const base = { birthYear: 1994, sex: 'male', measured: {}, measuredAt: null };
+
+  const noneA = F.assess(base, norm, {});
+  check(noneA.overall === null, '실측도 추정도 없으면 백분위 없음');
+  check(
+    noneA.missing.includes('러닝을 몇 번 기록'),
+    `추정 경로를 먼저 안내한다 ("${noneA.missing.slice(0, 30)}…")`,
+  );
+
+  const est = F.assess(base, norm, { vo2max: 45 });
+  check(est.overall != null, `추정만 있어도 백분위가 나온다 (상위 ${100 - est.overall}%)`);
+  check(est.items[0].estimated === true, '추정임을 표시한다 (estimated=true)');
+
+  const both = F.assess({ ...base, measured: { vo2max: 55 } }, norm, { vo2max: 45 });
+  check(both.items[0].value === 55, '실측과 추정이 겹치면 실측을 쓴다');
+  check(both.items[0].estimated === false, '실측은 추정 표시가 없다');
+
+  // 상식 밖 추정치는 걸러진다
+  const junk = F.assess(base, norm, { vo2max: 900 });
+  check(junk.overall === null, '상식 밖 추정치(900)는 쓰지 않는다');
+}
+
 console.log('\n[번들 데이터] 공단 API 로 수집한 실제 기준 분포');
 {
   const bundled = JSON.parse(
