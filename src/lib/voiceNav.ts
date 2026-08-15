@@ -249,6 +249,72 @@ function ensureVoices() {
   });
 }
 
+/**
+ * 음성 엔진이 실제로 소리를 냈는지.
+ *
+ * 'unknown' 은 아직 모름, 'ok' 는 한 번이라도 재생됐음, 'failed' 는 엔진이
+ * 거부했거나 응답이 없음. 화면이 이 값을 보고 '왜 조용한지' 를 말해 줄 수 있다.
+ */
+export type VoiceHealth = 'unknown' | 'ok' | 'failed';
+let health: VoiceHealth = 'unknown';
+
+export function voiceHealth(): VoiceHealth {
+  return health;
+}
+
+/**
+ * 음성 엔진 깨우기 — 반드시 사용자 탭 핸들러 '안에서 동기로' 불러야 한다.
+ *
+ * ── 왜 필요한가 ────────────────────────────────────────────────────────────
+ * iOS Safari 는 speechSynthesis 의 첫 발화가 사용자 제스처 안에서 시작되지
+ * 않으면 조용히 버린다(오류도 안 던진다). 지금까지 이 앱의 첫 발화는 GPS
+ * 측위가 들어온 뒤 effect 안에서 났다 — 제스처와 이미 끊긴 시점이라, 아이폰
+ * 사용자는 음성 버튼이 켜져 있는데도 5km 를 뛰는 내내 아무 소리도 못 들었다.
+ * 안드로이드 크롬도 자동재생 정책이 조여지면서 같은 길로 가고 있다.
+ *
+ * START 를 누르는 그 순간에 한마디를 재생해 엔진을 열어 둔다. 덤으로 사용자는
+ * 뛰기 전에 소리가 나는지 바로 알 수 있다 — 다 뛰고 나서 아는 것보다 낫다.
+ */
+export function primeVoice(text = '출발합니다'): boolean {
+  if (
+    typeof speechSynthesis === 'undefined' ||
+    typeof SpeechSynthesisUtterance === 'undefined'
+  ) {
+    health = 'failed';
+    return false;
+  }
+  // 음성을 꺼 둔 사람에게는 깨우는 한마디도 하지 않는다. 엔진은 그 사람이
+  // 음성을 켜는 순간(그것도 탭이다) toggleVoice 의 첫마디가 대신 열어 준다.
+  if (!voiceEnabled) return false;
+  voiceActive = true;
+  ensureVoices();
+  try {
+    // 이전 세션의 잔여 발화가 남아 있으면 첫마디가 묻힌다 — 다만 정말 남아
+    // 있을 때만 끊는다. speak() 와 같은 이유다(크롬 계열은 cancel 직후 같은
+    // 틱의 speak 를 삼키는 일이 있다). 하필 이 한마디가 삼켜지면 엔진이
+    // 안 열려서 그 러닝 전체가 무음이 된다 — 가장 지켜야 할 발화다.
+    if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
+    inflight = [];
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ko-KR';
+    if (!koVoice) pickKoVoice();
+    if (koVoice) u.voice = koVoice;
+    // 엔진마다 start 만 주거나 end 만 주는 경우가 있어 둘 다 성공으로 본다
+    u.onstart = () => { health = 'ok'; };
+    u.onend = () => { if (health !== 'ok') health = 'ok'; };
+    u.onerror = () => { if (health !== 'ok') health = 'failed'; };
+    speechSynthesis.resume?.();
+    speechSynthesis.speak(u);
+    // 아무 신호도 없이 조용한 경우 — iOS 가 제스처 밖 발화를 버릴 때가 이렇다.
+    // 오류조차 안 오므로 시간으로 판정한다.
+    later(4000, () => { if (health === 'unknown') health = 'failed'; });
+    return true;
+  } catch {
+    health = 'failed';
+    return false;
+  }
+}
+
 export function initVoiceNav(
   coords: LatLng[],
   cum: number[],
@@ -348,7 +414,17 @@ function speak(
     inflight = inflight.filter((t) => now - t < SPEAK_TTL_MS);
 
     if (level !== 'normal') {
-      speechSynthesis.cancel();
+      // 정말 말하고 있을 때만 끊는다.
+      //
+      // 예전엔 급한 안내마다 무조건 cancel() 을 불렀다. 크롬 계열에는
+      // cancel() 직후 같은 틱의 speak() 가 통째로 사라지는 알려진 문제가
+      // 있어서, 끊을 게 없는데 부른 cancel() 하나 때문에 정작 그 안내가
+      // 조용해질 수 있다. 조용한 상태면 끊을 이유도 없다.
+      //
+      // (한 틱 미뤄 speak 하는 우회로도 있지만 쓰지 않는다 — 급한 안내의
+      //  순서가 뒤로 밀려 '반환점 도착'·'완주' 가 제때 안 나오는 걸
+      //  검사에서 확인했다. 발화 순서를 바꾸는 값은 치르지 않는다.)
+      if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
       inflight = [];
     } else if (inflight.length >= MAX_QUEUED) {
       return false; // 이미 밀려 있다 — 지금 말해봐야 한참 뒤에 나온다
@@ -367,8 +443,9 @@ function speak(
       const i = inflight.indexOf(now);
       if (i >= 0) inflight.splice(i, 1);
     };
-    u.onend = done;
-    u.onerror = done;
+    u.onstart = () => { health = 'ok'; };
+    u.onend = () => { if (health !== 'ok') health = 'ok'; done(); };
+    u.onerror = () => { if (health !== 'ok') health = 'failed'; done(); };
     // 화면이 꺼졌다 켜지면 브라우저가 음성 엔진을 paused 로 남겨 두기도 한다.
     // 그 상태에서 speak 만 하면 소리 없이 큐에만 쌓인다 — 말하기 전에 깨운다.
     speechSynthesis.resume?.();
@@ -381,6 +458,20 @@ function speak(
   } catch {
     return false;
   }
+}
+
+/**
+ * 화면이 직접 안내를 내보내야 할 때 (12분 심폐 검사의 시작·남은 시간·종료).
+ *
+ * 검사는 최대 노력으로 뛰는 12분이라 화면을 볼 여유가 없다 — 남은 시간을
+ * 눈으로 확인하려고 속도를 늦추면 그게 곧 결과를 깎는다. 그래서 이 구간만은
+ * 소리가 본선이고 화면이 보조다.
+ *
+ * 음성 토글(voiceEnabled)은 그대로 존중한다. 끈 사람에게 검사라고 해서
+ * 말을 걸지 않는다 — 그때는 화면의 카운트다운과 진동이 대신한다.
+ */
+export function announce(text: string, opts: { urgent?: boolean } = {}): boolean {
+  return speak(text, { level: opts.urgent ? 'now' : 'normal' });
 }
 
 /**
@@ -449,7 +540,10 @@ export function tickVoiceNav(
   // ── 출발 안내 (카운트다운 → 5초 뒤 출발 안내) ─────────────────
   if (!spoke && !offRoute && !state.startAnnounced && progressIdx > 0) {
     if (state.startCountdownAt === 0) {
-      if (speak('5초 뒤 코스 출발합니다', { vibrate: false })) {
+      // '출발' 인사는 START 를 누르는 순간 primeVoice 가 이미 했다.
+      // 여기서 또 출발을 말하면 같은 말이 세 번 나온다 — 경로 안내가
+      // 곧 시작된다는 예고로 자리를 바꾼다.
+      if (speak('잠시 후 경로 안내를 시작합니다', { vibrate: false })) {
         next.startCountdownAt = Date.now();
         spoke = true;
       }
@@ -462,10 +556,10 @@ export function tickVoiceNav(
         const toFirst = firstTurn.cumM - currentM;
         said =
           toFirst > AT_TURN_M
-            ? speak(`출발. ${distLabel(Math.round(toFirst))} 앞 ${labelFor(firstTurn)}`)
-            : speak(`출발. 잠시 후 ${labelFor(firstTurn)}`);
+            ? speak(`${distLabel(Math.round(toFirst))} 앞 ${labelFor(firstTurn)}`)
+            : speak(`잠시 후 ${labelFor(firstTurn)}`);
       } else {
-        said = speak(`출발. 쭉 직진`);
+        said = speak(`쭉 직진하세요`);
       }
       if (said) {
         next.startAnnounced = true;
@@ -681,6 +775,8 @@ export function toggleVoice(state: VoiceNavState): VoiceNavState {
 /** 정리 — 컴포넌트 언마운트 시 */
 export function stopVoiceNav() {
   voiceActive = false;
+  // health 는 되돌리지 않는다 — 기기가 음성을 못 내는 사정은 기록을 끝낸다고
+  // 달라지지 않는다. 다음 러닝에서 같은 진단을 다시 하느라 헤매지 않게 둔다.
   pendingTimers.forEach(clearTimeout);
   pendingTimers.length = 0;
   inflight = [];

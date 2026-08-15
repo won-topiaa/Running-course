@@ -33,9 +33,11 @@ import type { RouteResult } from '../lib/routing';
 import type { LatLng } from '../lib/types';
 import {
   initVoiceNav,
+  primeVoice,
   tickVoiceNav,
   toggleVoice,
   stopVoiceNav,
+  voiceHealth,
   type VoiceNavState,
 } from '../lib/voiceNav';
 import type { AppApi, RouteView } from '../ui/appApi';
@@ -187,6 +189,15 @@ export default function RecordScreen({
         : tickVoiceNav(voiceNav, 0, [0], rec.distanceKm, 0, null, undefined, rec.elapsedSec);
     if (next !== voiceNav) setVoiceNav(next);
   }, [idx, rec.distanceKm]);
+
+  // 음성이 실제로 나오는지 — START 때 깨운 한마디가 재생됐는지로 판정한다.
+  // 안 나오면 뛰는 내내 조용한 이유를 화면이 말해 줘야 한다.
+  const [voiceBad, setVoiceBad] = useState(false);
+  useEffect(() => {
+    if (rec.status !== 'recording' && rec.status !== 'paused') return;
+    const id = setInterval(() => setVoiceBad(voiceHealth() === 'failed'), 1000);
+    return () => clearInterval(id);
+  }, [rec.status]);
 
   // 지나온 구간은 경사 색상, 남은 구간은 눈금(점선)
   const { traveled, remainPath, remainM, ratio } = useMemo(() => {
@@ -510,6 +521,19 @@ export default function RecordScreen({
               </p>
             )}
 
+            {/* 음성 버튼은 켜져 있는데 엔진이 소리를 못 내는 상태.
+                말해 주지 않으면 사용자는 앱이 조용한 이유를 영영 모른다. */}
+            {/* supported 가 false 면 브라우저에 음성 기능 자체가 없다는 뜻이라
+                볼륨을 확인하라는 안내는 엉뚱하다(음성 버튼도 안 보인다).
+                '켜 뒀는데 안 들리는' 경우에만 말한다. */}
+            {voiceBad && voiceNav?.supported && voiceNav.enabled && (
+              <p className="mt-4 rounded-2xl border border-ink-line bg-ink-soft px-3 py-2.5 text-[11.5px] leading-relaxed text-white/80">
+                <b className="text-volt">음성 안내가 이 기기에서 재생되지 않아요.</b>{' '}
+                볼륨과 무음(벨소리) 스위치를 확인해 주세요. 이어폰을 쓰는 중이면 연결도 함께
+                봐 주세요. 거리·시간 기록은 그대로 됩니다.
+              </p>
+            )}
+
             {rec.gapSec > 0 && (
               <p className="mt-4 rounded-2xl border border-coral/50 bg-coral-50 px-3 py-2.5 text-[11.5px] leading-relaxed text-espresso">
                 <b className="text-coral-600">
@@ -654,6 +678,11 @@ function StartPanel({
       ) : (
         <button
           onClick={() => {
+            // 출발 인사이자 음성 엔진을 여는 한마디다. iOS 는 제스처 밖에서
+            // 시작된 첫 발화를 조용히 버리므로 반드시 이 자리(탭 핸들러 안)여야
+            // 한다. 자유 러닝은 여기 말고는 1km 이정표까지 안내가 없어서,
+            // 이 한마디가 '음성이 살아 있다' 는 유일한 신호이기도 하다.
+            primeVoice('출발합니다');
             clearInProgress(); // 새로 시작하면 지난 복구본은 치운다
             onStart();
           }}
@@ -671,7 +700,10 @@ function StartPanel({
       </p>
 
       <button
-        onClick={() => rec.startDemo(planned?.route.coords)}
+        onClick={() => {
+          primeVoice('출발합니다');
+          rec.startDemo(planned?.route.coords);
+        }}
         className="mt-6 inline-flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-muted active:scale-95"
       >
         <Zap size={13} /> GPS 없이 데모
