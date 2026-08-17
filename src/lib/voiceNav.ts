@@ -296,26 +296,36 @@ function pickKoVoice() {
   }
 }
 
+/**
+ * 준비 작업은 통째로 감싼다.
+ *
+ * 이 함수는 initVoiceNav(러닝 화면의 effect)와 primeVoice(START 버튼의 클릭
+ * 핸들러) 양쪽에서 불린다. 여기서 예외가 새어 나가면
+ *   · effect 경로: 러닝 화면이 통째로 오류 화면으로 떨어진다
+ *   · 클릭 경로: 뒤따르는 onStart() 가 실행되지 않아 기록이 시작되지 않는다
+ * 음성은 부가 기능이라 어느 쪽도 있어선 안 된다. 실측: document.addEventListener
+ * 가 던지는 환경(일부 WebView·확장 프로그램)에서 START 가 막히는 걸 확인했다.
+ */
 function ensureVoices() {
   if (voicesBound || typeof speechSynthesis === 'undefined') return;
   voicesBound = true;
-  pickKoVoice();
   try {
+    pickKoVoice();
     speechSynthesis.addEventListener?.('voiceschanged', pickKoVoice);
-  } catch {
-    /* 이벤트 등록 실패 — 첫 발화 때 다시 고른다 */
-  }
-  // 주머니에 넣어 화면이 꺼지면(화면 유지 락이 실패할 수 있다) 브라우저가
-  // 음성 엔진을 재워버리는 경우가 있다. 돌아왔을 때 깨워 둔다.
-  document.addEventListener?.('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && voiceActive) {
-      try {
-        speechSynthesis.resume();
-      } catch {
-        /* resume 실패는 다음 발화가 대신한다 */
+    // 주머니에 넣어 화면이 꺼지면(화면 유지 락이 실패할 수 있다) 브라우저가
+    // 음성 엔진을 재워버리는 경우가 있다. 돌아왔을 때 깨워 둔다.
+    document.addEventListener?.('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && voiceActive) {
+        try {
+          speechSynthesis.resume();
+        } catch {
+          /* resume 실패는 다음 발화가 대신한다 */
+        }
       }
-    }
-  });
+    });
+  } catch {
+    /* 준비에 실패해도 발화는 시도한다 — 기본 목소리로라도 나올 수 있다 */
+  }
 }
 
 /**
@@ -356,8 +366,8 @@ export function primeVoice(text = '출발합니다'): boolean {
   // 음성을 켜는 순간(그것도 탭이다) toggleVoice 의 첫마디가 대신 열어 준다.
   if (!voiceEnabled) return false;
   voiceActive = true;
-  ensureVoices();
   try {
+    ensureVoices(); // 자체적으로 막혀 있지만, 여기도 try 안이라 이중으로 안전하다
     // 이전 세션의 잔여 발화가 남아 있으면 첫마디가 묻힌다 — 다만 정말 남아
     // 있을 때만 끊는다. speak() 와 같은 이유다(크롬 계열은 cancel 직후 같은
     // 틱의 speak 를 삼키는 일이 있다). 하필 이 한마디가 삼켜지면 엔진이

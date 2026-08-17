@@ -420,6 +420,49 @@ console.log('\n[음성 안내] 엔진 제어 — 말하고 있을 때만 끊는�
   check(ci >= 0 && si > ci, '말하는 중이면 끊고 나서 말한다 (순서 유지)');
 }
 
+console.log('\n[음성 안내] 음성이 러닝을 막지 않는가');
+{
+  // primeVoice 는 START 버튼 핸들러에서 불린다. 여기서 예외가 새면 뒤따르는
+  // onStart() 가 실행되지 않아 기록 자체가 시작되지 않는다. 일부 안드로이드
+  // WebView 는 speechSynthesis 객체는 주면서 getVoices/speak 에서 던진다.
+  const boom = () => { throw new Error('WebView 고장'); };
+  const cases = [
+    ['speak 가 던짐', { speak: boom, cancel() {}, resume() {}, getVoices: () => [], addEventListener() {} }],
+    ['getVoices 가 던짐', { speak() {}, cancel() {}, resume() {}, getVoices: boom, addEventListener() {} }],
+    ['addEventListener 가 던짐', { speak() {}, cancel() {}, resume() {}, getVoices: () => [], addEventListener: boom }],
+    ['cancel 이 던짐', { speak() {}, cancel: boom, resume() {}, getVoices: () => [], addEventListener() {}, speaking: true }],
+    ['전부 던짐', { speak: boom, cancel: boom, resume: boom, getVoices: boom, addEventListener: boom, speaking: true }],
+  ];
+  let threw = 0;
+  for (const [label, stub] of cases) {
+    globalThis.speechSynthesis = stub;
+    globalThis.document = { addEventListener() {}, visibilityState: 'visible' };
+    const V = await bundle('src/lib/voiceNav.ts', `vn-boom-${threw}.mjs`);
+    try {
+      // 러닝 화면이 실제로 밟는 두 경로 — effect(initVoiceNav)와 탭(primeVoice)
+      V.initVoiceNav([], [0]);
+      V.primeVoice('출발합니다');
+    } catch {
+      threw++;
+      console.log(`     · ${label} 에서 예외가 새어 나왔다`);
+    }
+  }
+  // document.addEventListener 가 던지는 환경 — 실측에서 START 를 막던 경로
+  {
+    globalThis.speechSynthesis = { speak() {}, cancel() {}, resume() {}, getVoices: () => [], addEventListener() {} };
+    globalThis.document = { addEventListener: boom, visibilityState: 'visible' };
+    const V = await bundle('src/lib/voiceNav.ts', 'vn-boom-doc.mjs');
+    try {
+      V.initVoiceNav([], [0]);
+      V.primeVoice('출발합니다');
+    } catch {
+      threw++;
+      console.log('     · document.addEventListener 가 던질 때 예외가 새어 나왔다');
+    }
+  }
+  check(threw === 0, `음성 엔진·문서가 던져도 음성 준비가 예외를 안 낸다 (${cases.length + 1}가지)`);
+}
+
 console.log('\n[음성 안내] 왕복·순환·자유 러닝 발화 시퀀스');
 {
   const texts = [];
