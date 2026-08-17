@@ -716,12 +716,26 @@ export function tickVoiceNav(
       }
     }
 
-    // ── 직진 반복 안내: 다음 턴까지 먼 구간에서 500m마다 ────────
+    // ── 직진 반복 안내: 다음 턴이 한참 남았을 때만 ──────────────
+    //
+    // 두 가지를 고쳤다(실측 대사 전문에서 드러났다).
+    //
+    // 1) 예전엔 다음 턴을 찾을 때 WARN_AHEAD_M(150m) 안쪽 턴을 건너뛰고
+    //    그 다음 턴까지의 거리를 쟀다. 그래서 정작 100m 앞에 턴이 있을 때
+    //    '쭉 직진하세요' 가 나갔다 — "150미터 앞 왔던 길로 되돌아갑니다"
+    //    30m 뒤에 "쭉 직진하세요" 가 이어져, 돌아서라는 건지 직진하라는
+    //    건지 헷갈렸다. 가까운 턴이야말로 직진을 말하면 안 되는 이유다.
+    //
+    // 2) 남은 턴이 아예 없으면 말하지 않는다. 이 안내의 쓸모는 '다음 지시가
+    //    올 때까지 이대로 가면 된다' 는 안심인데, 지시가 없는 코스에서는
+    //    안심시킬 것도 없다. 턴 없는 순환로 2.5km 에서 발화 12개 중 5개가
+    //    이 문장이었다 — 정보가 아니라 소음이다. 그 구간은 km 이정표와
+    //    '마지막 500미터' 가 이미 흐름을 잡아 준다.
     if (!spoke && state.startAnnounced) {
-      const nextTurnM = state.turns.find((t) => t.cumM - currentM > WARN_AHEAD_M)?.cumM;
-      const aheadToTurn = nextTurnM != null ? nextTurnM - currentM : totalDistM - currentM;
+      const nextTurn = state.turns.find((t) => t.cumM > currentM);
       if (
-        aheadToTurn > STRAIGHT_MIN_M &&
+        nextTurn &&
+        nextTurn.cumM - currentM > STRAIGHT_MIN_M &&
         currentM - next.lastStraightRemindM >= STRAIGHT_REMIND_M
       ) {
         if (speak('쭉 직진하세요', { vibrate: false })) {

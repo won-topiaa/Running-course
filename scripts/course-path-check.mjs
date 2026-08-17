@@ -537,6 +537,38 @@ console.log('\n[음성 안내] 왕복·순환·자유 러닝 발화 시퀀스');
     check(bad === 0, `모양·간격 ${total}가지에서 되돌아가기 안내가 정확히 한 번 (실패 ${bad})`);
   }
 
+  // 1-d) 직진 안내가 제자리에만 나오는가.
+  //
+  // 예전엔 다음 턴을 찾을 때 150m 안쪽 턴을 건너뛰고 그 다음 턴까지의
+  // 거리를 재서, 정작 100m 앞에 턴이 있을 때 '쭉 직진하세요' 가 나갔다 —
+  // "150미터 앞 왔던 길로 되돌아갑니다" 30m 뒤에 "쭉 직진하세요" 가 붙었다.
+  // 그리고 남은 턴이 없는 순환로에서도 500m 마다 되풀이해, 2.5km 에서
+  // 발화 12개 중 5개가 이 문장이었다.
+  {
+    // (a) 턴 예고와 턴 사이에는 직진 안내가 끼지 않는다
+    // 예고 거리는 반올림에 따라 140/150m 로 갈리므로 숫자를 못박지 않는다
+    const warnIdx = obTexts.findIndex((t) => /\d+미터 앞 왔던 길로/.test(t));
+    const doneIdx = obTexts.findIndex((t) => t.includes('여기서 돌아서'));
+    const between = warnIdx >= 0 && doneIdx > warnIdx ? obTexts.slice(warnIdx, doneIdx) : [];
+    check(
+      between.length > 0 && !between.some((t) => t.includes('쭉 직진')),
+      '되돌아가기 예고와 실행 사이에 직진 안내가 끼지 않는다',
+    );
+
+    // (b) 턴이 하나도 없는 순환로에서는 직진 안내를 되풀이하지 않는다
+    texts.length = 0;
+    const ring = [];
+    const n = 64;
+    for (let k = 0; k <= n; k++) {
+      const t = (2 * Math.PI * k) / n;
+      ring.push(P(400 * Math.cos(t), 400 * Math.sin(t)));
+    }
+    const rc = cumulativeMeters(ring);
+    drive(ring, rc, rc[rc.length - 1]);
+    const straight = texts.filter((t) => t.includes('쭉 직진')).length;
+    check(straight <= 1, `턴 없는 순환로에서 직진 안내 ${straight}회 (1회 이하)`);
+  }
+
   // 2) 순환 2.4km (사각 링) — 반환점이 없으니 절반 안내가 나온다
   const ring2 = [];
   for (let m = 0; m <= 600; m += 20) ring2.push(P(m, 0));
