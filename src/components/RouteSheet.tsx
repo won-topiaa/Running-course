@@ -14,7 +14,9 @@ import {
   X,
 } from 'lucide-react';
 import GradeElevationChart from './GradeElevationChart';
+import { repeatRoute, returnsToStart } from '../lib/routing';
 import KakaoLinkRow from './KakaoLinkRow';
+import LapPicker from './LapPicker';
 import RouteMap from './RouteMap';
 import { GRADE_COLORS, GRADE_LEGEND, RUN_STYLES } from '../lib/routeStyle';
 import { retraceInfo } from '../lib/routeColor';
@@ -47,6 +49,8 @@ export default function RouteSheet({
 }) {
   const [savedId, setSavedId] = useState<string | undefined>(view.savedId);
   const [toast, setToast] = useState<string | null>(null);
+  // 몇 바퀴 돌지 (시작점으로 돌아오는 코스에서만 고를 수 있다)
+  const [laps, setLaps] = useState(1);
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
@@ -346,15 +350,30 @@ export default function RouteSheet({
 
           {/* 이 경로 따라 뛰기 — 기록 요약에서는 이미 뛴 것이라 숨긴다 */}
           {mode !== 'summary' && (
-            <button
-              onClick={() => {
-                onClose();
-                api.startRecord({ name: view.name, route });
-              }}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-espresso py-3.5 text-[14px] font-bold text-ink active:scale-[0.98]"
-            >
-              <Play size={16} fill="currentColor" /> 이 경로 따라 뛰기
-            </button>
+            <>
+              {/* 시작점으로 돌아오는 코스만 여러 바퀴가 말이 된다 */}
+              {returnsToStart(route) && (
+                <LapPicker
+                  laps={laps}
+                  onChange={setLaps}
+                  lapKm={route.distanceKm}
+                  className="mt-4"
+                />
+              )}
+              <button
+                onClick={() => {
+                  onClose();
+                  api.startRecord({
+                    name: laps > 1 ? `${view.name} ${laps}바퀴` : view.name,
+                    route: repeatRoute(route, laps),
+                  });
+                }}
+                className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-full bg-espresso py-3.5 text-[14px] font-bold text-ink active:scale-[0.98]"
+              >
+                <Play size={16} fill="currentColor" />{' '}
+                {laps > 1 ? `${laps}바퀴 따라 뛰기` : '이 경로 따라 뛰기'}
+              </button>
+            </>
           )}
 
           {/* 카카오맵 링크 — 코스 출발점까지 길찾기 */}

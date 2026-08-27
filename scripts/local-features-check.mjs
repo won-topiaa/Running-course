@@ -303,5 +303,82 @@ check(
   '점 3개 미만은 폴리곤이 아님',
 );
 
+
+console.log('\n[길 성격] 여러 개를 함께 고를 수 있는가');
+{
+  const S = await bundle('src/lib/routeStyle.ts', 'rs-multi.mjs');
+  const R = (trailPct, softPct) => ({
+    distanceKm: 5, ascentM: 0, maxGradePct: 0, segments: [], coords: [], elevations: [],
+    way: { trailPct, softPct, roadPct: 100 - trailPct, stepsM: 0 },
+  });
+  const good = R(85, 60);   // 천변 흙산책로 — 둘 다 만족
+  const paved = R(85, 2);   // 천변 포장길
+  const dirt = R(10, 60);   // 산속 흙길이지만 신호등 많음
+  const city = R(10, 2);    // 도심 대로변
+
+  check(S.evaluatePath(good, []).score === null, "아무것도 안 고르면 이 축을 빼고 계산한다");
+  check(S.evaluatePath(good, 'any').score === null, "'any' 한 개도 같은 뜻이다 (예전 호출 방식)");
+  check(S.evaluatePath(good, 'trail').score === S.evaluatePath(good, ['trail']).score,
+    '문자열 하나와 배열 하나가 같은 점수를 낸다');
+
+  // 둘 다 고르면, 둘 다 잘하는 경로가 1등이어야 한다 — 이게 이 기능의 전부다
+  const both = (r) => S.evaluatePath(r, ['trail', 'soft']).score;
+  const ranked = [['천변 흙산책로', good], ['산속 흙길', dirt], ['천변 포장길', paved], ['도심 대로변', city]]
+    .map(([n, r]) => ({ n, s: both(r) }))
+    .sort((a, b) => b.s - a.s);
+  check(ranked[0].n === '천변 흙산책로' && ranked[3].n === '도심 대로변',
+    `둘 다 고르면 둘 다 만족하는 코스가 1등 (${ranked.map((x) => `${x.n} ${x.s.toFixed(2)}`).join(' > ')})`);
+  // 한 축만 잘하는 코스는 중간이다 — 최솟값을 쓰면 0 이 되어 순위가 무의미해진다
+  check(both(paved) > both(city) && both(paved) < both(good),
+    '한 축만 만족하면 중간 점수 (거르는 기준이 아니라 순위 가중치다)');
+  // 설명은 고른 항목 수만큼 나온다
+  check(S.evaluatePath(good, ['trail', 'soft']).reason.includes('보행자') &&
+        S.evaluatePath(good, ['trail', 'soft']).reason.includes('흙'),
+    '둘 다 고르면 설명도 둘 다 나온다');
+}
+
+console.log('\n[바퀴 수] 같은 코스를 여러 번');
+{
+  const RT = await bundle('src/lib/routing.ts', 'rt-laps.mjs');
+  const G = await bundle('src/lib/geo.ts', 'g-laps.mjs');
+  const P = (x, y) => [37.5 + y / 111320, 127.0 + x / (111320 * Math.cos((37.5 * Math.PI) / 180))];
+  const mk = (c) => RT.buildResult(c, c.map(() => 10), 'offline', [c[0]]);
+
+  const ring = [];
+  for (let k = 0; k <= 32; k++) {
+    const a = (2 * Math.PI * k) / 32;
+    ring.push(P(300 * Math.cos(a), 300 * Math.sin(a)));
+  }
+  const out = [];
+  for (let m = 0; m <= 800; m += 25) out.push(P(m, 0));
+  const back = [...out, ...out.slice(0, -1).reverse()];
+  const oneWay = [];
+  for (let m = 0; m <= 1000; m += 25) oneWay.push(P(m, m * 0.2));
+
+  const loop = mk(ring), ob = mk(back), ow = mk(oneWay);
+  check(RT.returnsToStart(loop) && RT.returnsToStart(ob), '순환·왕복은 시작점으로 돌아온다');
+  // 편도를 반복하면 끝점→시작점 순간이동 선이 생긴다. 기능이 아니라 오류다.
+  check(!RT.returnsToStart(ow), '편도는 바퀴 선택 대상이 아니다');
+
+  for (const [label, rt] of [['순환', loop], ['왕복', ob]]) {
+    for (const n of [1, 2, 3, 5]) {
+      const rep = RT.repeatRoute(rt, n);
+      const measured = G.pathLengthMeters(rep.coords) / 1000;
+      const err = Math.abs(measured - rt.distanceKm * n) / (rt.distanceKm * n);
+      check(err < 0.001, `${label} ${n}바퀴: 좌표로 잰 거리가 표기와 일치 (오차 ${(err * 100).toFixed(2)}%)`);
+      check(rep.coords.length === rep.elevations.length, `${label} ${n}바퀴: 좌표와 고도 개수가 맞는다`);
+      // 이음매에 거리 0 인 중복점이 생기면 음성 내비가 유령 턴을 잡는다
+      let zero = 0;
+      for (let i = 1; i < rep.coords.length; i++) {
+        if (G.haversineMeters(rep.coords[i - 1], rep.coords[i]) < 0.5) zero++;
+      }
+      check(zero === 0, `${label} ${n}바퀴: 이음매에 중복점이 없다`);
+    }
+  }
+  check(RT.repeatRoute(loop, 1) === loop, '1바퀴는 원본을 그대로 (쓸데없이 복사하지 않는다)');
+  check(RT.repeatRoute(loop, 0).distanceKm === loop.distanceKm, '0·음수는 1바퀴로 본다');
+  check(Math.abs(RT.repeatRoute(loop, 3).ascentM - loop.ascentM * 3) < 1e-6, '상승도 바퀴 수만큼');
+}
+
 console.log(`\n통과 ${ok.length} / 실패 ${bad.length}`);
 if (bad.length) process.exit(1);

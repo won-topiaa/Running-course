@@ -15,6 +15,7 @@ import {
   type StyleEval,
   evaluatePath,
   type PathEval,
+  type PathPrefs,
   type PathPref,
 } from './routeStyle';
 import type { LatLng } from './types';
@@ -64,7 +65,7 @@ function toBuilt(
   style: RunStyle,
   targetKm: number | null,
   label: string,
-  pathPref: PathPref = 'any',
+  pathPref: PathPref | PathPrefs = 'any',
 ): BuiltRoute {
   const styleEval = evaluateStyle(route, style);
   const pathEval = evaluatePath(route, pathPref);
@@ -142,7 +143,7 @@ async function settleBuilt(
   style: RunStyle,
   targetKm: number | null,
   labels: string[],
-  pathPref: PathPref = 'any',
+  pathPref: PathPref | PathPrefs = 'any',
 ): Promise<BuiltRoute[]> {
   const settled = await Promise.allSettled(jobs);
   const built: BuiltRoute[] = [];
@@ -162,7 +163,7 @@ export interface PinBuildOptions {
   /** 마지막에 시작점으로 되돌아오는 순환 코스로 만들지 */
   loop?: boolean;
   /** 길 성격 취향 (신호등 적은 길 등) */
-  pathPref?: PathPref;
+  pathPref?: PathPref | PathPrefs;
 }
 
 /**
@@ -203,7 +204,7 @@ export interface DistanceBuildOptions {
   /** true 면 시작점으로 돌아오지 않는 편도 코스 */
   oneWay?: boolean;
   /** 길 성격 취향 (신호등 적은 길 등) */
-  pathPref?: PathPref;
+  pathPref?: PathPref | PathPrefs;
 }
 
 const DIRECTION_NAMES = ['북', '북동', '동', '남동', '남', '남서', '서', '북서'];

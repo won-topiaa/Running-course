@@ -69,8 +69,27 @@ export const PATH_PREFS: { id: PathPref; label: string; desc: string; emoji: str
   { id: 'soft', label: '흙길·트레일', desc: '포장 대신 흙·자갈 노면으로', emoji: '🍂' },
 ];
 
+/**
+ * 고른 길 성격들. 빈 배열이면 '상관없음' 과 같다.
+ *
+ * 하나만 고르게 두면 "신호등에 안 걸리면서 흙길이었으면" 을 말할 수 없다 —
+ * 서울에서 그건 천변 흙산책로라는 아주 흔한 요구다. 둘은 배타적인 축이
+ * (하나는 신호등, 하나는 노면) 아니므로 함께 고를 수 있어야 한다.
+ */
+export type PathPrefs = readonly PathPref[];
+
+/** 채점 대상 — 'any' 를 뺀 나머지 */
+export type ScoredPref = Exclude<PathPref, 'any'>;
+
+/** 'any' 를 걸러 실제로 채점할 항목만 남긴다 */
+export function activePrefs(pref: PathPref | PathPrefs): ScoredPref[] {
+  const list = Array.isArray(pref) ? pref : [pref];
+  return list.filter((p): p is ScoredPref => p === 'trail' || p === 'soft');
+}
+
 export interface PathEval {
-  pref: PathPref;
+  /** 실제로 채점한 항목들 (빈 배열이면 '상관없음') */
+  prefs: ScoredPref[];
   /** 0~1 — 정보를 모르면(OSRM·오프라인) null */
   score: number | null;
   reason: string | null;
@@ -80,11 +99,26 @@ export interface PathEval {
  * 길 성격 점수. way 정보가 없으면 null 을 돌려주고, 호출측은 이 축을
  * 아예 빼고 계산한다 — 모르는 걸 0점으로 두면 폴백 경로가 부당하게 밀린다.
  */
-export function evaluatePath(route: RouteResult, pref: PathPref): PathEval {
+export function evaluatePath(route: RouteResult, pref: PathPref | PathPrefs): PathEval {
   const w = route.way;
-  if (pref === 'any') return { pref, score: null, reason: null };
-  if (!w) return { pref, score: null, reason: null };
+  const prefs = activePrefs(pref);
+  if (prefs.length === 0) return { prefs, score: null, reason: null };
+  if (!w) return { prefs, score: null, reason: null };
 
+  const each = prefs.map((p) => scoreOne(route, p));
+  // 여럿 고르면 평균이다.
+  //
+  // 최솟값을 쓰면 한 축만 나빠도 0 이 되어, 서울에서 '신호등 적고 흙길' 을
+  // 둘 다 만족하는 후보가 거의 없는 탓에 순위가 통째로 무의미해진다.
+  // 이 점수는 거르는 기준이 아니라 순위를 매기는 가중치이므로, 둘 다
+  // 잘하는 경로가 자연히 위로 오는 평균이 맞다.
+  const score = each.reduce((a, e) => a + e.score, 0) / each.length;
+  return { prefs, score, reason: each.map((e) => e.reason).join(' ') };
+}
+
+/** 항목 하나에 대한 점수와 설명 */
+function scoreOne(route: RouteResult, pref: ScoredPref): { score: number; reason: string } {
+  const w = route.way!;
   if (pref === 'trail') {
     // 비율을 먼저 0~1 로 누른 뒤에 계단을 깎는다. 순서를 바꾸면 보행자 길이
     // 80% 를 넘는 순간 감점이 clamp 에 먹혀 사라진다(계단 120m 가 무시됐다).
@@ -97,7 +131,7 @@ export function evaluatePath(route: RouteResult, pref: PathPref): PathEval {
         : w.trailPct >= 30
           ? `보행자 길 ${w.trailPct}%, 차도 옆 ${w.roadPct}% 가 섞여 있어요.`
           : `차도 옆이 ${w.roadPct}% 라 신호등에 자주 걸릴 수 있어요.`;
-    return { pref, score, reason };
+    return { score, reason };
   }
 
   // soft: 흙·자갈 노면 비율
@@ -108,7 +142,7 @@ export function evaluatePath(route: RouteResult, pref: PathPref): PathEval {
       : w.softPct >= 10
         ? `흙길이 ${w.softPct}% 섞여 있어요.`
         : '거의 포장길이에요.';
-  return { pref, score, reason };
+  return { score, reason };
 }
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
