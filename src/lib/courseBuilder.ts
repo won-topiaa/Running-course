@@ -82,7 +82,11 @@ function toBuilt(
   // 길 취향은 경사 취향과 같은 무게로 둔다. 둘 다 사용자가 직접 고른 축이고,
   // 한쪽만 세게 주면 '신호등 적은 길'을 골라도 순위가 안 움직이거나(0.5) 반대로
   // 경사 취향이 완전히 무시된다(0.9). 실측으로 0.7 이 두 축이 다 살아 있는 값이다.
-  if (pathEval.score != null) parts.push({ w: 0.7, v: pathEval.score });
+  //
+  // 여러 항목을 골랐으면 각각을 독립된 축으로 싣는다 — 평균 하나로 합치면
+  // 서울처럼 흙길이 드문 곳에서 '흙길' 축(전원 0 근처)이 '신호등' 축의
+  // 변별력을 반토막 내, 대로변이 1위로 올라오는 역전이 났다(베타 피드백).
+  for (const e of pathEval.each) parts.push({ w: 0.7, v: e.score });
   const rawW = parts.reduce((t, p) => t + p.w, 0);
   const rawSum = parts.reduce((t, p) => t + p.w * p.v, 0);
   // 잴 수 있는 축이 하나도 없을 수 있다 — 핀 모드(거리 목표 없음) + OSRM

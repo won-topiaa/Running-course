@@ -331,6 +331,36 @@ console.log('\n[길 성격] 여러 개를 함께 고를 수 있는가');
   // 한 축만 잘하는 코스는 중간이다 — 최솟값을 쓰면 0 이 되어 순위가 무의미해진다
   check(both(paved) > both(city) && both(paved) < both(good),
     '한 축만 만족하면 중간 점수 (거르는 기준이 아니라 순위 가중치다)');
+
+  // ── 순위 계산은 평균이 아니라 항목별(each)로 ─────────────────────────
+  // 평균 하나로 합치면 서울처럼 흙길이 드문 곳에서 '흙길' 축(전원 0 근처)이
+  // '신호등' 축의 변별력을 반토막 내, 신호등을 켰는데 대로변이 1위로
+  // 올라오는 역전이 났다(베타 피드백). courseBuilder 는 each 를 축마다
+  // 따로 싣는다 — 그 방식 그대로 재현해 역전이 사라졌는지 본다.
+  {
+    const cands = [
+      ['천변 산책로(약간 언덕)', 0.75, R(85, 3)],
+      ['대로변 평지', 1.0, R(12, 1)],
+    ];
+    const rankTop = (mode) =>
+      cands
+        .map(([n, styleScore, rt]) => {
+          const pe = S.evaluatePath(rt, ['trail', 'soft']);
+          const parts = [[0.7, styleScore], [0.3, 1.0]];
+          if (mode === 'avg') parts.push([0.7, pe.score]);
+          else for (const e of pe.each) parts.push([0.7, e.score]);
+          const w = parts.reduce((a, [x]) => a + x, 0);
+          return { n, s: parts.reduce((a, [x, v]) => a + x * v, 0) / w };
+        })
+        .sort((a, b) => b.s - a.s)[0].n;
+    check(rankTop('each') === '천변 산책로(약간 언덕)',
+      '흙길이 없는 동네에서 둘 다 켜도 신호등 축이 순위를 지킨다 (역전 수정)');
+    check(S.evaluatePath(good, ['trail', 'soft']).each.length === 2, 'each 에 항목별 점수가 실린다');
+    check(S.evaluatePath(good, []).each.length === 0, '안 고르면 each 도 비어 있다');
+    // 하나만 골랐을 때는 예전과 같은 순위여야 한다 (each 1개 = 평균과 동일)
+    const one = S.evaluatePath(good, ['trail']);
+    check(one.each.length === 1 && one.each[0].score === one.score, '단일 선택은 예전과 같은 점수');
+  }
   // 설명은 고른 항목 수만큼 나온다
   check(S.evaluatePath(good, ['trail', 'soft']).reason.includes('보행자') &&
         S.evaluatePath(good, ['trail', 'soft']).reason.includes('흙'),
