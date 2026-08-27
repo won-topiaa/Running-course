@@ -133,6 +133,11 @@ export function repeatRoute(route: RouteResult, laps: number): RouteResult {
     descentM: route.descentM * n,
     // 최대 경사는 같은 언덕을 다시 오르는 것이라 그대로다
     maxGradePct: route.maxGradePct,
+    // way 의 비율 값(trailPct·roadPct·softPct)은 한 바퀴나 N바퀴나 같은
+    // 비율이라 그대로 두지만, stepsM 은 절대 길이(m)라 바퀴 수만큼 늘어난다.
+    // 안 늘리면 계단 40m 코스를 3바퀴 돌아 실제로는 120m(끊김 경고 문턱
+    // 100m 를 넘는다)를 지나는데도 표시는 여전히 40m 로 남는다.
+    way: route.way ? { ...route.way, stepsM: route.way.stepsM * n } : route.way,
   };
 }
 

@@ -408,6 +408,17 @@ console.log('\n[바퀴 수] 같은 코스를 여러 번');
   check(RT.repeatRoute(loop, 1) === loop, '1바퀴는 원본을 그대로 (쓸데없이 복사하지 않는다)');
   check(RT.repeatRoute(loop, 0).distanceKm === loop.distanceKm, '0·음수는 1바퀴로 본다');
   check(Math.abs(RT.repeatRoute(loop, 3).ascentM - loop.ascentM * 3) < 1e-6, '상승도 바퀴 수만큼');
+
+  // way.stepsM(계단 '길이')은 비율이 아니라 절대 m 다 — 바퀴 수만큼 늘지 않으면
+  // 계단 40m 코스를 3바퀴 돌아 실제로는 120m(끊김 경고 문턱 100m 초과)를
+  // 지나는데도 표시는 40m 로 남는다. trailPct 등 비율 값은 그대로여야 한다.
+  {
+    const withSteps = { ...loop, way: { trailPct: 80, roadPct: 20, softPct: 10, stepsM: 40 } };
+    const rep3 = RT.repeatRoute(withSteps, 3);
+    check(rep3.way.stepsM === 120, `계단 길이는 바퀴 수만큼 늘어난다 (${rep3.way.stepsM}m, 기대 120m)`);
+    check(rep3.way.trailPct === 80 && rep3.way.softPct === 10,
+      '노면 비율(%)은 바퀴 수와 무관하게 그대로다');
+  }
 }
 
 console.log(`\n통과 ${ok.length} / 실패 ${bad.length}`);
