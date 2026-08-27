@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import RouteMap from '../components/RouteMap';
 import GradeElevationChart from '../components/GradeElevationChart';
+import LapPicker from '../components/LapPicker';
 import {
   buildFromDistance,
   buildFromPins,
@@ -19,7 +20,7 @@ import {
   rescoreWithGreen,
   type BuiltRoute,
 } from '../lib/courseBuilder';
-import { fallbackProvider, makeProvider, RoutingError, type RoutingProvider } from '../lib/routing';
+import { repeatRoute, returnsToStart, fallbackProvider, makeProvider, RoutingError, type RoutingProvider } from '../lib/routing';
 import {
   GRADE_LEGEND,
   GRADE_COLORS,
@@ -147,6 +148,10 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const attemptRef = useRef(0);
 
   const selected = results?.[selIdx] ?? null;
+  // 이 코스를 몇 바퀴 돌지. 후보를 바꾸면 1로 되돌린다 — 5km 에 맞춰 3바퀴로
+  // 올려 둔 값이 12km 후보에 그대로 붙으면 말없이 36km 를 뛰라는 앱이 된다.
+  const [runLaps, setRunLaps] = useState(1);
+  useEffect(() => setRunLaps(1), [results, selIdx]);
 
   // 후보 카드는 가로로 넘긴다. 세로로 쌓으면 3개가 시트 절반을 먹어서
   // 지도가 거의 안 보였다. 스크롤이 멈춘 자리의 카드가 곧 선택이다.
@@ -964,6 +969,17 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                     </div>
                   )}
 
+                  {/* 여러 바퀴 — 왕복(시작점 복귀) 코스에만 보인다.
+                      편도를 반복하면 끝점→시작점 순간이동 선이 생기므로 막는다. */}
+                  {selected && returnsToStart(selected.route) && (
+                    <LapPicker
+                      laps={runLaps}
+                      onChange={setRunLaps}
+                      lapKm={selected.route.distanceKm}
+                      className="mt-3"
+                    />
+                  )}
+
                   {/* 하단 액션 — 스크롤해도 항상 보이도록 고정.
                       보조 두 버튼은 아이콘만(정사각). 예전엔 글자까지 넣었더니
                       좁은 폰(375·360)에서 셋이 공간을 못 나눠 '이 경로로 뛰기'가
@@ -1003,13 +1019,17 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                       onClick={() =>
                         selected &&
                         api.startRecord({
-                          name: courseName(selected),
-                          route: selected.route,
+                          name:
+                            runLaps > 1
+                              ? `${courseName(selected)} ${runLaps}바퀴`
+                              : courseName(selected),
+                          route: repeatRoute(selected.route, runLaps),
                         })
                       }
                       className="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-espresso py-3.5 text-[14px] font-bold text-ink active:scale-[0.98]"
                     >
-                      <Play size={15} fill="#fff" /> 이 경로로 뛰기
+                      <Play size={15} fill="#fff" />{' '}
+                      {runLaps > 1 ? `${runLaps}바퀴 뛰기` : '이 경로로 뛰기'}
                     </button>
                   </div>
                 </>

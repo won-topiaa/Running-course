@@ -529,6 +529,22 @@ await scenario('바퀴 수 고르기', {}, async (page, _c, expect) => {
   }
 });
 
+// 17) 만들기 화면 — 추천받은 왕복 코스에서 바퀴 수를 고를 수 있는가
+//     (베타 피드백 "화면에 안 보인다" — 추천 상세에만 넣고 정작 만들기
+//      화면을 빠뜨렸었다. 외부 API 를 막아 오프라인 폴백 루프로 확인한다)
+await scenario('만들기 화면 바퀴 수', { blockExternal: true }, async (page, _c, expect) => {
+  await page.goto(base, { waitUntil: 'load' }); await settle(page);
+  await page.getByRole('button', { name: /추천받기|찾는 중/ }).first().click();
+  await page.waitForTimeout(4000); // 오프라인 폴백 라우팅 대기
+  const picker = page.getByText('바퀴 수');
+  expect(await picker.isVisible().catch(() => false), '왕복 추천 결과에 바퀴 수가 없다');
+  await page.getByRole('button', { name: '바퀴 수 늘리기' }).click();
+  await page.waitForTimeout(300);
+  const t = await page.locator('body').innerText();
+  expect(/2바퀴 뛰기/.test(t), '2바퀴로 올려도 CTA 문구가 안 바뀐다');
+  expect(/×\s*2\s*=/.test(t), '합계(× 2 =)가 안 보인다');
+});
+
 await browser.close();
 server.close();
 

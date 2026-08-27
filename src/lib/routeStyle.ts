@@ -90,9 +90,21 @@ export function activePrefs(pref: PathPref | PathPrefs): ScoredPref[] {
 export interface PathEval {
   /** 실제로 채점한 항목들 (빈 배열이면 '상관없음') */
   prefs: ScoredPref[];
-  /** 0~1 — 정보를 모르면(OSRM·오프라인) null */
+  /** 0~1 — 정보를 모르면(OSRM·오프라인) null. 항목이 여럿이면 평균(표시용) */
   score: number | null;
   reason: string | null;
+  /**
+   * 항목별 점수 — 순위 계산은 평균(score)이 아니라 이걸 쓴다.
+   *
+   * 평균 하나로 합치면 축들이 서로를 희석한다. 서울에서 흙길 비율은 후보
+   * 전원이 0 에 가까워서, '흙길' 을 함께 켜는 순간 모두의 길 점수가
+   * 반토막 나고(1.00→0.53) 변별력이 죽는다 — 그 틈에 경사·거리 축이
+   * 순위를 지배해 '신호등 적은 길' 을 켰는데 대로변이 1위로 올라왔다
+   * (실제 베타 피드백). 축마다 따로 실으면 신호 있는 축은 변별력을 그대로
+   * 지키고, 신호 없는 축은 모두의 점수를 똑같이 낮출 뿐 순위를 못 바꾼다 —
+   * 낮아진 매칭 % 는 '이 근처엔 흙길이 없다' 는 정직한 표시가 된다.
+   */
+  each: { pref: ScoredPref; score: number }[];
 }
 
 /**
@@ -102,18 +114,19 @@ export interface PathEval {
 export function evaluatePath(route: RouteResult, pref: PathPref | PathPrefs): PathEval {
   const w = route.way;
   const prefs = activePrefs(pref);
-  if (prefs.length === 0) return { prefs, score: null, reason: null };
-  if (!w) return { prefs, score: null, reason: null };
+  if (prefs.length === 0) return { prefs, score: null, reason: null, each: [] };
+  if (!w) return { prefs, score: null, reason: null, each: [] };
 
-  const each = prefs.map((p) => scoreOne(route, p));
-  // 여럿 고르면 평균이다.
-  //
-  // 최솟값을 쓰면 한 축만 나빠도 0 이 되어, 서울에서 '신호등 적고 흙길' 을
-  // 둘 다 만족하는 후보가 거의 없는 탓에 순위가 통째로 무의미해진다.
-  // 이 점수는 거르는 기준이 아니라 순위를 매기는 가중치이므로, 둘 다
-  // 잘하는 경로가 자연히 위로 오는 평균이 맞다.
-  const score = each.reduce((a, e) => a + e.score, 0) / each.length;
-  return { prefs, score, reason: each.map((e) => e.reason).join(' ') };
+  const scored = prefs.map((p) => ({ pref: p, ...scoreOne(route, p) }));
+  // score(평균)는 화면 표시용이다. 순위 계산은 each 를 항목별로 따로 싣는다 —
+  // 평균으로 합치면 신호 없는 축이 신호 있는 축을 희석한다 (each 주석 참고).
+  const score = scored.reduce((a, e) => a + e.score, 0) / scored.length;
+  return {
+    prefs,
+    score,
+    reason: scored.map((e) => e.reason).join(' '),
+    each: scored.map((e) => ({ pref: e.pref, score: e.score })),
+  };
 }
 
 /** 항목 하나에 대한 점수와 설명 */
