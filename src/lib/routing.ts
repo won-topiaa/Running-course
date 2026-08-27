@@ -79,6 +79,63 @@ export interface RouteResult {
   elevationKnown?: boolean;
 }
 
+/**
+ * 시작점으로 돌아오는 경로인가 — 여러 바퀴를 돌 수 있는지의 판단 기준.
+ *
+ * 편도 코스는 반복할 수 없다. 끝점에서 시작점으로 순간이동하는 선이 생기고,
+ * 그 직선거리가 총거리에 얹히며, 음성은 있지도 않은 길을 안내한다.
+ * 왕복·순환은 이미 제자리로 돌아오므로 그대로 이어 붙이면 된다.
+ */
+export function returnsToStart(route: RouteResult, tolM = 150): boolean {
+  const c = route.coords;
+  if (c.length < 2) return false;
+  return haversineMeters(c[0], c[c.length - 1]) <= tolM;
+}
+
+/** 여러 바퀴를 돌 때 실제로 뛰는 거리 */
+export function lapsDistanceKm(route: RouteResult, laps: number): number {
+  return route.distanceKm * Math.max(1, Math.round(laps));
+}
+
+/**
+ * 같은 코스를 여러 바퀴 이어 붙인다.
+ *
+ * "좋은 코스를 찾으면 여러 번 뛰고 싶다" 는 요청에서 나왔다. 새로 길을 찾는
+ * 게 아니라 이미 마음에 든 경로를 그대로 반복하는 것이므로, 라우터를 다시
+ * 부르지 않고 좌표를 이어 붙인다.
+ *
+ * 이음매의 중복점은 뺀다. 안 빼면 같은 자리에 점이 두 개 겹쳐 거리 0 인
+ * 구간이 생기고, 그 구간의 방위각이 무의미해져 음성 내비가 유령 턴을 잡는다
+ * (반환점 감지에서 이미 겪은 문제다).
+ *
+ * 편도 경로에는 쓰지 않는다 — returnsToStart 로 먼저 거른다.
+ */
+export function repeatRoute(route: RouteResult, laps: number): RouteResult {
+  const n = Math.max(1, Math.round(laps));
+  if (n === 1) return route;
+
+  const coords: LatLng[] = route.coords.slice();
+  const elevations: number[] = route.elevations.slice();
+  const segments: RouteSegment[] = route.segments.slice();
+  for (let i = 1; i < n; i++) {
+    coords.push(...route.coords.slice(1));
+    elevations.push(...route.elevations.slice(1));
+    segments.push(...route.segments);
+  }
+
+  return {
+    ...route,
+    coords,
+    elevations,
+    segments,
+    distanceKm: route.distanceKm * n,
+    ascentM: route.ascentM * n,
+    descentM: route.descentM * n,
+    // 최대 경사는 같은 언덕을 다시 오르는 것이라 그대로다
+    maxGradePct: route.maxGradePct,
+  };
+}
+
 export type RoutingErrorCode =
   | 'invalid_key'
   | 'rate_limit'

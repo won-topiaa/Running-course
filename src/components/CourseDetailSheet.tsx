@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import LapPicker from './LapPicker';
+import { repeatRoute, returnsToStart } from '../lib/routing';
 import { Heart, Lightbulb, MapPin, Moon, ShieldCheck, Timer, TrendingUp, X } from 'lucide-react';
 import GradeElevationChart from './GradeElevationChart';
 import KakaoLinkRow from './KakaoLinkRow';
@@ -61,6 +63,10 @@ function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose:
   // 실패하면 지도를 아예 숨긴다 — 가짜 도형을 보여주는 것보다 없는 게 낫다.
   const [real, setReal] = useState<RouteResult | null>(() => realRouteCache.get(course.id) ?? null);
   const [mapFailed, setMapFailed] = useState(false);
+  // 사용자가 오늘 몇 바퀴 뛸지. 아래의 laps 와는 다른 값이다 —
+  // 그쪽은 '이 코스의 표기 거리가 몇 바퀴로 이뤄지는가' 라는 코스의 성질이고,
+  // 이건 '내가 지금 몇 번 돌 것인가' 라는 사용자의 선택이다.
+  const [runLaps, setRunLaps] = useState(1);
 
   useEffect(() => {
     if (realRouteCache.has(course.id)) {
@@ -250,8 +256,19 @@ function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose:
             <p className="text-[12.5px] leading-relaxed text-espresso-muted">{course.tips}</p>
           </div>
 
+          {/* 여러 바퀴 — 좋은 코스를 반복해서 뛰고 싶다는 요청에서 나왔다.
+              시작점으로 돌아오는 코스에만 보인다(편도는 반복이 성립하지 않는다). */}
+          {real && returnsToStart(real) && (
+            <LapPicker
+              laps={runLaps}
+              onChange={setRunLaps}
+              lapKm={real.distanceKm}
+              className="mt-4"
+            />
+          )}
+
           {/* 액션 */}
-          <div className="mt-4 flex gap-2 pb-2">
+          <div className="mt-3 flex gap-2 pb-2">
             <button
               onClick={() => api.toggleSaved(course.id)}
               className={`flex flex-1 items-center justify-center gap-1.5 rounded-full py-3 text-[13.5px] font-semibold transition active:scale-[0.98] ${
@@ -265,13 +282,21 @@ function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose:
             <button
               onClick={() => {
                 // 실제 경로가 있으면 따라 뛰기, 아직/실패면 그 자리 자유 러닝으로 시작
-                if (real) api.startRecord({ name: course.name, route: real });
-                else api.startRecord();
+                if (real) {
+                  api.startRecord({
+                    name: runLaps > 1 ? `${course.name} ${runLaps}바퀴` : course.name,
+                    route: repeatRoute(real, runLaps),
+                  });
+                } else api.startRecord();
                 onClose();
               }}
               className="flex flex-[1.4] items-center justify-center gap-1.5 rounded-full bg-coral py-3 text-[13.5px] font-semibold text-ink shadow-warm active:scale-[0.98]"
             >
-              {real ? '이 코스 따라 뛰기' : '이 코스로 뛰기'}
+              {real
+                ? runLaps > 1
+                  ? `${runLaps}바퀴 따라 뛰기`
+                  : '이 코스 따라 뛰기'
+                : '이 코스로 뛰기'}
             </button>
           </div>
         </div>

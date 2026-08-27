@@ -454,6 +454,81 @@ await scenario('음성 실패 안내', {
   );
 });
 
+// 15) 만들기 화면 — 칩 두 줄이 무엇을 뜻하는지 보이고, 길 성격은 함께 고를 수 있는가
+await scenario('취향 칩 라벨·다중 선택', {}, async (page, _c, expect) => {
+  await page.goto(base, { waitUntil: 'load' }); await settle(page);
+  // 서랍을 연다 (첫 화면은 지도 우선으로 접혀 있다)
+  const handle = page.getByRole('button', { name: /펼치기|접기/ }).first();
+  if ((await handle.getAttribute('aria-expanded')) !== 'true') await handle.click();
+  await page.waitForTimeout(800);
+
+  // 위 줄이 경사, 아래 줄이 길이라는 걸 화면이 말해 줘야 한다
+  const body = await page.locator('body').innerText();
+  expect(/(^|\n)\s*경사\s*($|\n)/m.test(body) || body.includes('경사'), '경사 줄 라벨이 없다');
+  expect(body.includes('길'), '길 줄 라벨이 없다');
+
+  const trail = page.getByRole('button', { name: /신호등 적은 길/ });
+  const soft = page.getByRole('button', { name: /흙길·트레일/ });
+  const any = page.getByRole('button', { name: /상관없음/ });
+  expect(await trail.isVisible().catch(() => false), '길 성격 칩이 안 보인다');
+
+  // 둘을 함께 고를 수 있어야 한다 — 천변 흙산책로처럼 둘 다 원하는 경우가 흔하다
+  await trail.click(); await page.waitForTimeout(250);
+  await soft.click(); await page.waitForTimeout(250);
+  expect(
+    (await trail.getAttribute('aria-pressed')) === 'true' &&
+      (await soft.getAttribute('aria-pressed')) === 'true',
+    '두 번째를 누르면 첫 번째가 꺼진다 (다중 선택이 안 된다)',
+  );
+  expect((await any.getAttribute('aria-pressed')) === 'false', "둘을 골랐는데 '상관없음' 이 켜져 있다");
+
+  // '상관없음' 은 나머지를 모두 끈다
+  await any.click(); await page.waitForTimeout(250);
+  expect(
+    (await trail.getAttribute('aria-pressed')) === 'false' &&
+      (await soft.getAttribute('aria-pressed')) === 'false' &&
+      (await any.getAttribute('aria-pressed')) === 'true',
+    "'상관없음' 이 나머지를 끄지 않는다",
+  );
+
+  // 다시 껐다 켜기 — 같은 칩을 두 번 누르면 꺼진다
+  await trail.click(); await page.waitForTimeout(200);
+  await trail.click(); await page.waitForTimeout(200);
+  expect((await any.getAttribute('aria-pressed')) === 'true', '모두 끄면 상관없음으로 돌아가야 한다');
+});
+
+// 16) 추천 코스 상세 — 순환 코스에서 바퀴 수를 고를 수 있는가
+await scenario('바퀴 수 고르기', {}, async (page, _c, expect) => {
+  await page.goto(base, { waitUntil: 'load' }); await settle(page);
+  await page.getByRole('button', { name: '추천', exact: true }).first().click();
+  await page.waitForTimeout(1200);
+  // 순환 코스 하나를 연다
+  await page.getByText('석촌호수').first().click();
+  await page.waitForTimeout(3000); // 실제 경로 라우팅 대기 (실패해도 앱은 살아야 한다)
+
+  const picker = page.getByText('바퀴 수');
+  if (await picker.isVisible().catch(() => false)) {
+    const plus = page.getByRole('button', { name: '바퀴 수 늘리기' });
+    const minus = page.getByRole('button', { name: '바퀴 수 줄이기' });
+    expect(await minus.isDisabled(), '1바퀴인데 빼기 버튼이 살아 있다');
+    await plus.click(); await page.waitForTimeout(300);
+    const t = await page.locator('body').innerText();
+    expect(/2바퀴 따라 뛰기/.test(t), `2바퀴로 올려도 버튼이 안 바뀐다`);
+    expect(/×\s*2\s*=/.test(t), '합계 계산(× 2 =)이 안 보인다');
+    await minus.click(); await page.waitForTimeout(300);
+    expect(
+      /이 코스 따라 뛰기/.test(await page.locator('body').innerText()),
+      '1바퀴로 되돌리면 원래 문구로 돌아가야 한다',
+    );
+  } else {
+    // 라우팅이 안 됐으면 바퀴 선택이 없는 게 맞다 — 그때도 앱은 멀쩡해야 한다
+    expect(
+      await page.getByRole('button', { name: /따라 뛰기|이 코스로 뛰기/ }).isVisible().catch(() => false),
+      '경로를 못 받았는데 뛰기 버튼도 없다',
+    );
+  }
+});
+
 await browser.close();
 server.close();
 

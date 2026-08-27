@@ -85,7 +85,7 @@ let session: {
   start: LatLng;
   targetKm: number;
   style: RunStyle;
-  pathPref: PathPref;
+  pathPrefs: PathPref[];
   returnToStart: boolean;
   results: BuiltRoute[] | null;
   selIdx: number;
@@ -102,7 +102,10 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const [start, setStart] = useState<LatLng>(session?.start ?? api.settings.homeLocation);
   const [targetKm, setTargetKm] = useState(session?.targetKm ?? 5);
   const [style, setStyle] = useState<RunStyle>(session?.style ?? 'flat');
-  const [pathPref, setPathPref] = useState<PathPref>(session?.pathPref ?? 'any');
+  // 여러 개를 함께 고를 수 있다 — '신호등 적은 길' 과 '흙길·트레일' 은
+  // 서로 배타적인 축이 아니다(하나는 신호등, 하나는 노면). 천변 흙산책로처럼
+  // 둘 다 원하는 경우가 서울에서는 오히려 흔하다.
+  const [pathPrefs, setPathPrefs] = useState<PathPref[]>(session?.pathPrefs ?? []);
 
   const [results, setResults] = useState<BuiltRoute[] | null>(session?.results ?? null);
   const [selIdx, setSelIdx] = useState(session?.selIdx ?? 0);
@@ -227,7 +230,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
       start,
       targetKm,
       style,
-      pathPref,
+      pathPrefs,
       returnToStart,
       results,
       selIdx,
@@ -239,7 +242,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     start,
     targetKm,
     style,
-    pathPref,
+    pathPrefs,
     returnToStart,
     results,
     selIdx,
@@ -381,11 +384,11 @@ export default function BuildScreen({ api }: { api: AppApi }) {
 
     const build = (p: RoutingProvider): Promise<BuiltRoute[]> =>
       mode === 'pins'
-        ? buildFromPins(waypoints, style, p, { loop: returnToStart, pathPref })
+        ? buildFromPins(waypoints, style, p, { loop: returnToStart, pathPref: pathPrefs })
         : buildFromDistance(start, targetKm, style, p, {
             seedBase: attempt,
             oneWay: !returnToStart,
-            pathPref,
+            pathPref: pathPrefs,
           });
 
     // 여름(6~8월)이면 녹지 폴리곤을 경로 생성과 병렬로 가져온다.
@@ -794,8 +797,11 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                       : `세부 취향 · ${returnToStart ? '왕복' : '편도'} · ${
                           RUN_STYLE_CHOICES.find((x) => x.id === style)?.label ?? ''
                         }${
-                          pathPref !== 'any'
-                            ? ` · ${PATH_PREFS.find((x) => x.id === pathPref)?.label ?? ''}`
+                          pathPrefs.length
+                            ? ` · ${pathPrefs
+                                .map((id) => PATH_PREFS.find((x) => x.id === id)?.label ?? '')
+                                .filter(Boolean)
+                                .join('+')}`
                             : ''
                         }`}
                   </span>
@@ -1054,8 +1060,15 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                   </div>
 
                   {/* 스타일 선택 — 가로 한 줄 칩. 2×2 카드(설명 포함)는 세로로 너무 커서
-                    지도를 다 덮었다. 선택한 것의 설명만 아래 한 줄로 보여준다. */}
-                  <div className="no-scrollbar -mx-1 mt-2.5 flex gap-1 overflow-x-auto px-1 pb-0.5">
+                    지도를 다 덮었다.
+
+                    라벨은 칩 왼쪽에 세워 둔다. 위에 한 줄로 얹으면 두 줄이 늘어
+                    노치 기기에서 아래 칩이 CTA 밑으로 밀려난다(예전에 취향 설명
+                    줄을 뺀 것도 같은 이유였다). 거리 슬라이더가 이미 '거리 [—] 5km'
+                    로 같은 배치를 쓰고 있어 눈에도 익다. */}
+                  <div className="mt-2.5 grid grid-cols-[auto_1fr] items-center gap-x-2">
+                    <span className="text-[11.5px] font-bold text-espresso-muted">경사</span>
+                    <div className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5">
                     {RUN_STYLE_CHOICES.map((s) => (
                       <button
                         key={s.id}
@@ -1073,21 +1086,35 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                         {s.label}
                       </button>
                     ))}
+                    </div>
                   </div>
 
                   {/* 두 번째 취향 축 — 길 성격. 경사만으로는 대로변 5km 와
                       천변 5km 를 구분하지 못한다. ORS 가 같이 주는
                       waytype/surface 로 후보 순위를 조정한다. */}
-                  <div className="no-scrollbar -mx-1 mt-2.5 flex gap-1 overflow-x-auto px-1 pb-0.5">
-                    {PATH_PREFS.map((pp) => (
+                  <div className="mt-2.5 grid grid-cols-[auto_1fr] items-center gap-x-2">
+                    <span className="text-[11.5px] font-bold text-espresso-muted">길</span>
+                    <div className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5">
+                    {PATH_PREFS.map((pp) => {
+                      // '상관없음' 은 아무것도 안 고른 상태 그 자체다 — 따로
+                      // 켜고 끄는 값이 아니라, 나머지를 모두 끄면 켜진다.
+                      const on = pp.id === 'any' ? pathPrefs.length === 0 : pathPrefs.includes(pp.id);
+                      return (
                       <button
                         key={pp.id}
+                        aria-pressed={on}
                         onClick={() => {
-                          setPathPref(pp.id);
+                          setPathPrefs((prev) =>
+                            pp.id === 'any'
+                              ? []
+                              : prev.includes(pp.id)
+                                ? prev.filter((x) => x !== pp.id)
+                                : [...prev, pp.id],
+                          );
                           reset();
                         }}
                         className={`flex shrink-0 items-center gap-1 rounded-full border px-2 py-2 text-[12.5px] font-bold transition active:scale-95 ${
-                          pathPref === pp.id
+                          on
                             ? 'border-coral bg-coral-50 text-coral-600'
                             : 'border-line bg-paper text-espresso-muted'
                         }`}
@@ -1095,7 +1122,9 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                         <span className="text-[14px]">{pp.emoji}</span>
                         {pp.label}
                       </button>
-                    ))}
+                      );
+                    })}
+                    </div>
                   </div>
                   {/* 취향 설명 줄은 뺐다. 노치·홈바가 있는 실기기에서는 그 한 줄이
                       들어가면 길 성격 칩(신호등 적은 길·흙길 등)이 CTA 아래로 밀려나,
