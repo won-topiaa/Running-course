@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import LapPicker from './LapPicker';
+import CongestionBadge from './CongestionBadge';
 import NearbyFacilities from './NearbyFacilities';
 import { repeatRoute, returnsToStart } from '../lib/routing';
 import { Heart, Lightbulb, MapPin, Moon, ShieldCheck, Timer, TrendingUp, X } from 'lucide-react';
@@ -246,6 +247,11 @@ function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose:
           <div className="mt-3 rounded-3xl border border-line bg-paper p-4 text-[12.5px] text-espresso-muted shadow-soft">
             <span className="font-bold text-espresso">경관 </span>
             {course.scenery.tags.join(' · ')}
+          </div>
+
+          {/* 예상 혼잡도 */}
+          <div className="mt-3">
+            <CongestionBadge path={real?.coords ?? displayCoords(course)} />
           </div>
 
           {/* 근처 공공체육시설 */}

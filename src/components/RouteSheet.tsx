@@ -16,6 +16,7 @@ import {
 import GradeElevationChart from './GradeElevationChart';
 import { repeatRoute, returnsToStart } from '../lib/routing';
 import KakaoLinkRow from './KakaoLinkRow';
+import CongestionBadge from './CongestionBadge';
 import NearbyFacilities from './NearbyFacilities';
 import LapPicker from './LapPicker';
 import RouteMap from './RouteMap';
@@ -376,6 +377,11 @@ export default function RouteSheet({
               </button>
             </>
           )}
+
+          {/* 예상 혼잡도 */}
+          <div className="mt-4">
+            <CongestionBadge path={route.coords} />
+          </div>
 
           {/* 근처 공공체육시설 */}
           <NearbyFacilities path={route.coords} className="mt-4" />

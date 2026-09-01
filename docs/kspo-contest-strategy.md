@@ -144,7 +144,18 @@
   - ExploreScreen 하단에 통합
 - **검증 테스트** (`scripts/test-counts-check.mjs`): 226개 테스트 통과
 
-#### I. 기타
+#### I. 혼잡도 추정
+- **혼잡도 모델** (`src/lib/congestion.ts`)
+  - 서울 15개 상업 핫존 + 11개 공원/하천 콰이어트존
+  - 24시간 시간대별 보정 + 주말 감쇄 (0.7)
+  - 4단계 레벨: low / moderate / high / very-high
+  - 최적 러닝 시간대 3개 추천
+- **UI 통합** (`src/components/CongestionBadge.tsx`)
+  - BuildScreen, CourseDetailSheet, RouteSheet 3곳에 표시
+  - 색상 코딩 + 시간대 추천 멘트
+- **검증 테스트** (`scripts/congestion-check.mjs`): 828개 테스트 통과
+
+#### J. 기타
 - GPS 기록, GPX 내보내기, Strava 연결
 - PWA (오프라인, 홈화면 설치, Wake Lock)
 - 인앱 피드백
@@ -166,26 +177,28 @@
 - data.go.kr에서 15107764 API 별도 신청 (현재 키는 15108938용)
 - 신청 후 `scripts/fetch-facilities.mjs` 실행하여 시드 → 실데이터 교체
 
-### 4.2 혼잡도 기반 경로 우회 (아이디어 단계)
+### 4.2 혼잡도 기반 경로 우회 — **구현 완료**
 
-**목표**: 시간대별 인구 밀집도를 반영하여 쾌적한 러닝 경로 제안
+**구현 내용**:
+- 혼잡도 추정 모델 (`src/lib/congestion.ts`)
+  - 15개 핫존 (강남역·홍대·광화문 등 상업 밀집 지역, 밀도 0.65~0.95)
+  - 11개 콰이어트존 (한강공원·서울숲·올림픽공원 등, 감쇄율 0.15~0.30)
+  - 24시간 시간대별 보정 계수 (출퇴근 피크 0.90~0.95, 새벽 0.08)
+  - 주말 보정 (0.7배)
+  - `estimateCongestion(path)` / `estimateCongestionAtPoint(center)` API
+  - 최적 시간대 추천 (`bestHours`): 혼잡도 최저 3개 시간대
+- UI 컴포넌트 (`src/components/CongestionBadge.tsx`)
+  - 색상 코딩: low=#7A9A8B, moderate=#E8A753, high=#EF7A3C, very-high=#EF5A3C
+  - 시간대 추천 멘트 자동 생성
+  - BuildScreen, CourseDetailSheet, RouteSheet 3개 화면에 통합
+- 검증 테스트 (`scripts/congestion-check.mjs`): 828개 테스트 통과
+  - 핫존 15개 × 밀도 범위 검증, 콰이어트존 감쇄 검증
+  - 시간대별 보정 24시간, 주말/평일 비교
+  - 경로 기반 추정 (강남 9am=high, 강남 4am=low, 한강공원=low)
+  - 레벨 경계값, 빈 경로, 최적 시간대, 점수 범위(720 조합)
 
-**가능한 데이터 소스**:
-- 서울시 생활인구 데이터 (공공데이터)
-- 행정안전부 주민등록 인구통계
-- 통신사 유동인구 (비공공, 제한적)
-
-**구현 아이디어**:
-- 시간대별 혼잡 구간 회피 가중치
-- 야간 러닝 시 조명 밀집 구간 선호
-- "한적한 코스" 성격 축 추가
-
-**기대 효과**:
-- 독창성 점수 향상 (체력 + 환경 데이터 결합)
-- 발전가능성 점수 향상
-
-**예상 작업량**: 대 (데이터 확보 불확실, 전처리 복잡)
-**리스크**: KSPO 데이터셋이 아니므로 심사 시 가산점 제한적
+**참고**: 서울시 공공인구데이터가 아닌 공개 상권·공원 위치 기반 자체 모델.
+KSPO 데이터셋은 아니나, 체력 데이터 + 환경 데이터 결합으로 독창성·발전가능성 가산
 
 ### 4.3 측정건수 데이터 시각화 (데이터셋 15114286) — **구현 완료**
 
@@ -288,7 +301,7 @@
 - [ ] 서비스 접속 URL (GitHub Pages 배포)
 - [ ] 소스코드 (GitHub 레포)
 - [ ] 데이터 수집 스크립트 (`scripts/fetch-fitness-norm.mjs`, `scripts/fetch-facilities.mjs`, `scripts/fetch-test-counts.mjs`)
-- [ ] 검증 테스트 결과 (7개 테스트 스크립트, 921 테스트 케이스)
+- [ ] 검증 테스트 결과 (8개 테스트 스크립트, 1,749 테스트 케이스)
 - [ ] 데이터 정제 과정 문서 (이 문서 §2 참조)
 
 ### 8.3 개인정보 활용 동의서
@@ -320,4 +333,5 @@
 | `scripts/scenario-check.mjs` | 23 | Cooper 플로우, 음성 제스처, 칩 다중선택, 바퀴 선택기 |
 | `scripts/facility-check.mjs` | 272 | 시설 데이터 무결성, 좌표 검색, 경로 검색, 중복 제거 |
 | `scripts/test-counts-check.mjs` | 226 | 측정건수 추세, 연령 분포, 서울 센터 좌표, 포맷 |
-| **합계** | **921** | |
+| `scripts/congestion-check.mjs` | 828 | 핫존·콰이어트존 밀도, 시간대 보정, 경로 추정, 레벨 경계 |
+| **합계** | **1,749** | |
