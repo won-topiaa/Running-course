@@ -311,7 +311,70 @@ await scenario('오프라인 재로드(PWA)', {}, async (page, ctx, expect) => {
   expect(await page.locator('#root *').count() > 0, '오프라인 재로드 시 앱이 안 뜸');
 });
 
-// 13) 음성 — START 를 누른 그 제스처 안에서 엔진을 깨우는가
+// 13) 12분 심폐 검사 — 시작 전에 위험을 먼저 말하는가
+await scenario('12분 검사 진입 안내', {}, async (page, _c, expect) => {
+  await page.goto(base, { waitUntil: 'load' }); await settle(page);
+  await page.getByRole('button', { name: '마이', exact: true }).first().click();
+  await page.waitForTimeout(1200);
+  const enter = page.getByRole('button', { name: /12분 검사 시작/ });
+  expect(await enter.isVisible().catch(() => false), '마이 탭에 12분 검사 진입점이 없다');
+  await enter.click();
+  await page.waitForTimeout(900);
+  const body = await page.locator('body').innerText();
+  // 최대 노력으로 12분을 뛰라는 요구다. 누르자마자 시작시키기 전에
+  // 준비운동과 중단 조건을 먼저 말해야 한다.
+  expect(/몸을 푼 뒤/.test(body), '준비운동 안내가 없다');
+  expect(/심장·호흡기|어지러우면/.test(body), '중단해야 할 상황 안내가 없다');
+  // 데모로는 검사를 흉내 낼 수 없어야 한다 — 지어낸 거리로 나온 심폐지구력을
+  // 한 번 보면, 저장되지 않는다는 사실과 무관하게 자기 값으로 기억한다.
+  expect(
+    !(await page.getByRole('button', { name: /GPS 없이 데모/ }).isVisible().catch(() => false)),
+    '검사 화면에 데모 버튼이 남아 있다',
+  );
+});
+
+// 14) 12분 검사 — 12분이 지나면 스스로 끝나고 결과를 내는가
+//     실제로 12분을 기다릴 수 없으므로 페이지의 시계를 30배로 돌린다.
+//     (setInterval 은 실시간이라 틱은 정상 간격으로 돈다 — 시계만 빨리 간다)
+await scenario('12분 검사 자동 종료', {
+  geolocation: { latitude: 37.5665, longitude: 126.978, accuracy: 6 },
+  init: () => {
+    const real = Date.now.bind(Date);
+    const t0 = real();
+    Date.now = () => t0 + (real() - t0) * 30;
+  },
+}, async (page, ctx, expect) => {
+  await page.goto(base, { waitUntil: 'load' }); await settle(page);
+  await page.getByRole('button', { name: '마이', exact: true }).first().click();
+  await page.waitForTimeout(1200);
+  await page.getByRole('button', { name: /12분 검사 시작/ }).click();
+  await page.waitForTimeout(700);
+  await page.getByRole('button', { name: 'START' }).click();
+  await page.waitForTimeout(800);
+  // 30배 시계에서 12분 = 실시간 24초. 그 사이 계속 움직여 준다
+  // (한 틱 400ms ≈ 가상 12초, 위도 0.00036° ≈ 40m → 약 3.3m/s)
+  let done = false;
+  for (let i = 1; i <= 70 && !done; i++) {
+    await ctx.setGeolocation({
+      latitude: 37.5665 + i * 0.00036, longitude: 126.978, accuracy: 6,
+    });
+    await page.waitForTimeout(400);
+    done = await page.getByText('12분 심폐 검사 완료').isVisible().catch(() => false);
+  }
+  expect(done, '12분이 지나도 스스로 끝나지 않았다');
+  const body = await page.locator('body').innerText();
+  // 결과를 냈으면 VO₂max 를, 못 냈으면 왜 못 냈는지를 말해야 한다 — 둘 중 하나는 있어야 한다
+  expect(
+    /ml\/kg\/min/.test(body) || /계산하지 못했어요/.test(body),
+    '검사를 마쳤는데 결과도 이유도 없다',
+  );
+  expect(
+    await page.getByRole('button', { name: '내 체력 보기' }).isVisible().catch(() => false),
+    '결과에서 내 체력으로 가는 길이 없다',
+  );
+});
+
+// 15) 음성 — START 를 누른 그 제스처 안에서 엔진을 깨우는가
 //     iOS Safari 는 사용자 제스처 밖에서 시작된 첫 발화를 조용히 버린다.
 //     예전엔 첫 발화가 GPS 측위 뒤 effect 에서 났고(START 직후 3초간
 //     speak() 호출 0회), 그래서 아이폰에서는 끝까지 무음이었다.
@@ -356,13 +419,14 @@ await scenario('음성 엔진 제스처 활성화', {
     '제스처 안에서 시작된 발화가 없다 — iOS 가 음성 엔진을 열어 주지 않는다',
   );
   expect(v.dropped.length === 0, `버려진 발화 ${v.dropped.length}건`);
+  // 엔진이 소리를 냈으면 '재생 안 됨' 안내는 뜨지 않아야 한다
   expect(
     !(await page.getByText(/재생되지 않아요/).isVisible().catch(() => false)),
     '정상 재생인데 음성 실패 안내가 떴다',
   );
 });
 
-// 14) 음성 — 엔진이 거부하면 이유를 화면이 말해 주는가
+// 16) 음성 — 엔진이 거부하면 이유를 화면이 말해 주는가
 await scenario('음성 실패 안내', {
   geolocation: { latitude: 37.5665, longitude: 126.978, accuracy: 6 },
   init: () => {

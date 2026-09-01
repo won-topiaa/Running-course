@@ -30,6 +30,14 @@ export interface SavedRoute {
   elevations: number[];
   durationSec?: number; // 기록한 러닝에만
   /**
+   * 앱이 안내한 12분 테스트로 뛴 기록인지 (Cooper 검사).
+   *
+   * 이 표시가 있어야 VO₂max 추정이 '최대 노력이었다'고 가정할 수 있다.
+   * 평소 조깅에 그 가정을 쓰면 실제보다 훨씬 낮은 값이 나온다 —
+   * 그래서 앱이 12분을 재고 자동으로 끝낸 기록에만 붙는다.
+   */
+  isCooperTest?: boolean;
+  /**
    * 고도를 실제로 받았는지. false 면 elevations 는 전부 0 인 '모름' 이다.
    *
    * 이걸 안 실으면 저장했다 다시 열 때 '모름'이 '상승 0m·최대 0%' 라는
@@ -108,6 +116,9 @@ export function sanitizeRoutes(v: unknown): SavedRoute[] {
       typeof r.durationSec === 'number' && Number.isFinite(r.durationSec)
         ? r.durationSec
         : undefined,
+    // 저장소에서 온 값이라 무엇이든 들어올 수 있다. true 하나만 통과시킨다 —
+    // 'true' 같은 문자열도 참으로 읽히면 평소 조깅이 검사로 둔갑한다.
+    isCooperTest: r.isCooperTest === true ? true : undefined,
   }));
 }
 
@@ -173,6 +184,8 @@ export function savedFromView(v: {
   style?: RunStyle;
   source: string;
   durationSec?: number;
+  /** 12분 테스트로 뛴 기록인지 */
+  isCooperTest?: boolean;
 }): SavedRoute {
   const src: SavedRoute['source'] = v.source === 'ors' || v.source === 'osrm' || v.source === 'gps' ? v.source : 'offline';
   return compactRoute({
@@ -188,6 +201,9 @@ export function savedFromView(v: {
     coords: v.route.coords,
     elevations: v.route.elevations,
     durationSec: v.durationSec,
+    // 검사 표시는 실제로 기록한 러닝에만 붙인다. 데모는 kind 가 'built' 라
+    // 여기서 걸러진다 — 지어낸 2.4km 가 심폐지구력 42.4 로 둔갑하면 안 된다.
+    ...(v.isCooperTest && v.kind === 'recorded' ? { isCooperTest: true as const } : {}),
     // 모르는 건 모른다고 실어 보낸다 (아는 경우엔 칸을 안 만들어 용량을 아낀다)
     elevKnown: v.route.elevationKnown === false ? false : undefined,
   });

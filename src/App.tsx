@@ -1,4 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useFitness } from './lib/useFitness';
 import BottomNav, { type Screen } from './components/BottomNav';
 import InstallPrompt from './components/InstallPrompt';
 import BuildScreen from './screens/BuildScreen';
@@ -48,6 +49,8 @@ export default function App() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
   const [plannedRun, setPlannedRun] = useState<{ name: string; route: RouteResult } | null>(null);
+  // 12분 심폐 검사 모드로 기록 화면을 열었는지 (평소 기록과 다른 화면을 쓴다)
+  const [cooperTest, setCooperTest] = useState(false);
   const [routeView, setRouteView] = useState<RouteView | null>(null);
   const [storageFull, setStorageFull] = useState(false);
 
@@ -170,12 +173,17 @@ export default function App() {
     setSavedRoutes((cur) => cur.filter((r) => r.id !== id));
   }, []);
 
+  // 체력은 앱 전역의 기본 값이라 여기서 한 번만 계산한다.
+  // 화면마다 부르면 같은 기준 분포를 화면 수만큼 받아 오게 된다.
+  const fitness = useFitness(settings.fitness, settings.kspoServiceKey, savedRoutes);
+
   const api: AppApi = useMemo(
     () => ({
       nav: setScreen,
       settings,
       setSettings: setSettingsState,
       conditions,
+      fitness,
       savedIds,
       isSaved: (id) => savedIds.includes(id),
       toggleSaved,
@@ -183,13 +191,26 @@ export default function App() {
       savedRoutes,
       addSavedRoute,
       removeSavedRoute,
-      startRecord: (planned) => {
-        setPlannedRun(planned ?? null);
+      startRecord: (planned, opts) => {
+        // 검사는 '12분 동안 최대한 멀리' 가 전부라 따라갈 경로가 없다.
+        // 둘 다 들어오면 검사를 우선한다 — 그쪽이 명시적 요청이다.
+        const test = opts?.cooperTest === true;
+        setCooperTest(test);
+        setPlannedRun(test ? null : (planned ?? null));
         setRecordOpen(true);
       },
       viewRoute: setRouteView,
     }),
-    [settings, conditions, savedIds, savedRoutes, toggleSaved, addSavedRoute, removeSavedRoute],
+    [
+      settings,
+      conditions,
+      fitness,
+      savedIds,
+      savedRoutes,
+      toggleSaved,
+      addSavedRoute,
+      removeSavedRoute,
+    ],
   );
 
   return (
@@ -230,9 +251,11 @@ export default function App() {
           <RecordScreen
             api={api}
             planned={plannedRun}
+            cooperTest={cooperTest}
             onClose={() => {
               setRecordOpen(false);
               setPlannedRun(null);
+              setCooperTest(false);
             }}
           />
         )}

@@ -1,3 +1,4 @@
+import { courseFitScore, fitLabel, type RunPrescription } from './fitness';
 import {
   COURSE_TYPE_LABEL,
   ELEVATION_LABEL,
@@ -128,8 +129,27 @@ const FACTOR_ORDER: FactorKey[] = [
   'distance',
 ];
 
-/** 코스 하나에 대한 추천 결과 계산 */
-export function scoreCourse(course: Course, prefs: Preferences): Recommendation {
+/**
+ * 체력 처방이 최종 점수에 실리는 비중.
+ *
+ * 6요소(경사·취향·안전·편의·경관·거리)는 '무엇을 좋아하는가' 고, 체력은
+ * '지금 무엇을 감당할 수 있는가' 다. 취향을 덮어쓰면 안 되지만, 감당 못 할
+ * 코스를 1위로 올려서도 안 된다 — 취향 쪽을 크게 두고 체력을 얹는다.
+ */
+const FITNESS_BLEND = 0.25;
+
+/**
+ * 코스 하나에 대한 추천 결과 계산.
+ *
+ * rx(체력 처방)는 선택이지만 '켜고 끄는 기능' 이 아니다 — 체력을 아는 사용자
+ * 에게는 호출부가 언제나 넘긴다. 모르면 null 이고, 그때는 6요소만으로 낸
+ * 점수를 그대로 쓴다(모르는 축을 0점으로 두면 멀쩡한 코스가 밀린다).
+ */
+export function scoreCourse(
+  course: Course,
+  prefs: Preferences,
+  rx: RunPrescription | null = null,
+): Recommendation {
   const factors: FactorScore[] = FACTOR_ORDER.map((key) => {
     const raw = clamp01(SCORERS[key](course, prefs));
     const weight = prefs.weights[key];
@@ -144,9 +164,24 @@ export function scoreCourse(course: Course, prefs: Preferences): Recommendation 
 
   const { reasons, cautions } = explain(course, prefs, factors);
 
+  // 체력 처방을 아는 경우에만 섞는다. 섞은 뒤에도 0~100 을 벗어나지 않는다.
+  const fit = courseFitScore(course, rx);
+  const blended =
+    fit == null ? matchScore : matchScore * (1 - FITNESS_BLEND) + fit * 100 * FITNESS_BLEND;
+
+  // 왜 이 코스가 내 체력에 맞는지(혹은 왜 도전인지) 한 줄로 말해 준다.
+  const label = fitLabel(course, rx);
+  if (label) {
+    if (label.tone === 'push') {
+      cautions.push(`지금 체력 기준으로는 도전적인 코스예요 (${course.distanceKm}km).`);
+    } else if (label.tone === 'good') {
+      reasons.push('지금 체력에 맞는 거리·경사예요.');
+    }
+  }
+
   return {
     course,
-    matchScore: Math.round(matchScore),
+    matchScore: Math.round(blended),
     factors,
     reasons,
     cautions,
@@ -157,9 +192,10 @@ export function scoreCourse(course: Course, prefs: Preferences): Recommendation 
 export function recommend(
   courses: Course[],
   prefs: Preferences,
+  rx: RunPrescription | null = null,
 ): Recommendation[] {
   return courses
-    .map((c) => scoreCourse(c, prefs))
+    .map((c) => scoreCourse(c, prefs, rx))
     .sort((a, b) => b.matchScore - a.matchScore);
 }
 
