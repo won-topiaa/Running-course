@@ -24,7 +24,7 @@
 | # | 데이터셋 ID | 이름 | 활용 방식 | 상태 |
 |---|-----------|------|---------|------|
 | 1 | **15108938** | 국민체력100 체력측정결과 상세 | 연령·성별 체력 분포 (VO₂max, 악력, 유연성 등) 추출 → 백분위 기반 처방 | **구현 완료** |
-| 2 | 15114286 | 국민체력100 체력측정 건수 | 연도별 측정 추세, 연령대별 참여율 → 서비스 수요 근거 | 보고서 활용 |
+| 2 | **15114286** | 국민체력100 체력측정 건수 | 연도별 측정 추세, 연령대별 참여율 → 서비스 수요 근거 시각화 | **구현 완료** |
 | 3 | **15107764** | 공공체육시설 현황 | 시설 좌표 → 코스 근처 체육시설 안내 (출발/도착지 편의시설) | **개발 필요** |
 | 4 | 15113986 | 전국체육시설 현황 | 민간 시설 포함 → 확장 커버리지 | 보고서 활용 / 2차 개발 |
 
@@ -121,7 +121,7 @@
 - **시설 데이터** (`src/data/facilities.json`, `src/lib/facilities.ts`)
   - 서울 공공체육시설 42개소 시드 데이터 (API 키 등록 후 전체 교체 가능)
   - 데이터셋: 15107764 (공공체육시설 상세 정보)
-  - API 엔드포인트: `apis.data.go.kr/B551014/SRVC_API_SFMS_FACI/TODZ_API_SFMS_FACI`
+  - API 엔드포인트: `apis.data.go.kr/B551014/SRVC_SFMS_FACIL_INFO/TODZ_SFMS_FACIL_INFO`
   - 수집 스크립트: `scripts/fetch-facilities.mjs`
 - **근처 시설 검색** (`src/lib/facilities.ts`)
   - `findNearby()`: 좌표 반경 내 시설 검색
@@ -131,7 +131,20 @@
   - BuildScreen 결과 패널, CourseDetailSheet, RouteSheet 3곳에 표시
   - 경로 근처 500m 이내 시설 최대 4개 안내
 
-#### H. 기타
+#### H. 측정건수 데이터 시각화
+- **측정건수 데이터** (`src/data/testCounts.json`, `src/lib/testCounts.ts`)
+  - 데이터셋: 15114286 (체력인증센터 측정건수)
+  - API 엔드포인트: `apis.data.go.kr/B551014/SRVC_TODZ_NFA_TEST_CENTER_CNT/TODZ_NFA_TEST_CENTER_CNT`
+  - 수집 스크립트: `scripts/fetch-test-counts.mjs`
+  - 서울 25개 구 인증센터 시드 데이터 (API 키 등록 후 실데이터 교체)
+- **참여 현황 시각화** (`src/components/FitnessInsight.tsx`)
+  - 연도별 측정 참여 추세 (미니 바 차트)
+  - 연령대별 참여 비율 (수평 바 차트)
+  - 핵심 지표: 연간 측정건수, 전국/서울 센터 수
+  - ExploreScreen 하단에 통합
+- **검증 테스트** (`scripts/test-counts-check.mjs`): 226개 테스트 통과
+
+#### I. 기타
 - GPS 기록, GPX 내보내기, Strava 연결
 - PWA (오프라인, 홈화면 설치, Wake Lock)
 - 인앱 피드백
@@ -174,16 +187,20 @@
 **예상 작업량**: 대 (데이터 확보 불확실, 전처리 복잡)
 **리스크**: KSPO 데이터셋이 아니므로 심사 시 가산점 제한적
 
-### 4.3 측정건수 데이터 활용 (데이터셋 15114286)
+### 4.3 측정건수 데이터 시각화 (데이터셋 15114286) — **구현 완료**
 
-**목표**: 보고서에서 서비스 수요 근거로 활용
+**구현 내용**:
+- 수집 스크립트 (`scripts/fetch-test-counts.mjs`): API 키로 실행하면 실데이터 교체
+- 시드 데이터: 10개년 추세, 7개 연령대 분포, 서울 25개 구 인증센터
+- 데이터 모듈 (`src/lib/testCounts.ts`): 추세 분석, 성장률, 피크 연령대, 포맷팅
+- 시각화 컴포넌트 (`src/components/FitnessInsight.tsx`): ExploreScreen 하단
+  - 연도별 참여 추세 바 차트
+  - 연령대별 참여 비율 수평 바 차트
+  - 핵심 지표: 연간 측정건수, 전국/서울 센터 수
+- 검증 테스트 (`scripts/test-counts-check.mjs`): 226개 테스트 통과
 
-**활용 방안**:
-- 연도별 국민체력100 참여자 증가 추세 시각화
-- 연령대별 참여 비율 → 타겟 사용자층 근거
-- 지역별 참여 분포 → 서비스 확장 가능 지역
-
-**예상 작업량**: 소 (보고서용 차트/통계만)
+**남은 작업**:
+- `scripts/fetch-test-counts.mjs` 실행하여 시드 → 실데이터 교체
 
 ---
 
@@ -202,35 +219,36 @@
 ## 6. 기술 아키텍처 (데이터 흐름)
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                  data.go.kr API                         │
-│  15108938 체력측정결과 ──→ fetch-fitness-norm.mjs        │
-│  15107764 공공체육시설 ──→ (수집 스크립트 필요)           │
-└─────────────┬───────────────────────┬───────────────────┘
-              │                       │
-              ▼                       ▼
-    fitnessNorm.json            facilityData.json
-    (12코호트 × 101분위)        (좌표 + 유형) [미구현]
-              │                       │
-              ▼                       ▼
-     kspoFitness.ts              facilitiy.ts [미구현]
-     (백분위 산출)              (근처 시설 검색)
-              │                       │
-              ▼                       │
-        fitness.ts                    │
-     (처방: 거리·경사·인터벌)          │
-              │                       │
-              ▼                       ▼
-       courseBuilder.ts ◄──── routeStyle.ts
-       (후보 생성 → 랭킹)     (경로 성격 평가)
-              │
-              ▼
-        BuildScreen.tsx
-     (지도 + 추천 카드 + 시설 안내)
-              │
-              ▼
-       RecordScreen.tsx
-     (GPS 기록 + 음성 내비)
+┌──────────────────────────────────────────────────────────────┐
+│                      data.go.kr API                          │
+│  15108938 체력측정결과 ──→ fetch-fitness-norm.mjs             │
+│  15107764 공공체육시설 ──→ fetch-facilities.mjs               │
+│  15114286 측정건수     ──→ fetch-test-counts.mjs              │
+└──────┬──────────────────────┬──────────────────┬─────────────┘
+       │                      │                  │
+       ▼                      ▼                  ▼
+ fitnessNorm.json      facilities.json     testCounts.json
+ (12코호트×101분위)     (좌표+유형)         (추세+센터)
+       │                      │                  │
+       ▼                      ▼                  ▼
+  kspoFitness.ts        facilities.ts       testCounts.ts
+  (백분위 산출)         (근처 시설 검색)     (추세·분포 분석)
+       │                      │                  │
+       ▼                      │                  │
+    fitness.ts                │                  │
+  (처방: 거리·경사)            │                  │
+       │                      │                  │
+       ▼                      ▼                  ▼
+  courseBuilder.ts ◄── routeStyle.ts    FitnessInsight.tsx
+  (후보 생성→랭킹)    (경로 성격 평가)   (참여 현황 시각화)
+       │                      │                  │
+       ▼                      ▼                  ▼
+  BuildScreen.tsx ◄──── NearbyFacilities.tsx   ExploreScreen.tsx
+  (지도+추천카드)       (근처 시설 안내)       (추천코스+인사이트)
+       │
+       ▼
+  RecordScreen.tsx
+  (GPS 기록 + 음성 내비)
 ```
 
 ---
@@ -269,8 +287,8 @@
 ### 8.2 증빙자료
 - [ ] 서비스 접속 URL (GitHub Pages 배포)
 - [ ] 소스코드 (GitHub 레포)
-- [ ] 데이터 수집 스크립트 (`scripts/fetch-fitness-norm.mjs`)
-- [ ] 검증 테스트 결과 (5개 테스트 스크립트, 400+ 테스트 케이스)
+- [ ] 데이터 수집 스크립트 (`scripts/fetch-fitness-norm.mjs`, `scripts/fetch-facilities.mjs`, `scripts/fetch-test-counts.mjs`)
+- [ ] 검증 테스트 결과 (7개 테스트 스크립트, 921 테스트 케이스)
 - [ ] 데이터 정제 과정 문서 (이 문서 §2 참조)
 
 ### 8.3 개인정보 활용 동의서
@@ -301,4 +319,5 @@
 | `scripts/course-path-check.mjs` | 197 | 턴 감지(52종 조합), 직진 배치, 음성 크래시 방지 |
 | `scripts/scenario-check.mjs` | 23 | Cooper 플로우, 음성 제스처, 칩 다중선택, 바퀴 선택기 |
 | `scripts/facility-check.mjs` | 272 | 시설 데이터 무결성, 좌표 검색, 경로 검색, 중복 제거 |
-| **합계** | **695** | |
+| `scripts/test-counts-check.mjs` | 226 | 측정건수 추세, 연령 분포, 서울 센터 좌표, 포맷 |
+| **합계** | **921** | |

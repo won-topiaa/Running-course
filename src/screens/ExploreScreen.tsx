@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Moon } from 'lucide-react';
+import FitnessInsight from '../components/FitnessInsight';
 import ScenePhoto from '../components/ScenePhoto';
 import { COURSES } from '../data/courses';
 import { defaultPreferences, recommend } from '../lib/scoring';
@@ -139,6 +140,11 @@ export default function ExploreScreen({ api }: { api: AppApi }) {
         {recs.map((r, i) => (
           <RecoCard key={r.course.id} rec={r} rank={i} api={api} />
         ))}
+      </div>
+
+      {/* 국민체력100 참여 현황 — 데이터셋 15114286 활용 */}
+      <div className="mt-6">
+        <FitnessInsight />
       </div>
     </div>
   );
