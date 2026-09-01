@@ -117,7 +117,21 @@
   - iOS Safari 음성 프라이밍 (제스처 핸들러에서 첫 발화)
   - Cooper 검사 음성 큐 연동
 
-#### G. 기타
+#### G. 공공체육시설 좌표 연동
+- **시설 데이터** (`src/data/facilities.json`, `src/lib/facilities.ts`)
+  - 서울 공공체육시설 42개소 시드 데이터 (API 키 등록 후 전체 교체 가능)
+  - 데이터셋: 15107764 (공공체육시설 상세 정보)
+  - API 엔드포인트: `apis.data.go.kr/B551014/SRVC_API_SFMS_FACI/TODZ_API_SFMS_FACI`
+  - 수집 스크립트: `scripts/fetch-facilities.mjs`
+- **근처 시설 검색** (`src/lib/facilities.ts`)
+  - `findNearby()`: 좌표 반경 내 시설 검색
+  - `findNearRoute()`: 경로를 따라 시설 검색 (20개 샘플 + 시작/끝점 확대 검색)
+  - 편의시설 태그: 화장실, 주차장, 샤워실, 보관함, 트랙
+- **UI 통합** (`src/components/NearbyFacilities.tsx`)
+  - BuildScreen 결과 패널, CourseDetailSheet, RouteSheet 3곳에 표시
+  - 경로 근처 500m 이내 시설 최대 4개 안내
+
+#### H. 기타
 - GPS 기록, GPX 내보내기, Strava 연결
 - PWA (오프라인, 홈화면 설치, Wake Lock)
 - 인앱 피드백
@@ -126,23 +140,18 @@
 
 ## 4. 개발이 필요한 부분
 
-### 4.1 공공체육시설 좌표 연동 (데이터셋 15107764)
+### 4.1 공공체육시설 좌표 연동 (데이터셋 15107764) — **구현 완료**
 
-**목표**: 코스 시작/종료 지점 근처 공공체육시설(화장실, 샤워실, 음수대 등) 안내
+**구현 내용**:
+- 수집 스크립트 (`scripts/fetch-facilities.mjs`): API 키 등록 후 실행하면 전체 데이터 교체
+- 시드 데이터 42개소 (서울 25개 구 커버)
+- 시설 검색 모듈 (`src/lib/facilities.ts`): 좌표 기반 + 경로 기반 검색
+- UI 컴포넌트 (`src/components/NearbyFacilities.tsx`): 3개 화면에 통합
+- 검증 테스트 (`scripts/facility-check.mjs`): 272개 테스트 통과
 
-**구현 계획**:
-1. 체육시설 좌표 데이터 수집 (data.go.kr API)
-2. 시설 유형 분류 (실외 운동장, 체육관, 수영장, 트랙 등)
-3. 러닝에 유용한 시설 필터링 (화장실, 음수대, 샤워실, 보관함)
-4. 코스 생성 시 반경 내 시설 자동 표시
-5. 코스 추천 점수에 편의시설 접근성 반영 (보너스 점수)
-
-**기대 효과**:
-- 공공데이터 2개 데이터셋 결합 활용 (심사 가산점)
-- 실용성 점수 향상 (러너 편의)
-- 공공시설 활용 촉진이라는 공익적 가치
-
-**예상 작업량**: 중 (API 연동 + UI + 점수 반영)
+**남은 작업**:
+- data.go.kr에서 15107764 API 별도 신청 (현재 키는 15108938용)
+- 신청 후 `scripts/fetch-facilities.mjs` 실행하여 시드 → 실데이터 교체
 
 ### 4.2 혼잡도 기반 경로 우회 (아이디어 단계)
 
@@ -291,4 +300,5 @@
 | `scripts/local-features-check.mjs` | 73 | 다중선택 점수, 바퀴 반복, 경로 스타일 |
 | `scripts/course-path-check.mjs` | 197 | 턴 감지(52종 조합), 직진 배치, 음성 크래시 방지 |
 | `scripts/scenario-check.mjs` | 23 | Cooper 플로우, 음성 제스처, 칩 다중선택, 바퀴 선택기 |
-| **합계** | **423** | |
+| `scripts/facility-check.mjs` | 272 | 시설 데이터 무결성, 좌표 검색, 경로 검색, 중복 제거 |
+| **합계** | **695** | |

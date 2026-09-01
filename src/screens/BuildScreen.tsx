@@ -13,6 +13,7 @@ import {
 import RouteMap from '../components/RouteMap';
 import GradeElevationChart from '../components/GradeElevationChart';
 import LapPicker from '../components/LapPicker';
+import NearbyFacilities from '../components/NearbyFacilities';
 import {
   buildFromDistance,
   buildFromPins,
@@ -976,6 +977,14 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                       laps={runLaps}
                       onChange={setRunLaps}
                       lapKm={selected.route.distanceKm}
+                      className="mt-3"
+                    />
+                  )}
+
+                  {/* 근처 공공체육시설 */}
+                  {selected && (
+                    <NearbyFacilities
+                      path={selected.route.coords}
                       className="mt-3"
                     />
                   )}

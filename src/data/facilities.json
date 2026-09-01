@@ -1,0 +1,430 @@
+{
+  "source": "서울올림픽기념국민체육진흥공단 공공체육시설 상세 정보 (15107764)",
+  "seed": true,
+  "note": "API 키 등록 후 scripts/fetch-facilities.mjs 로 교체. 현재는 서울 주요 공공체육시설 시드 데이터.",
+  "collectedAt": "2026-09-01",
+  "region": "서울특별시",
+  "count": 42,
+  "facilities": [
+    {
+      "id": "s001",
+      "name": "잠실종합운동장",
+      "type": "운동장",
+      "district": "송파구",
+      "address": "서울특별시 송파구 올림픽로 25",
+      "lat": 37.5153,
+      "lng": 127.0734,
+      "amenities": ["restroom", "parking", "track"]
+    },
+    {
+      "id": "s002",
+      "name": "올림픽공원 체육시설",
+      "type": "다목적체육시설",
+      "district": "송파구",
+      "address": "서울특별시 송파구 올림픽로 424",
+      "lat": 37.5208,
+      "lng": 127.1214,
+      "amenities": ["restroom", "parking", "track"]
+    },
+    {
+      "id": "s003",
+      "name": "목동종합운동장",
+      "type": "운동장",
+      "district": "양천구",
+      "address": "서울특별시 양천구 안양천로 939",
+      "lat": 37.5275,
+      "lng": 126.8771,
+      "amenities": ["restroom", "parking", "track"]
+    },
+    {
+      "id": "s004",
+      "name": "서울월드컵경기장",
+      "type": "운동장",
+      "district": "마포구",
+      "address": "서울특별시 마포구 월드컵로 240",
+      "lat": 37.5683,
+      "lng": 126.8972,
+      "amenities": ["restroom", "parking"]
+    },
+    {
+      "id": "s005",
+      "name": "뚝섬한강공원 체육시설",
+      "type": "다목적체육시설",
+      "district": "성동구",
+      "address": "서울특별시 성동구 뚝섬로 273",
+      "lat": 37.5316,
+      "lng": 127.0669,
+      "amenities": ["restroom", "parking", "shower"]
+    },
+    {
+      "id": "s006",
+      "name": "여의도한강공원 체육시설",
+      "type": "다목적체육시설",
+      "district": "영등포구",
+      "address": "서울특별시 영등포구 여의동로 330",
+      "lat": 37.5284,
+      "lng": 126.9344,
+      "amenities": ["restroom", "parking", "shower"]
+    },
+    {
+      "id": "s007",
+      "name": "반포한강공원 체육시설",
+      "type": "다목적체육시설",
+      "district": "서초구",
+      "address": "서울특별시 서초구 신반포로11길 40",
+      "lat": 37.5091,
+      "lng": 126.9926,
+      "amenities": ["restroom", "parking", "shower"]
+    },
+    {
+      "id": "s008",
+      "name": "이촌한강공원 체육시설",
+      "type": "다목적체육시설",
+      "district": "용산구",
+      "address": "서울특별시 용산구 이촌로 305",
+      "lat": 37.5168,
+      "lng": 126.9723,
+      "amenities": ["restroom", "parking"]
+    },
+    {
+      "id": "s009",
+      "name": "망원한강공원 체육시설",
+      "type": "다목적체육시설",
+      "district": "마포구",
+      "address": "서울특별시 마포구 마포나루길 467",
+      "lat": 37.5556,
+      "lng": 126.8942,
+      "amenities": ["restroom", "parking"]
+    },
+    {
+      "id": "s010",
+      "name": "난지한강공원 체육시설",
+      "type": "다목적체육시설",
+      "district": "마포구",
+      "address": "서울특별시 마포구 한강난지로 162",
+      "lat": 37.5676,
+      "lng": 126.8758,
+      "amenities": ["restroom", "parking"]
+    },
+    {
+      "id": "s011",
+      "name": "잠원한강공원 체육시설",
+      "type": "다목적체육시설",
+      "district": "서초구",
+      "address": "서울특별시 서초구 잠원로 221",
+      "lat": 37.5157,
+      "lng": 127.0095,
+      "amenities": ["restroom", "parking"]
+    },
+    {
+      "id": "s012",
+      "name": "서울숲 체육시설",
+      "type": "다목적체육시설",
+      "district": "성동구",
+      "address": "서울특별시 성동구 뚝섬로 273",
+      "lat": 37.5445,
+      "lng": 127.0375,
+      "amenities": ["restroom", "parking"]
+    },
+    {
+      "id": "s013",
+      "name": "보라매공원 체육시설",
+      "type": "다목적체육시설",
+      "district": "동작구",
+      "address": "서울특별시 동작구 여의대방로20길 33",
+      "lat": 37.4937,
+      "lng": 126.9187,
+      "amenities": ["restroom", "parking", "track"]
+    },
+    {
+      "id": "s014",
+      "name": "광나루한강공원 체육시설",
+      "type": "다목적체육시설",
+      "district": "강동구",
+      "address": "서울특별시 강동구 선사로 83",
+      "lat": 37.5490,
+      "lng": 127.1025,
+      "amenities": ["restroom", "parking"]
+    },
+    {
+      "id": "s015",
+      "name": "양화한강공원 체육시설",
+      "type": "다목적체육시설",
+      "district": "영등포구",
+      "address": "서울특별시 영등포구 노들로 2",
+      "lat": 37.5361,
+      "lng": 126.9133,
+      "amenities": ["restroom", "parking"]
+    },
+    {
+      "id": "s016",
+      "name": "송파구민체육센터",
+      "type": "체력단련실",
+      "district": "송파구",
+      "address": "서울특별시 송파구 백제고분로 135",
+      "lat": 37.5048,
+      "lng": 127.1072,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s017",
+      "name": "강남구민체육센터",
+      "type": "체력단련실",
+      "district": "강남구",
+      "address": "서울특별시 강남구 밤고개로 1길 52",
+      "lat": 37.4893,
+      "lng": 127.0746,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s018",
+      "name": "마포구민체육센터",
+      "type": "체력단련실",
+      "district": "마포구",
+      "address": "서울특별시 마포구 성미산로 10",
+      "lat": 37.5577,
+      "lng": 126.9176,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s019",
+      "name": "성동구민체육센터",
+      "type": "체력단련실",
+      "district": "성동구",
+      "address": "서울특별시 성동구 고산자로 270",
+      "lat": 37.5644,
+      "lng": 127.0193,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s020",
+      "name": "서초구민체육센터",
+      "type": "체력단련실",
+      "district": "서초구",
+      "address": "서울특별시 서초구 남부순환로 2584",
+      "lat": 37.4830,
+      "lng": 127.0150,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s021",
+      "name": "용산구민체육센터",
+      "type": "체력단련실",
+      "district": "용산구",
+      "address": "서울특별시 용산구 한남대로 136",
+      "lat": 37.5314,
+      "lng": 126.9903,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s022",
+      "name": "종로구민체육센터",
+      "type": "체력단련실",
+      "district": "종로구",
+      "address": "서울특별시 종로구 종로 33길 20",
+      "lat": 37.5720,
+      "lng": 126.9920,
+      "amenities": ["restroom", "shower", "locker"]
+    },
+    {
+      "id": "s023",
+      "name": "노원구민체육센터",
+      "type": "체력단련실",
+      "district": "노원구",
+      "address": "서울특별시 노원구 동일로 1369",
+      "lat": 37.6552,
+      "lng": 127.0610,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s024",
+      "name": "중랑구민체육센터",
+      "type": "체력단련실",
+      "district": "중랑구",
+      "address": "서울특별시 중랑구 용마산로 369",
+      "lat": 37.5818,
+      "lng": 127.0850,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s025",
+      "name": "관악구민체육센터",
+      "type": "체력단련실",
+      "district": "관악구",
+      "address": "서울특별시 관악구 관악로 178",
+      "lat": 37.4780,
+      "lng": 126.9514,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s026",
+      "name": "동작구민체육센터",
+      "type": "체력단련실",
+      "district": "동작구",
+      "address": "서울특별시 동작구 상도로 369",
+      "lat": 37.4975,
+      "lng": 126.9536,
+      "amenities": ["restroom", "shower", "locker"]
+    },
+    {
+      "id": "s027",
+      "name": "강서구민체육센터",
+      "type": "체력단련실",
+      "district": "강서구",
+      "address": "서울특별시 강서구 화곡로 302",
+      "lat": 37.5506,
+      "lng": 126.8493,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s028",
+      "name": "구로구민체육센터",
+      "type": "체력단련실",
+      "district": "구로구",
+      "address": "서울특별시 구로구 구로동로 141",
+      "lat": 37.4946,
+      "lng": 126.8872,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s029",
+      "name": "광진구민체육센터",
+      "type": "체력단련실",
+      "district": "광진구",
+      "address": "서울특별시 광진구 아차산로 375",
+      "lat": 37.5469,
+      "lng": 127.0856,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s030",
+      "name": "뚝섬유수지체육공원",
+      "type": "운동장",
+      "district": "성동구",
+      "address": "서울특별시 성동구 뚝섬로 531",
+      "lat": 37.5343,
+      "lng": 127.0470,
+      "amenities": ["restroom", "parking", "track"]
+    },
+    {
+      "id": "s031",
+      "name": "남산체육시설",
+      "type": "다목적체육시설",
+      "district": "중구",
+      "address": "서울특별시 중구 소파로 105",
+      "lat": 37.5511,
+      "lng": 126.9882,
+      "amenities": ["restroom"]
+    },
+    {
+      "id": "s032",
+      "name": "강동구민체육센터",
+      "type": "체력단련실",
+      "district": "강동구",
+      "address": "서울특별시 강동구 천호대로 1073",
+      "lat": 37.5380,
+      "lng": 127.1328,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s033",
+      "name": "도봉구민체육센터",
+      "type": "체력단련실",
+      "district": "도봉구",
+      "address": "서울특별시 도봉구 도봉로 628",
+      "lat": 37.6542,
+      "lng": 127.0432,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s034",
+      "name": "은평구민체육센터",
+      "type": "체력단련실",
+      "district": "은평구",
+      "address": "서울특별시 은평구 은평로 195",
+      "lat": 37.6020,
+      "lng": 126.9296,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s035",
+      "name": "서대문구민체육센터",
+      "type": "체력단련실",
+      "district": "서대문구",
+      "address": "서울특별시 서대문구 수색로 100",
+      "lat": 37.5810,
+      "lng": 126.9089,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s036",
+      "name": "금천구민체육센터",
+      "type": "체력단련실",
+      "district": "금천구",
+      "address": "서울특별시 금천구 시흥대로 439",
+      "lat": 37.4566,
+      "lng": 126.8958,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s037",
+      "name": "동대문구민체육센터",
+      "type": "체력단련실",
+      "district": "동대문구",
+      "address": "서울특별시 동대문구 한천로 76",
+      "lat": 37.5797,
+      "lng": 127.0489,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s038",
+      "name": "성북구민체육센터",
+      "type": "체력단련실",
+      "district": "성북구",
+      "address": "서울특별시 성북구 종암로 10길 30",
+      "lat": 37.5892,
+      "lng": 127.0330,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s039",
+      "name": "강북구민체육센터",
+      "type": "체력단련실",
+      "district": "강북구",
+      "address": "서울특별시 강북구 도봉로 370",
+      "lat": 37.6350,
+      "lng": 127.0280,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s040",
+      "name": "하늘공원 체육시설",
+      "type": "다목적체육시설",
+      "district": "마포구",
+      "address": "서울특별시 마포구 하늘공원로 95",
+      "lat": 37.5713,
+      "lng": 126.8848,
+      "amenities": ["restroom", "parking"]
+    },
+    {
+      "id": "s041",
+      "name": "양천구민체육센터",
+      "type": "체력단련실",
+      "district": "양천구",
+      "address": "서울특별시 양천구 목동동로 105",
+      "lat": 37.5240,
+      "lng": 126.8670,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    },
+    {
+      "id": "s042",
+      "name": "영등포구민체육센터",
+      "type": "체력단련실",
+      "district": "영등포구",
+      "address": "서울특별시 영등포구 선유로 138",
+      "lat": 37.5210,
+      "lng": 126.8935,
+      "amenities": ["restroom", "shower", "locker", "parking"]
+    }
+  ]
+}

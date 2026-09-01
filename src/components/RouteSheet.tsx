@@ -16,6 +16,7 @@ import {
 import GradeElevationChart from './GradeElevationChart';
 import { repeatRoute, returnsToStart } from '../lib/routing';
 import KakaoLinkRow from './KakaoLinkRow';
+import NearbyFacilities from './NearbyFacilities';
 import LapPicker from './LapPicker';
 import RouteMap from './RouteMap';
 import { GRADE_COLORS, GRADE_LEGEND, RUN_STYLES } from '../lib/routeStyle';
@@ -375,6 +376,9 @@ export default function RouteSheet({
               </button>
             </>
           )}
+
+          {/* 근처 공공체육시설 */}
+          <NearbyFacilities path={route.coords} className="mt-4" />
 
           {/* 카카오맵 링크 — 코스 출발점까지 길찾기 */}
           <KakaoLinkRow name={view.name} point={route.coords[0]} className="mt-4" />
