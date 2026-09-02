@@ -27,14 +27,6 @@ const ROWS = 1000;
 const TARGET_SIDO = '서울';
 
 // 러너 관련 편의 키워드 (시설명/유형에서 추출)
-const AMENITY_KEYWORDS = {
-  shower: ['샤워', '탈의'],
-  restroom: ['화장실', '편의'],
-  parking: ['주차'],
-  locker: ['락커', '보관'],
-  track: ['트랙', '육상', '달리기'],
-};
-
 async function fetchPage(pageNo) {
   const qs = new URLSearchParams({
     serviceKey: KEY,
@@ -54,16 +46,16 @@ function parseCoord(v) {
   return Number.isFinite(n) && n !== 0 ? n : null;
 }
 
-function extractAmenities(name, type) {
-  const text = `${name} ${type}`;
-  const result = [];
-  for (const [key, keywords] of Object.entries(AMENITY_KEYWORDS)) {
-    if (keywords.some(kw => text.includes(kw))) result.push(key);
-  }
-  if (type.includes('운동장') || type.includes('축구장') || type.includes('족구장')) {
-    result.push('restroom');
-  }
-  return [...new Set(result)];
+/**
+ * 자치구. 개방 데이터의 addr_cpb_nm 이 비는 행이 있어(1,284건 중 57건)
+ * 도로명 주소에서 '○○구' 를 주워 채운다. 주소마저 비면 빈 문자열 —
+ * 없는 걸 만들어 넣지는 않는다.
+ */
+function districtOf(item) {
+  const direct = (item.addr_cpb_nm ?? '').trim();
+  if (direct) return direct;
+  const addr = `${item.faci_road_addr ?? ''} ${item.faci_lotno_addr ?? ''}`;
+  return addr.match(/([가-힣]+구)(?:\s|$)/)?.[1] ?? '';
 }
 
 async function main() {
@@ -134,11 +126,14 @@ async function main() {
     const name = (item.faci_nm ?? '').trim();
     const type = (item.ftype_nm ?? '').trim();
     const bizType = (item.fcob_nm ?? '').trim();
-    const district = (item.addr_cpb_nm ?? '').trim();
+    const district = districtOf(item);
     const addr = (item.faci_road_addr ?? '').trim();
     const isPublic = item.faci_gb_nm === '공공';
     const isNational = item.nation_yn === 'Y';
 
+    // 편의시설(화장실·샤워실 등) 필드는 이 데이터셋에 없다.
+    // 시설명에서 추측해 붙이던 걸 걷어냈다 — 축구장이라고 화장실이 있다고
+    // 단정할 근거가 없고, 그건 데이터가 아니라 지어낸 값이다.
     facilities.push({
       id: `f_${facilities.length}`,
       name,
@@ -150,7 +145,6 @@ async function main() {
       lng,
       isPublic,
       isNational,
-      amenities: extractAmenities(name, type),
     });
   }
 

@@ -1,55 +1,204 @@
 {
   "source": "서울올림픽기념국민체육진흥공단 체력인증센터 측정건수 (15114286)",
   "endpoint": "https://apis.data.go.kr/B551014/SRVC_TODZ_NFA_TEST_CENTER_CNT/TODZ_NFA_TEST_CENTER_CNT",
-  "seed": true,
-  "collectedAt": "2024-12-01",
+  "collectedAt": "2026-09-02",
   "region": "전국 / 서울",
+  "latestMonth": "202609",
+  "totalInApi": 8161,
+  "totalMeasurements": 2738202,
   "yearlyTrend": [
-    { "year": 2015, "totalTests": 121500, "centers": 98 },
-    { "year": 2016, "totalTests": 168200, "centers": 105 },
-    { "year": 2017, "totalTests": 204800, "centers": 112 },
-    { "year": 2018, "totalTests": 253600, "centers": 120 },
-    { "year": 2019, "totalTests": 312400, "centers": 131 },
-    { "year": 2020, "totalTests": 178900, "centers": 135 },
-    { "year": 2021, "totalTests": 254700, "centers": 142 },
-    { "year": 2022, "totalTests": 385200, "centers": 150 },
-    { "year": 2023, "totalTests": 456300, "centers": 157 },
-    { "year": 2024, "totalTests": 523800, "centers": 162 }
+    {
+      "year": 2010,
+      "totalTests": 7,
+      "centers": 2
+    },
+    {
+      "year": 2011,
+      "totalTests": 13,
+      "centers": 3
+    },
+    {
+      "year": 2012,
+      "totalTests": 9163,
+      "centers": 3
+    },
+    {
+      "year": 2013,
+      "totalTests": 45228,
+      "centers": 11
+    },
+    {
+      "year": 2014,
+      "totalTests": 68492,
+      "centers": 16
+    },
+    {
+      "year": 2015,
+      "totalTests": 104413,
+      "centers": 22
+    },
+    {
+      "year": 2016,
+      "totalTests": 143566,
+      "centers": 30
+    },
+    {
+      "year": 2017,
+      "totalTests": 200577,
+      "centers": 36
+    },
+    {
+      "year": 2018,
+      "totalTests": 249912,
+      "centers": 41
+    },
+    {
+      "year": 2019,
+      "totalTests": 287112,
+      "centers": 50
+    },
+    {
+      "year": 2020,
+      "totalTests": 80737,
+      "centers": 78
+    },
+    {
+      "year": 2021,
+      "totalTests": 172849,
+      "centers": 81
+    },
+    {
+      "year": 2022,
+      "totalTests": 249925,
+      "centers": 81
+    },
+    {
+      "year": 2023,
+      "totalTests": 288929,
+      "centers": 83
+    },
+    {
+      "year": 2024,
+      "totalTests": 294427,
+      "centers": 85
+    },
+    {
+      "year": 2025,
+      "totalTests": 280667,
+      "centers": 89
+    }
   ],
-  "ageDistribution": [
-    { "ageGroup": "10대", "percentage": 4.8 },
-    { "ageGroup": "20대", "percentage": 11.5 },
-    { "ageGroup": "30대", "percentage": 14.2 },
-    { "ageGroup": "40대", "percentage": 22.6 },
-    { "ageGroup": "50대", "percentage": 25.1 },
-    { "ageGroup": "60대", "percentage": 15.3 },
-    { "ageGroup": "70+", "percentage": 6.5 }
-  ],
+  "ageDistribution": [],
   "seoulCenters": [
-    { "name": "강남구 체력인증센터", "district": "강남구", "lat": 37.5172, "lng": 127.0473, "yearlyTests": 4850 },
-    { "name": "강동구 체력인증센터", "district": "강동구", "lat": 37.5301, "lng": 127.1238, "yearlyTests": 3920 },
-    { "name": "강북구 체력인증센터", "district": "강북구", "lat": 37.6396, "lng": 127.0255, "yearlyTests": 3180 },
-    { "name": "강서구 체력인증센터", "district": "강서구", "lat": 37.5509, "lng": 126.8495, "yearlyTests": 4210 },
-    { "name": "관악구 체력인증센터", "district": "관악구", "lat": 37.4783, "lng": 126.9516, "yearlyTests": 3560 },
-    { "name": "광진구 체력인증센터", "district": "광진구", "lat": 37.5384, "lng": 127.0822, "yearlyTests": 3750 },
-    { "name": "구로구 체력인증센터", "district": "구로구", "lat": 37.4954, "lng": 126.8874, "yearlyTests": 3890 },
-    { "name": "금천구 체력인증센터", "district": "금천구", "lat": 37.4568, "lng": 126.8955, "yearlyTests": 2980 },
-    { "name": "노원구 체력인증센터", "district": "노원구", "lat": 37.6542, "lng": 127.0568, "yearlyTests": 4520 },
-    { "name": "도봉구 체력인증센터", "district": "도봉구", "lat": 37.6688, "lng": 127.0471, "yearlyTests": 3340 },
-    { "name": "동대문구 체력인증센터", "district": "동대문구", "lat": 37.5744, "lng": 127.0396, "yearlyTests": 3650 },
-    { "name": "동작구 체력인증센터", "district": "동작구", "lat": 37.5124, "lng": 126.9393, "yearlyTests": 3420 },
-    { "name": "마포구 체력인증센터", "district": "마포구", "lat": 37.5663, "lng": 126.9014, "yearlyTests": 4180 },
-    { "name": "서대문구 체력인증센터", "district": "서대문구", "lat": 37.5791, "lng": 126.9368, "yearlyTests": 3290 },
-    { "name": "서초구 체력인증센터", "district": "서초구", "lat": 37.4836, "lng": 127.0327, "yearlyTests": 4630 },
-    { "name": "성동구 체력인증센터", "district": "성동구", "lat": 37.5633, "lng": 127.0371, "yearlyTests": 3510 },
-    { "name": "성북구 체력인증센터", "district": "성북구", "lat": 37.5894, "lng": 127.0167, "yearlyTests": 3870 },
-    { "name": "송파구 체력인증센터", "district": "송파구", "lat": 37.5145, "lng": 127.1059, "yearlyTests": 5120 },
-    { "name": "양천구 체력인증센터", "district": "양천구", "lat": 37.5170, "lng": 126.8665, "yearlyTests": 3980 },
-    { "name": "영등포구 체력인증센터", "district": "영등포구", "lat": 37.5264, "lng": 126.8963, "yearlyTests": 4350 },
-    { "name": "용산구 체력인증센터", "district": "용산구", "lat": 37.5322, "lng": 126.9907, "yearlyTests": 3160 },
-    { "name": "은평구 체력인증센터", "district": "은평구", "lat": 37.6176, "lng": 126.9227, "yearlyTests": 3740 },
-    { "name": "종로구 체력인증센터", "district": "종로구", "lat": 37.5735, "lng": 126.9790, "yearlyTests": 2890 },
-    { "name": "중구 체력인증센터", "district": "중구", "lat": 37.5636, "lng": 126.9976, "yearlyTests": 2760 },
-    { "name": "중랑구 체력인증센터", "district": "중랑구", "lat": 37.6063, "lng": 127.0925, "yearlyTests": 3470 }
+    {
+      "name": "성동",
+      "address": "서울특별시 성동구 왕십리로5길 3",
+      "totalTests": 65951
+    },
+    {
+      "name": "KSPO송파(출장A)",
+      "address": "서울특별시 송파구 올림픽로 424",
+      "totalTests": 64887
+    },
+    {
+      "name": "서초",
+      "address": "서울특별시 서초구 사평대로 55",
+      "totalTests": 61369
+    },
+    {
+      "name": "KSPO송파",
+      "address": "서울특별시 송파구 올림픽로 424",
+      "totalTests": 60347
+    },
+    {
+      "name": "마포",
+      "address": "서울특별시 마포구 월드컵로25길 190",
+      "totalTests": 42420
+    },
+    {
+      "name": "동작",
+      "address": "서울특별시 동작구 사당로27길 232",
+      "totalTests": 37508
+    },
+    {
+      "name": "중구(서울)",
+      "address": "서울특별시 중구 퇴계로 387",
+      "totalTests": 19993
+    },
+    {
+      "name": "서대문",
+      "address": "서울특별시 서대문구 백련사길 39",
+      "totalTests": 15623
+    },
+    {
+      "name": "강북",
+      "address": "서울특별시 강북구 오현로31길 51",
+      "totalTests": 13313
+    },
+    {
+      "name": "KSPO송파별관(어르신)",
+      "address": "서울특별시 송파구 올림픽로 448",
+      "totalTests": 6105
+    },
+    {
+      "name": "KSPO건강체력",
+      "address": "서울특별시 송파구 올림픽로 424",
+      "totalTests": 5515
+    },
+    {
+      "name": "KSPO송파(출장B)",
+      "address": "서울특별시 송파구 올림픽로 424",
+      "totalTests": 4592
+    },
+    {
+      "name": "마포서강",
+      "address": "서울특별시 마포구 토정로 98",
+      "totalTests": 1688
+    },
+    {
+      "name": "KSPO송파별관(파크텔3층)",
+      "address": "서울특별시 송파구 올림픽로 448",
+      "totalTests": 1640
+    },
+    {
+      "name": "강동",
+      "address": "서울특별시 강동구 성내로 45",
+      "totalTests": 1484
+    },
+    {
+      "name": "중랑",
+      "address": "서울 중랑구 사가정로51길 48",
+      "totalTests": 1391
+    },
+    {
+      "name": "관악",
+      "address": "서울 관악구 신림동 1646",
+      "totalTests": 910
+    },
+    {
+      "name": "구로",
+      "address": "서울특별시 구로구 구로중앙로28길 66",
+      "totalTests": 703
+    },
+    {
+      "name": "노원",
+      "address": "서울특별시 노원구 월계로 378",
+      "totalTests": 195
+    },
+    {
+      "name": "용산",
+      "address": "서울특별시 용산구 녹사평대로 150",
+      "totalTests": 168
+    },
+    {
+      "name": "2026 국민체력100 2번 업체",
+      "address": "서울특별시 송파구 올림픽로 424",
+      "totalTests": 19
+    },
+    {
+      "name": "KSPO(버스)",
+      "address": "서울특별시 송파구 올림픽로 424",
+      "totalTests": 1
+    }
   ]
 }

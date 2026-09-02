@@ -2,19 +2,22 @@ import { Activity, MapPin, TrendingUp, Users } from 'lucide-react';
 import {
   recentTrend,
   latestYear,
-  peakAgeGroup,
+  topSeoulCenters,
   seoulTotalTests,
   formatCount,
   getTestCountData,
-  isSeedData,
 } from '../lib/testCounts';
 
 export default function FitnessInsight() {
-  const trend = recentTrend(6);
   const latest = latestYear();
-  const peak = peakAgeGroup();
-  const seoulTotal = seoulTotalTests();
+  const trend = recentTrend(8);
   const data = getTestCountData();
+  const seoulTop = topSeoulCenters(5);
+  const seoulTotal = seoulTotalTests();
+
+  // 데이터가 없으면 빈 카드를 띄우느니 통째로 뺀다
+  if (!latest || trend.length === 0) return null;
+
   const maxTests = Math.max(...trend.map((t) => t.totalTests));
 
   return (
@@ -31,13 +34,13 @@ export default function FitnessInsight() {
       <div className="mt-3 grid grid-cols-3 gap-2">
         <MiniStat
           icon={<Users size={14} className="text-coral" />}
-          value={formatCount(latest.totalTests)}
-          label={`${latest.year}년 측정`}
+          value={formatCount(data.totalMeasurements)}
+          label="누적 측정건수"
         />
         <MiniStat
           icon={<MapPin size={14} className="text-coral" />}
           value={`${latest.centers}곳`}
-          label="전국 인증센터"
+          label={`${latest.year}년 인증센터`}
         />
         <MiniStat
           icon={<TrendingUp size={14} className="text-coral" />}
@@ -67,51 +70,46 @@ export default function FitnessInsight() {
           })}
         </div>
         <p className="mt-1.5 text-[10.5px] text-espresso-soft">
-          {trend[0].year}년 {formatCount(trend[0].totalTests)}건 →{' '}
-          {latest.year}년 {formatCount(latest.totalTests)}건
+          {trend[0].year}년 {formatCount(trend[0].totalTests)}건 → {latest.year}년{' '}
+          {formatCount(latest.totalTests)}건
         </p>
       </div>
 
-      {/* 연령대별 참여 분포 */}
-      <div className="mt-4">
-        <span className="text-[12px] font-semibold text-espresso">연령대별 참여 비율</span>
-        <div className="mt-2 space-y-1.5">
-          {data.ageDistribution.map((a) => (
-            <div key={a.ageGroup} className="flex items-center gap-2">
-              <span className="w-9 shrink-0 text-right text-[11px] font-medium text-espresso-muted">
-                {a.ageGroup}
-              </span>
-              <div className="flex h-3.5 flex-1 overflow-hidden rounded-full bg-tint">
-                <div
-                  className="h-full rounded-full bg-coral/70"
-                  style={{ width: `${(a.percentage / 30) * 100}%` }}
-                />
+      {/* 서울 인증센터 — 측정을 받으러 갈 곳을 알려 주는 쪽이 쓸모 있다 */}
+      {seoulTop.length > 0 && (
+        <div className="mt-4">
+          <span className="text-[12px] font-semibold text-espresso">
+            서울에서 많이 찾는 인증센터
+          </span>
+          <div className="mt-2 space-y-1.5">
+            {seoulTop.map((c) => (
+              <div key={c.name} className="flex items-center gap-2">
+                <span className="w-20 shrink-0 truncate text-[11px] font-medium text-espresso-muted">
+                  {c.name}
+                </span>
+                <div className="flex h-3.5 flex-1 overflow-hidden rounded-full bg-tint">
+                  <div
+                    className="h-full rounded-full bg-coral/70"
+                    style={{ width: `${(c.totalTests / seoulTop[0].totalTests) * 100}%` }}
+                  />
+                </div>
+                <span className="w-11 shrink-0 text-right text-[11px] font-semibold text-espresso-muted">
+                  {formatCount(c.totalTests)}
+                </span>
               </div>
-              <span className="w-9 shrink-0 text-[11px] font-semibold text-espresso-muted">
-                {a.percentage}%
-              </span>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-        <p className="mt-1.5 text-[10.5px] text-espresso-soft">
-          {peak.ageGroup}가 {peak.percentage}%로 가장 높은 참여율
-        </p>
-      </div>
+      )}
 
       {/* 서울 요약 */}
       <div className="mt-3 rounded-2xl bg-tint/60 px-3 py-2.5">
         <p className="text-[11.5px] leading-relaxed text-espresso-muted">
-          서울 {data.seoulCenters.length}개 인증센터에서 연간 약{' '}
-          <b className="text-espresso">{formatCount(seoulTotal)}건</b> 측정이 이뤄져요.
-          런코스는 이 측정 결과를 기반으로 당신의 체력 백분위를 산출하고 맞춤 코스를 처방해요.
+          서울 {data.seoulCenters.length}개 인증센터에서 지금까지 약{' '}
+          <b className="text-espresso">{formatCount(seoulTotal)}건</b> 측정이 이뤄졌어요. 런코스는
+          이 측정 결과를 기반으로 당신의 체력 백분위를 산출하고 맞춤 코스를 처방해요.
         </p>
       </div>
-
-      {isSeedData() && (
-        <p className="mt-2 text-[10px] text-espresso-soft">
-          * 시드 데이터 기반 — API 연동 후 실측 데이터로 교체됩니다
-        </p>
-      )}
     </div>
   );
 }

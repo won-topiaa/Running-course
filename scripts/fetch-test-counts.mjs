@@ -85,33 +85,34 @@ async function main() {
   console.log(`수집 완료: ${allItems.length}건`);
 
   // 3) 데이터 집계
-  //    API 필드명은 실제 응답에 맞춰 조정 — 아래는 예상 필드명
-  //    실행 시 '필드명:' 로그를 보고 여기를 맞춰야 할 수 있음
+  //
+  //    실제 응답 스키마 (2026-09 확인):
+  //      center_nm     센터명            "청주"
+  //      center_addr1  주소              "청주시 서원구 사직대로 229 (종합운동장 북3문)"
+  //      center_addr2  상세주소          "1층 청주체력인증센터"
+  //      test_ym       측정 연월(YYYYMM) "201702"
+  //      test_cnt      측정 건수         195
+  //
+  //    연령대·좌표 필드는 이 데이터셋에 없다. 지어내지 않고 비워 둔다 —
+  //    연령대별 참여 비율은 이 API로는 만들 수 없는 지표다.
 
-  // 연도별 집계
-  const yearlyMap = new Map();
-  // 연령대별 집계
-  const ageMap = new Map();
-  // 서울 센터별 집계
-  const seoulCenters = new Map();
+  const yearlyMap = new Map(); //  연도 → { totalTests, centers:Set }
+  const seoulCenters = new Map(); // 센터명 → 누적
 
   let totalAll = 0;
+  let latestYm = '';
 
   for (const item of allItems) {
-    // 필드명 후보 (실제 API 응답에 맞춰 조정)
-    const centerNm = item.cntr_nm ?? item.center_nm ?? item.faci_nm ?? '';
-    const yr = Number(item.yr ?? item.year ?? item.base_year ?? 0);
-    const cnt = Number(item.msr_cnt ?? item.test_cnt ?? item.cnt ?? 0);
-    const sido = item.ctprvn_nm ?? item.sido_nm ?? item.addr_ctpv_nm ?? '';
-    const sigungu = item.signgu_nm ?? item.sigungu_nm ?? item.addr_cpb_nm ?? '';
-    const ageGrp = item.age_degree ?? item.age_grp ?? '';
-    const lat = parseCoord(item.lat ?? item.faci_lat);
-    const lng = parseCoord(item.lot ?? item.lng ?? item.faci_lot);
+    const centerNm = String(item.center_nm ?? '').trim();
+    const ym = String(item.test_ym ?? '').trim();
+    const cnt = Number(item.test_cnt ?? 0);
+    const addr = String(item.center_addr1 ?? '').trim();
 
     if (!Number.isFinite(cnt) || cnt <= 0) continue;
     totalAll += cnt;
+    if (ym > latestYm) latestYm = ym;
 
-    // 연도별
+    const yr = Number(ym.slice(0, 4));
     if (yr >= 2010) {
       const prev = yearlyMap.get(yr) ?? { totalTests: 0, centers: new Set() };
       prev.totalTests += cnt;
@@ -119,32 +120,25 @@ async function main() {
       yearlyMap.set(yr, prev);
     }
 
-    // 연령대별
-    if (ageGrp) {
-      ageMap.set(ageGrp, (ageMap.get(ageGrp) ?? 0) + cnt);
-    }
-
-    // 서울 센터
-    if (sido.includes('서울')) {
-      const key = centerNm || sigungu;
-      if (key) {
-        const prev = seoulCenters.get(key) ?? {
-          name: centerNm,
-          district: sigungu,
-          lat: lat ?? 0,
-          lng: lng ?? 0,
-          yearlyTests: 0,
-        };
-        prev.yearlyTests += cnt;
-        if (lat && !prev.lat) prev.lat = lat;
-        if (lng && !prev.lng) prev.lng = lng;
-        seoulCenters.set(key, prev);
-      }
+    // 서울 센터 — 시도 필드가 없어 주소 앞머리로 가린다
+    if (addr.startsWith('서울') && centerNm) {
+      const prev = seoulCenters.get(centerNm) ?? {
+        name: centerNm,
+        address: addr,
+        totalTests: 0,
+      };
+      prev.totalTests += cnt;
+      seoulCenters.set(centerNm, prev);
     }
   }
 
-  // 연도별 추세 정리
+  // 연도별 추세 — 마지막 해는 아직 안 끝났을 수 있어 완결 연도만 추세로 쓴다
+  const lastFullYear = latestYm.slice(4, 6) === '12'
+    ? Number(latestYm.slice(0, 4))
+    : Number(latestYm.slice(0, 4)) - 1;
+
   const yearlyTrend = [...yearlyMap.entries()]
+    .filter(([year]) => year <= lastFullYear)
     .sort((a, b) => a[0] - b[0])
     .map(([year, v]) => ({
       year,
@@ -152,37 +146,20 @@ async function main() {
       centers: v.centers.size,
     }));
 
-  // 연령대별 분포 정리
-  const ageTotalCnt = [...ageMap.values()].reduce((a, b) => a + b, 0);
-  const ageDistribution = [...ageMap.entries()]
-    .sort((a, b) => {
-      const order = ['10', '20', '30', '40', '50', '60', '70'];
-      const ia = order.findIndex(x => a[0].includes(x));
-      const ib = order.findIndex(x => b[0].includes(x));
-      return ia - ib;
-    })
-    .map(([ageGroup, count]) => ({
-      ageGroup,
-      percentage: Math.round((count / ageTotalCnt) * 1000) / 10,
-    }));
+  // 이 데이터셋에는 연령대 필드가 없다 (지어내지 않는다)
+  const ageDistribution = [];
 
-  // 서울 센터 정리
   const seoulList = [...seoulCenters.values()]
-    .sort((a, b) => b.yearlyTests - a.yearlyTests);
+    .sort((a, b) => b.totalTests - a.totalTests);
 
   console.log(`\n연도별 추세: ${yearlyTrend.length}개년`);
   for (const y of yearlyTrend) {
     console.log(`  ${y.year}: ${y.totalTests.toLocaleString()}건, ${y.centers}곳`);
   }
 
-  console.log(`\n연령대별 분포:`);
-  for (const a of ageDistribution) {
-    console.log(`  ${a.ageGroup}: ${a.percentage}%`);
-  }
-
   console.log(`\n서울 센터: ${seoulList.length}곳`);
   for (const c of seoulList.slice(0, 10)) {
-    console.log(`  ${c.name} (${c.district}): ${c.yearlyTests.toLocaleString()}건`);
+    console.log(`  ${c.name}: ${c.totalTests.toLocaleString()}건`);
   }
 
   // 4) 저장
@@ -191,6 +168,7 @@ async function main() {
     endpoint: BASE,
     collectedAt: new Date().toISOString().slice(0, 10),
     region: '전국 / 서울',
+    latestMonth: latestYm,
     totalInApi: totalCount,
     totalMeasurements: totalAll,
     yearlyTrend,

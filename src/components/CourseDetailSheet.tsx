@@ -251,14 +251,11 @@ function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose:
 
           {/* 예상 혼잡도 */}
           <div className="mt-3">
-            <CongestionBadge path={real?.coords ?? displayCoords(course)} />
+            <CongestionBadge path={real?.coords ?? course.path} />
           </div>
 
           {/* 근처 공공체육시설 */}
-          <NearbyFacilities
-            path={real?.coords ?? displayCoords(course)}
-            className="mt-3"
-          />
+          <NearbyFacilities path={real?.coords ?? course.path} className="mt-3" />
 
           {/* 카카오맵 링크 */}
           <KakaoLinkRow name={course.name} point={course.path[0]} className="mt-4" />
