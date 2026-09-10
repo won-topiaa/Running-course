@@ -123,6 +123,8 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // '내 위치'로 GPS 를 받는 중인지 — 버튼에 스피너를 돌리고 연타를 막는다
+  const [locating, setLocating] = useState(false);
   // 시트는 기본 접힘 — 첫 화면의 주인공은 지도다. 필수 입력(거리·추천받기)은
   // 접혀도 늘 보이고, 세부 취향만 서랍에 들어간다(손잡이 탭/스와이프로 여닫기).
   const [sheetOpen, setSheetOpen] = useState(session?.sheetOpen ?? false);
@@ -374,8 +376,13 @@ export default function BuildScreen({ api }: { api: AppApi }) {
       setError('이 기기에서 위치를 쓸 수 없어요.');
       return;
     }
+    if (locating) return; // 이미 받는 중이면 연타를 무시한다
+
+    setLocating(true);
+    setError(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        setLocating(false);
         const here: LatLng = [pos.coords.latitude, pos.coords.longitude];
         setStart(here);
         // 날씨·미세먼지도 이 위치로 맞춘다. 예전엔 홈 위치가 서울시청에 박혀
@@ -388,7 +395,22 @@ export default function BuildScreen({ api }: { api: AppApi }) {
         }
         reset();
       },
-      () => setError('위치 권한이 없어요. 지도를 눌러 시작점을 정해주세요.'),
+      (err) => {
+        setLocating(false);
+        // 실패 이유를 구분해 말한다. 예전엔 무엇이든 '권한 없음'으로 떠서,
+        // GPS 가 느려 시간이 초과됐을 때도 권한을 껐나 싶어 헤매게 됐다.
+        setError(
+          err.code === err.PERMISSION_DENIED
+            ? '위치 권한이 꺼져 있어요. 브라우저 주소창의 위치 아이콘에서 허용하거나, 지도를 눌러 시작점을 정해주세요.'
+            : err.code === err.TIMEOUT
+              ? '위치를 찾는 데 시간이 오래 걸려요. 실외에서 다시 시도하거나, 지도를 눌러 시작점을 정해주세요.'
+              : '위치를 확인할 수 없어요. 지도를 눌러 시작점을 정해주세요.',
+        );
+      },
+      // 타임아웃이 없으면 GPS 가 안 잡히는 곳(실내·데스크톱)에서 무한정 매달려
+      // 버튼이 죽은 것처럼 보인다. 10초 안에 실패로 떨어뜨리고, 최근 1분 내
+      // 위치는 캐시로 즉시 쓴다.
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
     );
   };
 
@@ -725,9 +747,11 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                 </div>
                 <button
                   onClick={useMyLocation}
-                  className="shrink-0 rounded-full border border-line px-3 py-2 text-[12px] font-semibold text-espresso-muted active:scale-95"
+                  disabled={locating}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line px-3 py-2 text-[12px] font-semibold text-espresso-muted active:scale-95 disabled:opacity-60"
                 >
-                  내 위치
+                  {locating && <Loader2 size={13} className="animate-spin" />}
+                  {locating ? '찾는 중…' : '내 위치'}
                 </button>
               </div>
 
@@ -812,7 +836,11 @@ export default function BuildScreen({ api }: { api: AppApi }) {
         <div ref={gapRef} className="relative min-h-[20vh] flex-1">
           <div className="pointer-events-auto absolute bottom-2 right-0 flex flex-col gap-2">
             <RoundBtn label="내 위치" onClick={useMyLocation}>
-              <Crosshair size={19} className="text-coral" />
+              {locating ? (
+                <Loader2 size={19} className="animate-spin text-coral" />
+              ) : (
+                <Crosshair size={19} className="text-coral" />
+              )}
             </RoundBtn>
             {mode === 'pins' && waypoints.length > 0 && (
               <RoundBtn

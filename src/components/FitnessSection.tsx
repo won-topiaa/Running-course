@@ -9,6 +9,7 @@
 // 못 받았으면 '상위 몇 %' 를 만들어 내지 않고 왜 못 냈는지를 말한다.
 // ---------------------------------------------------------------------------
 
+import { useEffect, useState } from 'react';
 import { Activity, Timer } from 'lucide-react';
 import {
   FITNESS_ITEM_LABEL,
@@ -56,6 +57,22 @@ export default function FitnessSection({
     patch({ measured: next });
   };
 
+  // 출생연도는 입력 중인 '글자' 를 따로 들고 있는다.
+  //
+  // 예전엔 value 를 profile.birthYear 에 바로 묶고, onChange 에서 1900~올해가
+  // 아니면 null 로 되돌렸다. 그런데 '1994' 를 한 자씩 치면 첫 글자 '1'(=1) 이
+  // 이미 1900 미만이라 그 순간 null 이 돼 칸이 비워졌다 — 네 자리 연도를 끝까지
+  // 칠 수가 없었다. 이제 글자는 그대로 두고, 완성된 유효 연도이거나 빈칸일 때만
+  // profile 에 반영한다. (부분 입력 중에는 birthYear 를 건드리지 않아 리셋이 없다)
+  const [birthText, setBirthText] = useState(() =>
+    profile.birthYear != null ? String(profile.birthYear) : '',
+  );
+  // 백업 복원 등 밖에서 값이 바뀌면 글자도 맞춘다. onChange 가 유효/빈칸일 때만
+  // 반영하므로, 이 효과가 입력 중 칸을 비우는 일은 없다.
+  useEffect(() => {
+    setBirthText(profile.birthYear != null ? String(profile.birthYear) : '');
+  }, [profile.birthYear]);
+
   const { assessment, prescription, loading, vo2maxEstimate, age } = fitness;
   const thisYear = new Date().getFullYear();
   // 이 또래에 기준 표본이 있는지 — '아직 못 불러왔다' 와 '아예 없다' 는 다르다
@@ -85,13 +102,17 @@ export default function FitnessSection({
             min={1900}
             max={thisYear}
             placeholder="1994"
-            value={profile.birthYear ?? ''}
+            value={birthText}
             onChange={(e) => {
-              const v = Number(e.target.value);
-              patch({
-                birthYear:
-                  Number.isInteger(v) && v >= 1900 && v <= thisYear ? v : null,
-              });
+              const raw = e.target.value;
+              setBirthText(raw);
+              const v = Number(raw);
+              if (raw.trim() === '') {
+                patch({ birthYear: null }); // 지우면 또래 기준도 지운다
+              } else if (Number.isInteger(v) && v >= 1900 && v <= thisYear) {
+                patch({ birthYear: v }); // 완성된 유효 연도만 반영
+              }
+              // 그 밖(1994 를 치는 도중의 1·19·199 등)은 글자만 두고 기다린다
             }}
             className="mt-1 w-full rounded-2xl border border-line bg-cream px-3 py-2.5 text-[14px] text-espresso"
           />

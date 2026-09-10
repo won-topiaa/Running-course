@@ -816,6 +816,18 @@ function StartPanel({
             : '위치를 추적해 거리·시간·페이스를 실시간으로 기록해요.'}
       </p>
 
+      {/* 자유 러닝은 따라갈 코스가 없어 지도에 점선이 안 그려진다. 아래 탭
+          가운데 버튼이 화면에서 가장 눈에 띄다 보니, 코스를 만들어 놓고도
+          이쪽으로 시작해 "점선이 왜 사라졌지?" 하게 된다 — 어디서 시작해야
+          코스를 따라가는지 여기서 알려 준다. */}
+      {!cooperTest && !planned && !acquiring && (
+        <p className="mt-3 max-w-[19rem] rounded-2xl bg-ink-soft px-3.5 py-2.5 text-left text-[11.5px] leading-relaxed text-ink-muted">
+          코스를 따라 뛰려면 <b className="text-white">만들기</b> 탭에서 코스를 고른 뒤{' '}
+          <b className="text-white">이 경로로 뛰기</b>로 시작하세요. 그때는 가야 할 길이 점선,
+          지나온 길이 실선으로 지도에 그려져요.
+        </p>
+      )}
+
       {/* 검사 안내 — 최대 노력으로 12분을 뛰라는 요구다. 원래 이 검사는
           준비운동과 건강 문진을 전제로 하는 현장 검사이므로, 눌러서 바로
           시작시키기 전에 그 전제를 말해 준다. */}
