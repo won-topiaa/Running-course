@@ -15,6 +15,9 @@ import GradeElevationChart from '../components/GradeElevationChart';
 import LapPicker from '../components/LapPicker';
 import CongestionBadge from '../components/CongestionBadge';
 import NearbyFacilities from '../components/NearbyFacilities';
+import StationPicker from '../components/StationPicker';
+import EscapeStations from '../components/EscapeStations';
+import type { LineStation } from '../lib/subway';
 import {
   buildFromDistance,
   buildFromPins,
@@ -47,7 +50,7 @@ import type { LatLng } from '../lib/types';
 import type { AppApi } from '../ui/appApi';
 import { VOLT } from '../ui/theme';
 
-type Mode = 'pins' | 'distance';
+type Mode = 'pins' | 'distance' | 'stations';
 
 /** 첫 실행 안내를 이미 봤는지 (기기에 한 번만 기억) */
 const HINT_KEY = 'run-app-hint-v1';
@@ -109,6 +112,9 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   // 서로 배타적인 축이 아니다(하나는 신호등, 하나는 노면). 천변 흙산책로처럼
   // 둘 다 원하는 경우가 서울에서는 오히려 흔하다.
   const [pathPrefs, setPathPrefs] = useState<PathPref[]>(session?.pathPrefs ?? []);
+  // 역에서 역으로 — 두 역만 정하면 그 사이 길은 기존 채점기가 고른다
+  const [originSt, setOriginSt] = useState<LineStation | null>(null);
+  const [destSt, setDestSt] = useState<LineStation | null>(null);
 
   const [results, setResults] = useState<BuiltRoute[] | null>(session?.results ?? null);
   const [selIdx, setSelIdx] = useState(session?.selIdx ?? 0);
@@ -389,14 +395,25 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     // '다시 찾기'마다 시드 대역을 바꿔 새로운 루프 후보를 얻는다
     const attempt = attemptRef.current++;
 
-    const build = (p: RoutingProvider): Promise<BuiltRoute[]> =>
-      mode === 'pins'
-        ? buildFromPins(waypoints, style, p, { loop: returnToStart, pathPref: pathPrefs })
-        : buildFromDistance(start, targetKm, style, p, {
-            seedBase: attempt,
-            oneWay: !returnToStart,
-            pathPref: pathPrefs,
-          });
+    const build = (p: RoutingProvider): Promise<BuiltRoute[]> => {
+      if (mode === 'pins') {
+        return buildFromPins(waypoints, style, p, { loop: returnToStart, pathPref: pathPrefs });
+      }
+      if (mode === 'stations') {
+        // 역→역은 두 점을 잇는 편도다. 도착역에서 지하철로 돌아오는 게
+        // 이 모드의 전제라 시작점으로 되돌리지 않는다.
+        const pts: LatLng[] = [
+          [originSt!.lat, originSt!.lng],
+          [destSt!.lat, destSt!.lng],
+        ];
+        return buildFromPins(pts, style, p, { loop: false, pathPref: pathPrefs });
+      }
+      return buildFromDistance(start, targetKm, style, p, {
+        seedBase: attempt,
+        oneWay: !returnToStart,
+        pathPref: pathPrefs,
+      });
+    };
 
     // 여름(6~8월)이면 녹지 폴리곤을 경로 생성과 병렬로 가져온다.
     // Overpass(OSM 공원·숲 데이터)는 경로 서버보다 느리지만 병렬이라 대기는
@@ -414,6 +431,15 @@ export default function BuildScreen({ api }: { api: AppApi }) {
         const center: LatLng = [lat, lng];
         const farM = waypoints.reduce((m, w) => Math.max(m, haversineMeters(center, w)), 0);
         return { center, radiusKm: farM / 1000 + 1 };
+      }
+      if (mode === 'stations') {
+        if (!originSt || !destSt) return null;
+        const center: LatLng = [
+          (originSt.lat + destSt.lat) / 2,
+          (originSt.lng + destSt.lng) / 2,
+        ];
+        const halfM = haversineMeters(center, [originSt.lat, originSt.lng]);
+        return { center, radiusKm: halfM / 1000 + 1 };
       }
       return { center: start, radiusKm: greenRadiusKm(targetKm, returnToStart) };
     })();
@@ -520,7 +546,12 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     }
   };
 
-  const canGenerate = mode === 'pins' ? waypoints.length >= 2 : true;
+  const canGenerate =
+    mode === 'pins'
+      ? waypoints.length >= 2
+      : mode === 'stations'
+        ? originSt != null && destSt != null
+        : true;
   const headline = results ? buildHeadline(results, selIdx, style) : null;
 
   // 실제 도로가 아닌 '직선 데모'로 그렸을 때만 알린다. ORS 냐 OSM 이냐는
@@ -549,11 +580,13 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           peekTimer.current = setTimeout(() => setPeek(false), 1400);
         }}
       >
+        {/* 역 모드는 지도에서 핀을 찍지 않는다 — 출발점 하나만 두는 거리 모드와
+            같은 모양이다. 지도를 누르면 그 근처 역을 다시 찾는다. */}
         <RouteMap
-          mode={mode}
-          center={mode === 'distance' ? start : api.settings.homeLocation}
+          mode={mode === 'pins' ? 'pins' : 'distance'}
+          center={mode === 'pins' ? api.settings.homeLocation : start}
           waypoints={waypoints}
-          start={mode === 'distance' ? start : null}
+          start={mode === 'pins' ? null : start}
           route={selected?.route ?? null}
           alternatives={alternatives}
           onMapClick={onMapClick}
@@ -663,6 +696,15 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                   >
                     📍 핀으로
                   </SegBtn>
+                  <SegBtn
+                    active={mode === 'stations'}
+                    onClick={() => {
+                      setMode('stations');
+                      reset();
+                    }}
+                  >
+                    🚇 역으로
+                  </SegBtn>
                 </div>
                 <button
                   onClick={useMyLocation}
@@ -671,6 +713,25 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                   내 위치
                 </button>
               </div>
+
+              {mode === 'stations' && (
+                <div className="-mt-1 px-4 pb-3">
+                  <StationPicker
+                    center={start}
+                    origin={originSt}
+                    destination={destSt}
+                    onOrigin={(s) => {
+                      setOriginSt(s);
+                      if (s) setStart([s.lat, s.lng]);
+                      reset();
+                    }}
+                    onDestination={(s) => {
+                      setDestSt(s);
+                      reset();
+                    }}
+                  />
+                </div>
+              )}
 
               {mode === 'pins' && (
                 <div className="-mt-1 px-4 pb-3">
@@ -987,6 +1048,13 @@ export default function BuildScreen({ api }: { api: AppApi }) {
                     <div className="mt-3">
                       <CongestionBadge path={selected.route.coords} />
                     </div>
+                  )}
+
+                  {/* 중간에 그만둘 수 있는 역 — 역에서 역으로 뛸 때만.
+                      다른 모드에서도 역은 지나가지만, 그 코스는 대개 시작점으로
+                      돌아오므로 '타고 돌아갈 곳' 이 정보가 되지 않는다. */}
+                  {selected && mode === 'stations' && (
+                    <EscapeStations path={selected.route.coords} className="mt-3" />
                   )}
 
                   {/* 근처 공공체육시설 */}

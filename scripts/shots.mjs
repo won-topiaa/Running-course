@@ -281,6 +281,79 @@ if (want('C') || want('D') || want('E')) {
 }
 
 // ─────────────────────────────────────────────────────────
+// G. 역에서 역으로 — 출발역·도착역만 고르면 경로는 앱이 잡는다
+// ─────────────────────────────────────────────────────────
+if (want('G')) {
+  await page.goto(base, { waitUntil: 'load' });
+  await page.waitForTimeout(3000);
+  await dismissHints();
+  await go('만들기');
+  await page.getByRole('button', { name: /역으로/ }).first().click();
+  await page.waitForTimeout(1200);
+
+  // 출발역 → 도착역. 하단 네비가 시트를 덮어 실제 탭이 막히는 자리가 있어
+  // DOM 에서 직접 누른다 (촬영용 스크립트라 이 편이 안정적이다).
+  const originOk = await page.evaluate(() => {
+    const lbl = [...document.querySelectorAll('p')].find((p) => p.textContent.trim().startsWith('출발역'));
+    const b = lbl?.parentElement.querySelector('button');
+    if (!b) return false;
+    b.click();
+    return true;
+  });
+  await page.waitForTimeout(1200);
+  const destOk = originOk && await page.evaluate(() => {
+    const lbl = [...document.querySelectorAll('p')].find((p) => p.textContent.trim().startsWith('어디까지'));
+    const b = lbl?.parentElement.querySelector('button');
+    if (!b) return false;
+    b.click();
+    return true;
+  });
+  await page.waitForTimeout(1000);
+
+  if (destOk) {
+    // 역 고르기 패널은 카드가 아니라 그냥 세로 묶음이라 shotCard 가 못 잡는다.
+    // '출발역' 문단의 부모(패널 전체)를 재서 그 영역만 자른다.
+    const box = await page.evaluate(() => {
+      const lbl = [...document.querySelectorAll('p')].find((x) => x.textContent.trim().startsWith('출발역'));
+      const panel = lbl?.parentElement?.parentElement;
+      if (!panel) return null;
+      panel.scrollIntoView({ block: 'center' });
+      const b = panel.getBoundingClientRect();
+      return { x: b.x, y: b.y, width: b.width, height: b.height };
+    });
+    await page.waitForTimeout(700);
+    if (box && box.height > 60) {
+      const pad = 8;
+      await page.screenshot({
+        path: join(OUT, 'G.png'),
+        clip: {
+          x: Math.max(0, box.x - pad),
+          y: Math.max(0, box.y - pad),
+          width: Math.min(390 - Math.max(0, box.x - pad), box.width + pad * 2),
+          height: Math.min(844 - Math.max(0, box.y - pad), box.height + pad * 2),
+        },
+      });
+      console.log('  📸 G.png — 역에서 역으로 — 출발·도착역 고르기');
+    } else {
+      console.log('  ⚠ G: 역 고르기 패널을 못 쟀다');
+    }
+    const gen = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find((x) => /코스 추천받기/.test(x.textContent || ''));
+      if (!b || b.disabled) return false;
+      b.click();
+      return true;
+    });
+    if (gen) {
+      console.log('  … 경로 생성 대기');
+      await page.waitForTimeout(22000);
+      await shotCard('H', '중간에 그만둘 수 있는 역', '중간 하차 가능한 역');
+    }
+  } else {
+    console.log('  ⚠ G: 역 고르기 실패');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
 // F. 러닝 기록 (데모 주행)
 // ─────────────────────────────────────────────────────────
 if (want('F')) {
