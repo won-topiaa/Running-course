@@ -291,8 +291,10 @@ if (want('G')) {
   await page.getByRole('button', { name: /역으로/ }).first().click();
   await page.waitForTimeout(1200);
 
-  // 출발역 → 도착역. 하단 네비가 시트를 덮어 실제 탭이 막히는 자리가 있어
-  // DOM 에서 직접 누른다 (촬영용 스크립트라 이 편이 안정적이다).
+  // 하단 네비가 시트를 덮어 실제 탭이 막히는 자리가 있어 DOM 에서 직접 누른다.
+  // 출발역을 고르면 도착역 목록이 펼쳐진다. G 는 이 '고르는 중' 상태를 담는다
+  // — 둘 다 고르면 한 줄 요약으로 접히기 때문에, 역을 고르는 화면을 보여주려면
+  // 도착역을 누르기 '전' 에 찍어야 한다.
   const originOk = await page.evaluate(() => {
     const lbl = [...document.querySelectorAll('p')].find((p) => p.textContent.trim().startsWith('출발역'));
     const b = lbl?.parentElement.querySelector('button');
@@ -301,21 +303,12 @@ if (want('G')) {
     return true;
   });
   await page.waitForTimeout(1200);
-  const destOk = originOk && await page.evaluate(() => {
-    const lbl = [...document.querySelectorAll('p')].find((p) => p.textContent.trim().startsWith('어디까지'));
-    const b = lbl?.parentElement.querySelector('button');
-    if (!b) return false;
-    b.click();
-    return true;
-  });
-  await page.waitForTimeout(1000);
 
-  if (destOk) {
-    // 역 고르기 패널은 카드가 아니라 그냥 세로 묶음이라 shotCard 가 못 잡는다.
-    // '출발역' 문단의 부모(패널 전체)를 재서 그 영역만 자른다.
+  if (originOk) {
+    // 역 고르기 패널(세로 묶음)의 바깥 상자를 재서 그 영역만 자른다.
     const box = await page.evaluate(() => {
       const lbl = [...document.querySelectorAll('p')].find((x) => x.textContent.trim().startsWith('출발역'));
-      const panel = lbl?.parentElement?.parentElement;
+      const panel = lbl?.closest('div')?.parentElement;
       if (!panel) return null;
       panel.scrollIntoView({ block: 'center' });
       const b = panel.getBoundingClientRect();
@@ -337,7 +330,17 @@ if (want('G')) {
     } else {
       console.log('  ⚠ G: 역 고르기 패널을 못 쟀다');
     }
-    const gen = await page.evaluate(() => {
+
+    // 이제 도착역까지 골라 코스를 만들고 H(중간 하차역)를 찍는다
+    const destOk = await page.evaluate(() => {
+      const lbl = [...document.querySelectorAll('p')].find((p) => p.textContent.trim().startsWith('어디까지'));
+      const b = lbl?.parentElement.querySelector('button');
+      if (!b) return false;
+      b.click();
+      return true;
+    });
+    await page.waitForTimeout(1000);
+    const gen = destOk && await page.evaluate(() => {
       const b = [...document.querySelectorAll('button')].find((x) => /코스 추천받기/.test(x.textContent || ''));
       if (!b || b.disabled) return false;
       b.click();
@@ -347,9 +350,11 @@ if (want('G')) {
       console.log('  … 경로 생성 대기');
       await page.waitForTimeout(22000);
       await shotCard('H', '중간에 그만둘 수 있는 역', '중간 하차 가능한 역');
+    } else {
+      console.log('  ⚠ H: 도착역/생성 실패');
     }
   } else {
-    console.log('  ⚠ G: 역 고르기 실패');
+    console.log('  ⚠ G: 출발역 고르기 실패');
   }
 }
 
