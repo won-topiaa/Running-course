@@ -219,6 +219,11 @@ export default function RecordScreen({
           )
         : tickVoiceNav(voiceNav, 0, [0], rec.distanceKm, 0, null, undefined, rec.elapsedSec);
     if (next !== voiceNav) setVoiceNav(next);
+    // 일부러 '진행 신호' 둘에만 반응한다. voiceNav·planned·cur·elapsedSec 을
+    // deps 에 넣으면 시계가 1초 갈 때마다(제자리에 서 있어도) 안내 판정이
+    // 다시 돌아, 같은 안내를 반복하거나 엉뚱한 시점에 말한다. 실제로 읽는
+    // 값들은 이 effect 가 도는 렌더의 최신값이라 낡지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, rec.distanceKm]);
 
   // 음성이 실제로 나오는지 — START 때 깨운 한마디가 재생됐는지로 판정한다.
@@ -247,7 +252,10 @@ export default function RecordScreen({
   const cuedRef = useRef<Set<number>>(new Set());
   // finish 는 아래(이른 반환 뒤)에서 정의되는데 이 effect 가 먼저다.
   // 렌더마다 최신 함수를 담아 두고 그걸 부른다.
-  const finishRef = useRef<((opts?: { cooper?: boolean }) => void) | null>(null);
+  // finish 는 async 다 — 타입도 그렇게 적는다. 예전엔 () => void 로 적어 둬서
+  // '이 호출은 기다릴 게 없다' 고 거짓말을 했다. 호출부는 12분 타이머라
+  // 기다릴 수 없는 자리가 맞지만, 그건 void 로 밝히는 게 맞다.
+  const finishRef = useRef<((opts?: { cooper?: boolean }) => Promise<void>) | null>(null);
 
   useEffect(() => {
     if (!cooperTest || rec.status !== 'recording') return;
@@ -275,7 +283,9 @@ export default function RecordScreen({
       if (left <= 0 && !testDoneRef.current) {
         testDoneRef.current = true;
         announce('12분 끝났습니다. 천천히 걸으며 숨을 고르세요.', { urgent: true });
-        finishRef.current?.({ cooper: true });
+        // 타이머 콜백이라 기다릴 수 없다. finish 는 안에서 try/finally 로
+        // 실패를 처리하므로 흘려보내도 조용히 사라지는 오류가 없다.
+        void finishRef.current?.({ cooper: true });
       }
     }, 250);
     return () => clearInterval(id);

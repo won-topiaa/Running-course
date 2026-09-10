@@ -25,7 +25,9 @@ import {
   rescoreWithGreen,
   type BuiltRoute,
 } from '../lib/courseBuilder';
-import { repeatRoute, returnsToStart, fallbackProvider, makeProvider, RoutingError, type RoutingProvider } from '../lib/routing';
+import { repeatRoute, returnsToStart, fallbackProvider, makeProvider, RoutingError, type RoutingProvider,
+  asError,
+} from '../lib/routing';
 import {
   GRADE_LEGEND,
   GRADE_COLORS,
@@ -45,6 +47,12 @@ import {
 } from '../lib/greenShare';
 import { flowInfo } from '../lib/wayMix';
 import { haversineMeters } from '../lib/geo';
+import {
+  locateOnce,
+  coarseNotice,
+  locateErrorMessage,
+  LocateError,
+} from '../lib/locate';
 import { superlatives } from '../lib/compare';
 import type { LatLng } from '../lib/types';
 import type { AppApi } from '../ui/appApi';
@@ -125,6 +133,8 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   const [notice, setNotice] = useState<string | null>(null);
   // '내 위치'로 GPS 를 받는 중인지 — 버튼에 스피너를 돌리고 연타를 막는다
   const [locating, setLocating] = useState(false);
+  /** 진행 중인 측위 작업 — 화면을 떠날 때 watch 를 끊는다 */
+  const locateJobRef = useRef<{ cancel: () => void } | null>(null);
   // 시트는 기본 접힘 — 첫 화면의 주인공은 지도다. 필수 입력(거리·추천받기)은
   // 접혀도 늘 보이고, 세부 취향만 서랍에 들어간다(손잡이 탭/스와이프로 여닫기).
   const [sheetOpen, setSheetOpen] = useState(session?.sheetOpen ?? false);
@@ -296,6 +306,10 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     () => () => {
       if (stripRaf.current) cancelAnimationFrame(stripRaf.current);
       if (peekTimer.current) clearTimeout(peekTimer.current);
+      // 측위는 화면을 떠나도 watch 가 살아 있으면 계속 배터리를 먹고,
+      // 끝났을 때 사라진 화면의 setState 를 부른다.
+      locateJobRef.current?.cancel();
+      locateJobRef.current = null;
     },
     [],
   );
@@ -372,46 +386,50 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   };
 
   const useMyLocation = () => {
-    if (!navigator.geolocation) {
-      setError('이 기기에서 위치를 쓸 수 없어요.');
-      return;
-    }
     if (locating) return; // 이미 받는 중이면 연타를 무시한다
 
     setLocating(true);
     setError(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
+    setNotice(null);
+
+    // locateOnce 는 첫 응답에 만족하지 않고 정확도가 좋아지는 동안 잠깐 기다린다.
+    // 예전엔 getCurrentPosition 을 그대로 썼는데, 그건 위성이 잡히기 전의 거친
+    // 추정(실내 수백 m, IP 기반이면 수 km)을 그대로 돌려주고 끝난다. 게다가
+    // maximumAge 를 1분으로 둬서 그 거친 좌표가 캐시로 즉시 나왔다 — 버튼은
+    // 빠릿한데 핀은 엉뚱한 곳에 꽂히는, 가장 헷갈리는 조합이었다.
+    const job = locateOnce();
+    locateJobRef.current?.cancel();
+    locateJobRef.current = job;
+
+    job.promise
+      .then((r) => {
+        if (locateJobRef.current !== job) return; // 더 새 요청이 있다
+        locateJobRef.current = null;
         setLocating(false);
-        const here: LatLng = [pos.coords.latitude, pos.coords.longitude];
-        setStart(here);
+        setStart(r.coords);
+        // 오차가 큰 채로 시간이 다 됐으면 그 사실을 말해 준다. 조용히 꽂아 두면
+        // 사용자는 '앱이 내 위치를 못 잡는다' 고 여기지, 오차가 큰 줄은 모른다.
+        setNotice(coarseNotice(r));
         // 날씨·미세먼지도 이 위치로 맞춘다. 예전엔 홈 위치가 서울시청에 박혀
         // 있어서, 부산에서 열든 제주에서 열든 늘 '서울 날씨'가 떴다. 사용자가
         // 이미 허락한 위치라 새 권한 팝업 없이 정확해진다.
         // 같은 자리를 다시 누를 때 날씨를 또 부르지 않도록 500m 넘게 움직였을
         // 때만 갱신한다(홈 위치가 바뀌면 App 이 예보를 다시 받는다).
-        if (haversineMeters(api.settings.homeLocation, here) > 500) {
-          api.setSettings({ ...api.settings, homeLocation: here });
+        if (haversineMeters(api.settings.homeLocation, r.coords) > 500) {
+          api.setSettings({ ...api.settings, homeLocation: r.coords });
         }
         reset();
-      },
-      (err) => {
+      })
+      .catch((e) => {
+        if (locateJobRef.current !== job) return;
+        locateJobRef.current = null;
         setLocating(false);
         // 실패 이유를 구분해 말한다. 예전엔 무엇이든 '권한 없음'으로 떠서,
         // GPS 가 느려 시간이 초과됐을 때도 권한을 껐나 싶어 헤매게 됐다.
         setError(
-          err.code === err.PERMISSION_DENIED
-            ? '위치 권한이 꺼져 있어요. 브라우저 주소창의 위치 아이콘에서 허용하거나, 지도를 눌러 시작점을 정해주세요.'
-            : err.code === err.TIMEOUT
-              ? '위치를 찾는 데 시간이 오래 걸려요. 실외에서 다시 시도하거나, 지도를 눌러 시작점을 정해주세요.'
-              : '위치를 확인할 수 없어요. 지도를 눌러 시작점을 정해주세요.',
+          locateErrorMessage(e instanceof LocateError ? e.kind : 'unavailable'),
         );
-      },
-      // 타임아웃이 없으면 GPS 가 안 잡히는 곳(실내·데스크톱)에서 무한정 매달려
-      // 버튼이 죽은 것처럼 보인다. 10초 안에 실패로 떨어뜨리고, 최근 1분 내
-      // 위치는 캐시로 즉시 쓴다.
-      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
-    );
+      });
   };
 
   const generate = async () => {
@@ -569,7 +587,9 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           provider = fallbackProvider(provider);
         }
       }
-      throw lastErr ?? new Error('경로를 만들 수 없어요.');
+      // lastErr 는 unknown 이라 Error 가 아닐 수 있다. 그대로 던지면 바로
+      // 아래 catch 의 `e instanceof Error` 가 빗나가 원인 메시지가 사라진다.
+      throw asError(lastErr) ?? new Error('경로를 만들 수 없어요.');
     } catch (e) {
       const msg =
         e instanceof RoutingError

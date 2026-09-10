@@ -22,7 +22,7 @@ function Fit({ path }: { path: LatLng[] }) {
 export default function LeafletPathMap({ path, mapboxToken }: PathMapProps) {
   return (
     <MapContainer
-      center={path[0] as [number, number]}
+      center={path[0]}
       zoom={14}
       zoomControl={false}
       zoomSnap={0.5}
@@ -31,10 +31,10 @@ export default function LeafletPathMap({ path, mapboxToken }: PathMapProps) {
       scrollWheelZoom={false}
     >
       <BaseTiles token={mapboxToken} />
-      <Polyline positions={path as [number, number][]} pathOptions={{ color: '#fff', weight: 7, opacity: 0.9 }} />
-      <Polyline positions={path as [number, number][]} pathOptions={{ color: VOLT, weight: 4, opacity: 1 }} />
+      <Polyline positions={path} pathOptions={{ color: '#fff', weight: 7, opacity: 0.9 }} />
+      <Polyline positions={path} pathOptions={{ color: VOLT, weight: 4, opacity: 1 }} />
       <CircleMarker
-        center={path[0] as [number, number]}
+        center={path[0]}
         radius={7}
         pathOptions={{ color: '#fff', weight: 2, fillColor: MINT, fillOpacity: 1 }}
       />

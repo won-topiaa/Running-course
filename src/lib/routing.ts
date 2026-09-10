@@ -154,6 +154,20 @@ export class RoutingError extends Error {
   }
 }
 
+/**
+ * catch 로 받은 값을 Error 로 세운다 (없으면 null).
+ *
+ * catch 의 값은 unknown 이다 — 대부분 Error 지만 라이브러리가 문자열이나
+ * 객체를 던지는 일도 있다. 그걸 그대로 다시 던지면 잡는 쪽의
+ * `e instanceof Error` 가 조용히 빗나가, 원인 메시지 대신 기본 문구가 뜬다.
+ * 여기서 한 번 세워 두면 위로 올라가는 오류는 늘 Error 다.
+ */
+export function asError(e: unknown): Error | null {
+  if (e == null) return null;
+  if (e instanceof Error) return e;
+  return new Error(typeof e === 'string' ? e : JSON.stringify(e), { cause: e });
+}
+
 export interface RouteOptions {
   points?: number; // 왕복 생성 시 경유 지점 수
   seed?: number; //   왕복 생성 시 시드
@@ -241,8 +255,8 @@ export function buildResult(
   // 막다른 길에 들어갔다 나온 게 사실이면 그건 잘라낼 오류가 아니라 기록이다.
   const kept = opts.trimSpurs ? spurKeptIndices(rawCoords, { protect: waypoints }) : null;
   const trimmed = kept !== null && kept.length < rawCoords.length;
-  const coords = trimmed ? kept!.map((i) => rawCoords[i]) : rawCoords;
-  const rawElev = trimmed ? kept!.map((i) => rawElevIn[i]) : rawElevIn;
+  const coords = trimmed ? kept.map((i) => rawCoords[i]) : rawCoords;
+  const rawElev = trimmed ? kept.map((i) => rawElevIn[i]) : rawElevIn;
   // 고도 배열을 좌표 수에 정확히 맞춘다. 고도는 별도 API 에서 오므로 배열이
   // 짧거나 구멍(NaN·undefined)이 있을 수 있는데, 그대로 빼기 연산에 들어가면
   // NaN 이 상승·최대경사를 타고 화면까지 올라간다 — 실측에서 카드에

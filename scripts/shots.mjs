@@ -81,7 +81,7 @@ await ctx.route(/^https?:\/\/(?!127\.0\.0\.1|localhost)/, async (route) => {
     delete headers['content-length'];
     relayed++;
     await route.fulfill({ status: res.status, headers, body: buf });
-  } catch (e) {
+  } catch {
     relayFailed++;
     await route.abort().catch(() => {});
   }

@@ -84,7 +84,9 @@ async function retry(fn, label, tries = 5) {
     try {
       return await fn();
     } catch (e) {
-      if (i === tries) throw new Error(`${label}: ${e.message}`);
+      // cause 를 붙여 원래 오류를 보존한다 — 안 그러면 프록시 문제인지
+      // 네트워크 문제인지 구분할 단서가 메시지 한 줄로 뭉개진다.
+      if (i === tries) throw new Error(`${label}: ${e.message}`, { cause: e });
       await new Promise((r) => setTimeout(r, i * 2500));
     }
   }
@@ -118,7 +120,7 @@ async function downloadCsv(atchFileId, sn = '1') {
 
 function parseCsv(text) {
   const lines = text.trim().split(/\r?\n/).filter(Boolean);
-  const head = lines[0].replace(/^﻿/, '').split(',').map((s) => s.trim());
+  const head = lines[0].replace(/^\uFEFF/, '').split(',').map((s) => s.trim());
   return lines.slice(1).map((ln) => {
     const cells = ln.split(',').map((s) => s.trim());
     return Object.fromEntries(head.map((h, i) => [h, cells[i] ?? '']));

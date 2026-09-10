@@ -76,7 +76,9 @@ function Sheet({ course, api, onClose }: { course: Course; api: AppApi; onClose:
       return;
     }
     let alive = true;
-    (async () => {
+    // 일부러 기다리지 않는다 — effect 는 동기로 끝나고, 결과는 alive 로 걸러
+    // setState 한다. void 로 '흘려보내는 게 의도' 임을 밝힌다.
+    void (async () => {
       // 왕복 코스는 갔다가 돌아와야 왕복이다. 예전엔 편도만 라우팅해서,
       // '왕복 5km' 라고 적힌 코스를 눌러도 따라 뛸 경로는 편도 길이만 나왔다.
       const pts =

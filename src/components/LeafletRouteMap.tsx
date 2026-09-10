@@ -82,7 +82,7 @@ function FitBounds({
   useEffect(() => {
     const pts: LatLng[] = route ? route.coords : [...waypoints, ...(start ? [start] : [])];
     if (pts.length === 1) {
-      map.setView(pts[0] as [number, number], 15);
+      map.setView(pts[0], 15);
     } else if (pts.length > 1) {
       const b = L.latLngBounds(pts as [number, number][]);
       // 남는 창이 너무 얇으면(입력 상태처럼 위아래가 다 차 있으면) 비대칭 여백이
@@ -149,7 +149,7 @@ export default function LeafletRouteMap({
       {/* 아직 안 뛴 계획 경로 — 눈금(점선) */}
       {plannedPath && plannedPath.length > 1 && (
         <Polyline
-          positions={plannedPath as [number, number][]}
+          positions={plannedPath}
           pathOptions={{
             color: MUTED,
             weight: 5,
@@ -177,7 +177,7 @@ export default function LeafletRouteMap({
       {route && (
         <>
           <Polyline
-            positions={casing as [number, number][]}
+            positions={casing}
             pathOptions={{ color: '#fff', weight: 8, opacity: 0.9 }}
           />
           {colored.map((g, i) => (
@@ -195,7 +195,7 @@ export default function LeafletRouteMap({
         arrows.map((m, i) => (
           <Marker
             key={`dir${i}`}
-            position={m.pos as [number, number]}
+            position={m.pos}
             icon={arrowIcon(m.angleDeg)}
             interactive={false}
           />
@@ -203,12 +203,12 @@ export default function LeafletRouteMap({
       {route && route.coords.length > 1 && (
         <>
           <Marker
-            position={route.coords[0] as [number, number]}
+            position={route.coords[0]}
             icon={endpointIcon('start')}
             interactive={false}
           />
           <Marker
-            position={route.coords[route.coords.length - 1] as [number, number]}
+            position={route.coords[route.coords.length - 1]}
             icon={endpointIcon('finish')}
             interactive={false}
           />
@@ -219,13 +219,13 @@ export default function LeafletRouteMap({
         waypoints.map((w, i) => (
           <Marker
             key={i}
-            position={w as [number, number]}
+            position={w}
             icon={numberIcon(i + 1, !!onPinClick)}
             eventHandlers={onPinClick ? { click: () => onPinClick(i) } : undefined}
           />
         ))}
       {mode === 'distance' && start && (
-        <Marker position={start as [number, number]} icon={labelIcon('출발')} />
+        <Marker position={start} icon={labelIcon('출발')} />
       )}
 
       <FitBounds route={route} waypoints={waypoints} start={start} fitInsets={fitInsets} />

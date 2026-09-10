@@ -204,7 +204,7 @@ export function createGpsFilter() {
     },
 
     push(fix: GpsFix): GpsVerdict {
-      const acc = Number.isFinite(fix.accuracy as number) ? (fix.accuracy as number) : null;
+      const acc = Number.isFinite(fix.accuracy) ? (fix.accuracy as number) : null;
 
       // 도플러 속도는 위치 필터와 무관하게 항상 갱신한다
       if (fix.speed != null && fix.speed >= 0 && Number.isFinite(fix.speed)) {

@@ -125,8 +125,6 @@ for (const z of HOT_ZONES) {
 console.log('\n=== 콰이어트존 감쇄 검증 ===');
 for (const z of QUIET_ZONES) {
   const centerDensity = baseDensityAt(z.center);
-  const nearbyOutside = [z.center[0] + 0.02, z.center[1]];
-  const outsideDensity = baseDensityAt(nearbyOutside);
   // 콰이어트존 중심은 (핫존과 겹치지 않으면) 낮은 밀도
   ok(centerDensity <= 0.6, `콰이어트존 ${z.center}: 밀도 ${centerDensity.toFixed(2)} <= 0.6`);
 }

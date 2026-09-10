@@ -47,7 +47,7 @@ export function kmSplits(
 
   for (let i = 1; i < n; i++) {
     const seg = useCum
-      ? (cumDistM as number[])[i] - (cumDistM as number[])[i - 1]
+      ? cumDistM[i] - cumDistM[i - 1]
       : haversineMeters(coords[i - 1], coords[i]);
     if (seg <= 0) continue;
     const segStart = cum;

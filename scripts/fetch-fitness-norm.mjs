@@ -167,7 +167,7 @@ for (const [sex, code] of SEXES) {
         `${BASE}?serviceKey=${encodeURIComponent(KEY)}&pageNo=1&numOfRows=${ROWS}` +
         `&resultType=json&test_sex=${code}&age_class=${ageClass}` +
         `&starttest_ym=${startYm}&endtest_ym=${endYm}`;
-      let json = null;
+      let json;
       try {
         const res = await fetch(url);
         if (!res.ok) {

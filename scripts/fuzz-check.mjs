@@ -32,8 +32,7 @@ const rng = (seed) => () => {
 };
 
 const { advanceProgress, cumulativeMeters } = await bundle('src/lib/routeProgress.ts', 'rp.mjs');
-const { spurKeptIndices, thinWaypoints, pathLengthMeters, haversineMeters } =
-  await bundle('src/lib/geo.ts', 'g.mjs');
+const { spurKeptIndices, thinWaypoints, pathLengthMeters } = await bundle('src/lib/geo.ts', 'g.mjs');
 const { scoreCourse, recommend, defaultPreferences } = await bundle('src/lib/scoring.ts', 'sc.mjs');
 const { COURSES } = await bundle('src/data/courses.ts', 'c.mjs');
 const { formatPace, formatDuration, formatClock, formatDistance, estimateTimeLabel, sanePace } =

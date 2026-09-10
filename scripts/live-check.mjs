@@ -27,7 +27,6 @@ const bundle = async (entry, name) => {
 const { OrsProvider } = await bundle('src/lib/routing.ts', 'r.mjs');
 const { fetchGreenShares } = await bundle('src/lib/greenShare.ts', 'g.mjs');
 const { loadSettings } = await bundle('src/lib/config.ts', 'c.mjs');
-const { parseWayMix } = await bundle('src/lib/wayMix.ts', 'w.mjs');
 
 // config 는 localStorage 를 쓴다 — node 에는 없으니 최소한으로 흉내낸다
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };

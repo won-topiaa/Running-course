@@ -170,7 +170,10 @@ function toNumber(v: unknown): number | null {
 
 function sexOf(row: Record<string, unknown>): Sex | null {
   const v = row[SPEC.sexKey];
-  if (v == null) return null;
+  // 문자열·숫자만 코드값으로 인정한다. 객체가 오면 String() 이
+  // '[object Object]' 를 만들어 내는데, 그건 아래 비교에서 조용히 어느
+  // 쪽도 아닌 값이 돼 '성별 불명'으로 흘러간다 — 이유 없이 표본이 준다.
+  if (typeof v !== 'string' && typeof v !== 'number') return null;
   const s = String(v).trim().toUpperCase();
   if (s === SPEC.maleValue) return 'male';
   if (s === SPEC.femaleValue) return 'female';

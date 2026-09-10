@@ -23,13 +23,13 @@ function Follow({ pos }: { pos: LatLng | null }) {
         map
           .getBounds()
           .pad(-0.25)
-          .contains(pos as [number, number])
+          .contains(pos)
       )
         return;
     } catch {
       /* 아직 크기가 안 잡힌 지도 — 그냥 옮긴다 */
     }
-    map.panTo(pos as [number, number], { animate: false });
+    map.panTo(pos, { animate: false });
   }, [pos, map]);
   useEffect(() => {
     // 언마운트 시 남은 pan/zoom 애니메이션 정리
@@ -55,7 +55,7 @@ export default function LeafletLiveMap({
   const cur = coords.length ? coords[coords.length - 1] : null;
   return (
     <MapContainer
-      center={(cur ?? center) as [number, number]}
+      center={cur ?? center}
       zoom={16}
       zoomControl={false}
       zoomSnap={0.5}
@@ -69,7 +69,7 @@ export default function LeafletLiveMap({
       {/* 아직 안 뛴 계획 구간 — 따라갈 눈금(대시) */}
       {plannedPath && plannedPath.length > 1 && (
         <Polyline
-          positions={plannedPath as [number, number][]}
+          positions={plannedPath}
           pathOptions={{
             color: MUTED,
             weight: 7,
@@ -83,7 +83,7 @@ export default function LeafletLiveMap({
       {traveled?.map((g, i) => (
         <Polyline
           key={`tvc${i}`}
-          positions={g.positions as [number, number][]}
+          positions={g.positions}
           pathOptions={{ color: g.color, weight: 7, opacity: 0.5 }}
         />
       ))}
@@ -94,18 +94,18 @@ export default function LeafletLiveMap({
       {coords.length > 1 && (
         <>
           <Polyline
-            positions={coords as [number, number][]}
+            positions={coords}
             pathOptions={{ color: '#fff', weight: 8, opacity: 0.9 }}
           />
           <Polyline
-            positions={coords as [number, number][]}
+            positions={coords}
             pathOptions={{ color: VOLT, weight: 5, opacity: 1 }}
           />
         </>
       )}
       {cur && (
         <CircleMarker
-          center={cur as [number, number]}
+          center={cur}
           radius={9}
           pathOptions={{ color: '#fff', weight: 3, fillColor: VOLT, fillOpacity: 1 }}
         />

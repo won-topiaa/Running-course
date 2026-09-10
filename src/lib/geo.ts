@@ -404,7 +404,7 @@ export function separateRetraced(
   return coords.map((pt, i) => {
     const a = segOff[i - 1];
     const b = segOff[i];
-    const parts = [a, b].filter(Boolean) as Array<[number, number]>;
+    const parts = [a, b].filter(Boolean);
     if (!parts.length) return pt;
     const ox = parts.reduce((s, v) => s + v[0], 0) / parts.length;
     const oy = parts.reduce((s, v) => s + v[1], 0) / parts.length;

@@ -72,7 +72,7 @@ export function applyBackup(obj: unknown): number {
   for (const k of KEYS) {
     if (!(k in b.data)) continue;
     try {
-      localStorage.setItem(k, JSON.stringify((b.data as Record<string, unknown>)[k]));
+      localStorage.setItem(k, JSON.stringify(b.data[k]));
       applied++;
     } catch {
       // 저장 공간이 가득 차면 setItem 이 던진다. 그대로 두면 브라우저 원문

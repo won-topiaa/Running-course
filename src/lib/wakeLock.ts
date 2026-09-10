@@ -4,8 +4,9 @@
 // 탭이 백그라운드로 갔다 오면 락이 해제되므로 재획득이 필요하다.
 // ---------------------------------------------------------------------------
 
-// WakeLockSentinel 타입이 없는 TS lib 환경도 있어 느슨하게 둔다
-type Sentinel = any | null;
+// WakeLockSentinel 타입이 없는 TS lib 환경도 있어 느슨하게 둔다.
+// (any | null 은 결국 any 라 null 을 따로 적어도 아무 의미가 없다)
+type Sentinel = any;
 
 export function wakeLockSupported(): boolean {
   return typeof navigator !== 'undefined' && 'wakeLock' in navigator;

@@ -38,11 +38,6 @@ async function fetchPage(pageNo) {
   return res.json();
 }
 
-function parseCoord(v) {
-  if (v == null || v === '') return null;
-  const n = Number(v);
-  return Number.isFinite(n) && n !== 0 ? n : null;
-}
 
 async function main() {
   console.log('체력인증센터 측정건수 수집 시작...');

@@ -140,7 +140,7 @@ export function loadSettings(): Settings {
         Array.isArray(saved.homeLocation) &&
         saved.homeLocation.length === 2 &&
         saved.homeLocation.every((n) => typeof n === 'number' && Number.isFinite(n))
-          ? (saved.homeLocation as Settings['homeLocation'])
+          ? saved.homeLocation
           : base.homeLocation;
       const pace =
         typeof saved.paceSecPerKm === 'number' &&

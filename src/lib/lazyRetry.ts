@@ -28,7 +28,7 @@ export function lazyWithReload<T extends ComponentType<any>>(
       sessionStorage.removeItem(KEY);
       return mod;
     } catch (e) {
-      let alreadyReloaded = false;
+      let alreadyReloaded;
       try {
         alreadyReloaded = !!sessionStorage.getItem(KEY);
         if (!alreadyReloaded) sessionStorage.setItem(KEY, '1');

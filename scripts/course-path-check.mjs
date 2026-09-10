@@ -345,7 +345,7 @@ console.log('\n[크래시 방어] 음성 합성이 던져도 러닝 틱은 계�
       while (ni + 1 < navPts.length && navCum[ni + 1] <= m) ni++;
       st = tickVoiceNav(st, ni, navCum, m / 1000, 1, [37.5 + m * LAT, 127.0], navPts);
     }
-  } catch (e) {
+  } catch {
     threw = true;
   }
   check(!threw, '던지는 speechSynthesis 스텁에서도 initVoiceNav/tickVoiceNav 가 예외 없이 완주');

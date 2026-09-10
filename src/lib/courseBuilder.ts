@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { destinationPoint, haversineMeters, nearestNeighborOrder } from './geo';
-import { RoutingError, type RouteResult, type RoutingProvider } from './routing';
+import { RoutingError, type RouteResult, type RoutingProvider, asError } from './routing';
 import {
   evaluateStyle,
   type RunStyle,
@@ -158,7 +158,10 @@ async function settleBuilt(
     else lastErr = s.reason;
   });
   if (built.length === 0) {
-    throw lastErr ?? new RoutingError('no_route', '경로 생성 실패');
+    // lastErr 는 catch 로 받은 unknown 이라 Error 가 아닐 수도 있다.
+    // 그대로 던지면 잡는 쪽의 `e instanceof Error` 가 조용히 빗나가
+    // 원인 메시지 대신 기본 문구가 뜬다. Error 로 세워서 올린다.
+    throw asError(lastErr) ?? new RoutingError('no_route', '경로 생성 실패');
   }
   return built;
 }

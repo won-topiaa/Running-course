@@ -3,7 +3,7 @@
 // esbuild 로 TS 를 즉석에서 묶어 돌린다(별도 테스트 러너 없이).
 // esbuild 는 vite 가 이미 끌고 오는 의존성이라 따로 설치할 게 없다.
 import { build } from 'esbuild';
-import { writeFileSync, mkdtempSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -256,15 +256,13 @@ console.log('\n [자동 일시정지] 신호 대기가 페이스를 부풀리면
   }
   // 뛰는 중에 잘못 멈춤 판정이 나면 시간이 깎여 페이스가 빨라진다 — 그것도 막는다
   const f2 = createGpsFilter();
-  let d2 = 0;
   let paused2 = 0;
   let since2 = null;
   for (let k = 1; k <= 600; k++) {
     const now = t0 + k * 1000;
     // 15초마다 3틱 도플러 끊김 (도시 협곡)
     const sp = k % 15 < 3 ? 0 : 3.0;
-    const v = f2.push({ lat: LAT0 + (3.0 * k) / MPD_LAT, lng: LNG0, accuracy: 10, speed: sp, t: now });
-    d2 += v.addM;
+    f2.push({ lat: LAT0 + (3.0 * k) / MPD_LAT, lng: LNG0, accuracy: 10, speed: sp, t: now });
     if (f2.still && since2 == null) since2 = now;
     else if (!f2.still && since2 != null) {
       paused2 += now - since2;

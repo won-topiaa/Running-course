@@ -464,7 +464,7 @@ function ActionBtn({
   children,
 }: {
   onClick: () => void;
-  tone: keyof typeof TONES | string;
+  tone: keyof typeof TONES  ;
   icon: React.ReactNode;
   children: React.ReactNode;
 }) {

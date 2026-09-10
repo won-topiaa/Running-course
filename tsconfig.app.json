@@ -2,7 +2,10 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    // ES2022.Error 만 따로 받는다 — new Error(msg, { cause }) 의 타입이 여기 있다.
+    // 원인을 붙여 던져야 프록시 문제인지 네트워크 문제인지 위에서 구분된다.
+    // target 은 ES2020 그대로라 산출물 문법은 안 바뀐다.
+    "lib": ["ES2020", "ES2022.Error", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
 

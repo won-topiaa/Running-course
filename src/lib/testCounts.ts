@@ -26,9 +26,20 @@ export interface TestCountData {
 
 const raw = data as unknown as Record<string, unknown>;
 
+/**
+ * unknown 을 화면에 쓸 문자열로. String() 을 그냥 부르면 객체가 왔을 때
+ * '[object Object]' 가 조용히 화면에 찍힌다 — 그건 값이 아니라 사고다.
+ * 문자열·숫자만 받아들이고 나머지는 빈 문자열로 떨어뜨린다.
+ */
+function asText(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return '';
+}
+
 const parsed: TestCountData = {
-  source: String(raw.source ?? ''),
-  latestMonth: String(raw.latestMonth ?? ''),
+  source: asText(raw.source),
+  latestMonth: asText(raw.latestMonth),
   totalInApi: Number(raw.totalInApi ?? 0),
   totalMeasurements: Number(raw.totalMeasurements ?? 0),
   yearlyTrend: (raw.yearlyTrend ?? []) as YearlyTrend[],
