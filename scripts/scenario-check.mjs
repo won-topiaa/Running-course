@@ -545,6 +545,56 @@ await scenario('만들기 화면 바퀴 수', { blockExternal: true }, async (pa
   expect(/×\s*2\s*=/.test(t), '합계(× 2 =)가 안 보인다');
 });
 
+// 18) 역에서 역으로 — 두 역을 고르고 나서 '코스 추천받기' 가 손에 닿는가
+//
+//     실기기 제보에서 나온 문제다. 역 고르기 패널이 지도 위 상단 카드에 얹혀
+//     있는데, 역이 많은 자리(7호선 상도역은 도착 후보가 13개)에서는 칩이 열
+//     줄을 넘겨 아래 시트의 추천받기 버튼을 화면 밖으로 밀어냈다.
+//
+//     화면 크기를 실기기에 맞춰야 잡힌다. 412×915 에서는 접기를 꺼도 버튼
+//     아래끝이 873 이라 아슬아슬하게 들어와 통과해 버렸다. 412×860(안드로이드
+//     브라우저 주소창을 뺀 흔한 높이)에서 862 로 넘쳐 실제로 잘린다.
+//     isVisible() 은 DOM 에 있고 크기가 있으면 참이라 이걸 못 잡는다 —
+//     좌표를 재서 뷰포트 안에 있는지 봐야 한다.
+await scenario('역에서 역으로 — 추천받기 버튼이 화면 안에', {
+  viewport: { width: 412, height: 860 },
+  geolocation: { latitude: 37.5027, longitude: 126.9478 }, // 상도역
+}, async (page, _c, expect) => {
+  await page.goto(base, { waitUntil: 'load' }); await settle(page);
+  await page.getByRole('button', { name: /역으로/ }).click();
+  await page.waitForTimeout(600);
+  await page.getByRole('button', { name: '내 위치', exact: true }).first().click();
+  await page.waitForTimeout(2000);
+
+  const origin = page.getByRole('button', { name: /^상도/ }).first();
+  expect(await origin.isVisible().catch(() => false), '상도역이 출발역 후보에 없다');
+  await origin.click();
+  await page.waitForTimeout(900);
+
+  const dest = page.getByRole('button', { name: /^고속터미널/ }).first();
+  expect(await dest.isVisible().catch(() => false), '고속터미널이 도착역 후보에 없다');
+  await dest.click();
+  await page.waitForTimeout(900);
+
+  // 다 고르면 칩 목록이 한 줄 요약으로 접혀야 한다
+  const body = await page.locator('body').innerText();
+  expect(/상도 → 고속터미널/.test(body), '고른 뒤 요약이 안 보인다');
+  expect(!/노량진|흑석/.test(body), '다 골랐는데 역 칩이 그대로 펼쳐져 있다');
+
+  const gen = page.getByRole('button', { name: /코스 추천받기/ }).first();
+  expect(await gen.isEnabled().catch(() => false), '두 역을 골랐는데 추천받기가 잠겨 있다');
+  const box = await gen.boundingBox().catch(() => null);
+  expect(box != null, '추천받기 버튼을 화면에서 못 찾겠다');
+  if (box) {
+    const bottom = box.y + box.height;
+    expect(bottom <= 860, `추천받기가 화면 밖으로 밀렸다 (아래끝 ${Math.round(bottom)} > 860)`);
+  }
+  // 존재만으로는 부족하다 — 실제로 눌리는지까지
+  let tapped = true;
+  await gen.click({ timeout: 5000 }).catch(() => { tapped = false; });
+  expect(tapped, '추천받기 버튼이 다른 요소에 가려 눌리지 않는다');
+});
+
 await browser.close();
 server.close();
 

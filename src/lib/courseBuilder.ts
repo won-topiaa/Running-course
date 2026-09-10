@@ -168,6 +168,11 @@ export interface PinBuildOptions {
   loop?: boolean;
   /** 길 성격 취향 (신호등 적은 길 등) */
   pathPref?: PathPref | PathPrefs;
+  /**
+   * 첫 후보에 붙일 이름. 기본은 '찍은 순서' 인데, 역에서 역으로 뛸 때처럼
+   * 핀을 찍지 않고 두 점만 주는 경우에는 그 말이 맞지 않는다.
+   */
+  firstLabel?: string;
 }
 
 /**
@@ -186,7 +191,9 @@ export async function buildFromPins(
     throw new RoutingError('no_route', '핀을 2개 이상 찍어주세요.');
   }
 
-  const orders: { pts: LatLng[]; label: string }[] = [{ pts: waypoints, label: '찍은 순서' }];
+  const orders: { pts: LatLng[]; label: string }[] = [
+    { pts: waypoints, label: opts.firstLabel ?? '찍은 순서' },
+  ];
   if (waypoints.length >= 3) {
     orders.push({ pts: nearestNeighborOrder(waypoints), label: '최단 연결' });
   }

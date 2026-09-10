@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { TrainFront } from 'lucide-react';
 import {
   destinationsFrom,
@@ -15,6 +15,11 @@ import type { LatLng } from '../lib/types';
  *
  * 고르는 순서를 출발 → 도착으로 묶어 한 화면에 둔다. 출발역은 현재 위치에서
  * 가까운 순으로 먼저 보여 주므로, 대개 첫 칩을 누르면 끝난다.
+ *
+ * 다 고르고 나면 한 줄로 접는다. 이 패널은 지도 위 상단 카드에 얹혀 있는데,
+ * 역이 많은 자리(7호선 상도역 기준 도착 후보 13개)에서는 칩만 열 줄이 넘어
+ * 아래 시트의 '코스 추천받기' 버튼을 화면 밖으로 밀어냈다. 고르는 동안에는
+ * 높이를 묶어 스크롤시키고, 다 고르면 접어 자리를 돌려준다.
  */
 export default function StationPicker({
   center,
@@ -40,8 +45,35 @@ export default function StationPicker({
     [origin],
   );
 
+  const done = origin != null && destination != null;
+  const [editing, setEditing] = useState(false);
+  // 다 고르면 접는다. 밖에서 역이 바뀌면(모드 전환·초기화) 다시 펴 준다.
+  useEffect(() => {
+    if (done) setEditing(false);
+  }, [done, origin?.name, destination?.name]);
+
+  if (done && !editing) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        className="flex w-full items-start gap-2 rounded-2xl bg-sage-50/60 px-3 py-2.5 text-left active:scale-[0.99]"
+      >
+        <TrainFront size={14} className="mt-0.5 shrink-0 text-sage-600" />
+        <span className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-espresso-muted">
+          <b className="text-espresso">
+            {origin.name} → {destination.name}
+          </b>{' '}
+          · {origin.lineName}
+          <span className="ml-1 text-espresso-soft">· 눌러서 바꾸기</span>
+          <br />
+          도착하면 {destination.name}역에서 지하철로 돌아올 수 있어요.
+        </span>
+      </button>
+    );
+  }
+
   return (
-    <div className="space-y-3">
+    <div className="max-h-[38vh] space-y-3 overflow-y-auto">
       {/* 1) 출발역 */}
       <div>
         <p className="mb-1.5 text-[11.5px] font-semibold text-espresso-muted">
@@ -160,21 +192,6 @@ export default function StationPicker({
         </div>
       )}
 
-      {/* 4) 고른 결과 — 돌아오는 방법까지 말해 준다 */}
-      {origin && destination && (
-        <div className="flex items-start gap-2 rounded-2xl bg-sage-50/60 px-3 py-2.5">
-          <TrainFront size={14} className="mt-0.5 shrink-0 text-sage-600" />
-          <p className="text-[11.5px] leading-relaxed text-espresso-muted">
-            <b className="text-espresso">
-              {origin.name} → {destination.name}
-            </b>{' '}
-            · {origin.lineName}
-            <br />
-            도착하면 {destination.name}역에서 지하철로 돌아올 수 있어요. 힘들면 중간 역에서
-            그만둬도 돼요.
-          </p>
-        </div>
-      )}
     </div>
   );
 }

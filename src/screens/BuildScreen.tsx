@@ -406,7 +406,11 @@ export default function BuildScreen({ api }: { api: AppApi }) {
           [originSt!.lat, originSt!.lng],
           [destSt!.lat, destSt!.lng],
         ];
-        return buildFromPins(pts, style, p, { loop: false, pathPref: pathPrefs });
+        return buildFromPins(pts, style, p, {
+          loop: false,
+          pathPref: pathPrefs,
+          firstLabel: `${originSt!.name} → ${destSt!.name}`,
+        });
       }
       return buildFromDistance(start, targetKm, style, p, {
         seedBase: attempt,
