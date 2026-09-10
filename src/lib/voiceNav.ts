@@ -172,9 +172,11 @@ function turnLabel(kind: TurnPoint['kind']): string {
 }
 
 function distLabel(m: number): string {
-  if (m >= 1000) return `${(m / 1000).toFixed(1).replace(/\.0$/, '')}킬로미터`;
-  if (m >= 100) return `${Math.round(m / 10) * 10}미터`;
-  return `${Math.round(m)}미터`;
+  // 10m 단위 반올림을 단위 판정보다 먼저 한다. 순서를 바꾸면 995~999m 가
+  // '미터' 갈래로 들어간 뒤 1000 으로 반올림돼 "천 미터" 라고 읽는다.
+  const rounded = m >= 100 ? Math.round(m / 10) * 10 : Math.round(m);
+  if (rounded >= 1000) return `${(rounded / 1000).toFixed(1).replace(/\.0$/, '')}킬로미터`;
+  return `${rounded}미터`;
 }
 
 // ── 이탈 감지 ───────────────────────────────────────────────────────────────

@@ -855,5 +855,3 @@ export const COURSES: Course[] = [
   },
 ];
 
-/** 지도 초기 중심 (서울 중심부) */
-export const SEOUL_CENTER: LatLng = [37.5326, 127.0246];

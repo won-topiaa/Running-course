@@ -8,8 +8,33 @@
 // 국가철도공단 파일은 6호선 연신내를 15km 밖에 찍어 뒀다. 수집 스크립트가
 // 노선마다 나은 쪽을 고르고 남은 건 빼도록 돼 있는데, 그 판정이 무너지면
 // 여기서 걸려야 한다.
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { build } from 'esbuild';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+
+// 검색 함수는 앱이 쓰는 그 모듈을 그대로 불러다 검사한다.
+// 예전엔 이 파일이 nearbyStations·escapeStations·거리표기를 똑같이 베껴 두고
+// 그 사본을 검사했다. 그래서 실제 코드의 버그를 두 개나 놓쳤다 —
+// 995~999m 가 '1000m' 로 찍히던 것과, 끝점 근처 탈출역 157개가 사라지던 것.
+// 사본을 검사하면 사본이 맞는지만 알 수 있다.
+const dir = mkdtempSync(join(tmpdir(), 'subway-'));
+const bundle = async (entry, name) => {
+  const out = join(dir, name);
+  await build({
+    entryPoints: [entry],
+    bundle: true,
+    format: 'esm',
+    outfile: out,
+    logLevel: 'error',
+    loader: { '.json': 'json' },
+    define: { 'import.meta.env': '{}' },
+  });
+  return import(out);
+};
+
+const SUBWAY = await bundle('src/lib/subway.ts', 'subway.mjs');
+const { nearbyStations, destinationsFrom, escapeStations, formatStationDistance } = SUBWAY;
 
 const DATA_PATH = resolve('src/data/subway.json');
 let pass = 0, fail = 0;
@@ -114,32 +139,6 @@ function nearestStation(from, maxM = 3000) {
   return best;
 }
 
-function nearbyStations(from, maxM = 3000, limit = 8) {
-  const seen = new Set();
-  const out = [];
-  const sorted = ALL.map((s) => ({ ...s, distanceM: hav(from, [s.lat, s.lng]) }))
-    .sort((a, b) => a.distanceM - b.distanceM);
-  for (const s of sorted) {
-    if (s.distanceM > maxM) break;
-    if (seen.has(s.name)) continue;
-    seen.add(s.name);
-    out.push(s);
-    if (out.length >= limit) break;
-  }
-  return out;
-}
-
-function destinationsFrom(origin, minM = 800, maxM = 12000, limit = 12) {
-  const line = raw.lines.find((l) => l.line === origin.line);
-  if (!line) return [];
-  return line.stations
-    .filter((s) => s.name !== origin.name)
-    .map((s) => ({ ...s, line: line.line, distanceM: hav([origin.lat, origin.lng], [s.lat, s.lng]) }))
-    .filter((s) => s.distanceM >= minM && s.distanceM <= maxM)
-    .sort((a, b) => a.distanceM - b.distanceM)
-    .slice(0, limit);
-}
-
 // 강남역 한복판에서 가장 가까운 역은 강남
 const atGangnam = nearestStation([37.4979, 127.0276]);
 ok(atGangnam?.name === '강남', `강남 한복판 → 강남역 (${atGangnam?.name})`);
@@ -182,28 +181,6 @@ for (const l of raw.lines) {
 
 // ---- 4. 탈출역(경로 주변) ----
 const ENDPOINT_M = 400;
-function escapeStations(path, radiusM = 700, limit = 6) {
-  if (path.length < 2) return [];
-  const cum = [0];
-  for (let i = 1; i < path.length; i++) cum.push(cum[i - 1] + hav(path[i - 1], path[i]));
-  const totalM = cum[cum.length - 1];
-  const startPt = path[0], endPt = path[path.length - 1];
-  const best = new Map();
-  const step = Math.max(1, Math.floor(path.length / 20));
-  for (let i = 0; i < path.length; i += step) {
-    for (const s of ALL) {
-      const d = hav(path[i], [s.lat, s.lng]);
-      if (d > radiusM) continue;
-      if (hav(startPt, [s.lat, s.lng]) <= ENDPOINT_M) continue;
-      if (hav(endPt, [s.lat, s.lng]) <= ENDPOINT_M) continue;
-      const prev = best.get(s.name);
-      if (!prev || d < prev.distanceM) best.set(s.name, { ...s, distanceM: d, alongM: cum[i] });
-    }
-  }
-  return [...best.values()]
-    .filter((s) => s.alongM > 0 && s.alongM < totalM)
-    .sort((a, b) => a.alongM - b.alongM).slice(0, limit);
-}
 
 // 강남 → 삼성 (테헤란로): 역삼·선릉이 중간에 있어야 한다
 const teheran = [
@@ -215,7 +192,41 @@ ok(esc.some((s) => s.name === '역삼'), '역삼이 탈출역에 있다');
 // 출발·도착역은 '중간' 이 아니다 — 목록에 있으면 안 된다
 ok(!esc.some((s) => s.name === '강남'), '출발역(강남)은 탈출역에서 빠진다');
 ok(!esc.some((s) => s.name === '삼성'), '도착역(삼성)은 탈출역에서 빠진다');
-ok(esc.every((s) => s.alongM > 0), '탈출역은 출발점보다 뒤에 있다');
+// 양 끝은 ENDPOINT_M 으로 걸러진다 — alongM 이 0 이라는 이유로 지우면 안 된다.
+// (그렇게 지우던 시절 끝점 400~700m 밖의 멀쩡한 역 157개가 사라졌다)
+ok(
+  esc.every((s) => hav(teheran[0], [s.lat, s.lng]) > ENDPOINT_M),
+  '탈출역은 전부 출발점에서 ENDPOINT_M 밖',
+);
+ok(
+  esc.every((s) => hav(teheran[teheran.length - 1], [s.lat, s.lng]) > ENDPOINT_M),
+  '탈출역은 전부 도착점에서 ENDPOINT_M 밖',
+);
+ok(esc.every((s) => s.alongM >= 0), '탈출역 진행거리는 음수가 아니다');
+
+// 끝점 바로 바깥의 탈출역이 살아남는가 — 회귀 방지.
+//
+// 동대문 → 방학 경로에서 동묘앞은 출발점에서 476m 다. ENDPOINT_M(400m) 밖이니
+// '중간에 그만둘 수 있는 역' 이 맞다. 그런데 동묘앞에 가장 가까운 경로 표본이
+// 0번 지점이라 alongM 이 0 으로 나오고, 예전 코드는 그걸 이유로 지웠다.
+// 이런 식으로 사라진 역이 서울 전역에서 157개였다.
+const dongdaemun = [37.57179, 127.011383];
+const banghak = [37.66796, 127.04456];
+const longPath = [];
+for (let i = 0; i <= 80; i++) {
+  longPath.push([
+    dongdaemun[0] + (banghak[0] - dongdaemun[0]) * (i / 80),
+    dongdaemun[1] + (banghak[1] - dongdaemun[1]) * (i / 80),
+  ]);
+}
+const longEsc = escapeStations(longPath, 700, 20);
+const dongmyo = longEsc.find((s) => s.name === '동묘앞');
+ok(dongmyo != null, '출발점 476m 밖의 동묘앞이 탈출역에 남는다 (alongM=0 이어도)');
+ok(
+  longEsc.every((s) => hav(dongdaemun, [s.lat, s.lng]) > ENDPOINT_M),
+  '긴 경로에서도 출발점 ENDPOINT_M 안의 역은 빠진다',
+);
+ok(!longEsc.some((s) => s.name === '동대문'), '긴 경로에서 출발역(동대문)은 빠진다');
 ok(esc.every((s, i) => i === 0 || s.alongM >= esc[i - 1].alongM), '탈출역이 진행 순서대로');
 ok(esc.every((s) => s.distanceM <= 700), '탈출역이 전부 반경 안');
 ok(new Set(esc.map((s) => s.name)).size === esc.length, '탈출역 이름 중복 없음');
@@ -228,12 +239,13 @@ ok(escapeStations([[37.4979, 127.0276]], 700).length === 0, '점 하나짜리 �
 ok(escapeStations([[35.1, 129.0], [35.11, 129.01]], 700).length === 0, '부산 경로는 탈출역 0개');
 
 // ---- 5. 거리 표기 ----
-function fmt(m) {
-  if (m < 1000) return `${Math.round(m / 10) * 10}m`;
-  return `${(m / 1000).toFixed(1)}km`;
-}
+const fmt = formatStationDistance; // 앱이 실제로 쓰는 함수
 ok(fmt(120) === '120m', '120m 포맷');
-ok(fmt(999) === '1000m', '999m 는 10m 단위 반올림');
+ok(fmt(994) === '990m', '994m 는 10m 단위로 내림');
+// 반올림이 단위 판정보다 먼저다 — 아니면 '1000m' 라고 적힌다
+ok(fmt(995) === '1.0km', '995m 는 1.0km (1000m 라고 적히면 안 된다)');
+ok(fmt(999) === '1.0km', '999m 는 1.0km');
+ok(!/^\d{4,}m$/.test(fmt(999)), '네 자리 미터 표기가 나오지 않는다');
 ok(fmt(1000) === '1.0km', '1.0km 포맷');
 ok(fmt(3456) === '3.5km', '3.5km 포맷');
 

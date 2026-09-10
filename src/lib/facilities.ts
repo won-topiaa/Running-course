@@ -131,7 +131,17 @@ export async function findNearRoute(
   return findNearRouteIn(await loadFacilities(), path, radiusM, limit);
 }
 
-export function formatDistance(m: number): string {
-  if (m < 1000) return `${Math.round(m)}m`;
-  return `${(m / 1000).toFixed(1)}km`;
+/**
+ * 시설까지의 거리(m) → "820m" / "1.2km".
+ *
+ * 이름에 Facility 를 붙여 둔다 — format.ts 의 formatDistance 는 **km** 를 받는다.
+ * 둘 다 formatDistance 였을 때는 자동 임포트가 반대쪽을 집어와도 타입이 같아
+ * (number → string) 아무 경고 없이 1000배 틀린 값이 찍힐 수 있었다.
+ * subway.ts 의 formatStationDistance 와 같은 규칙이다.
+ */
+export function formatFacilityDistance(m: number): string {
+  // 반올림을 단위 판정보다 먼저 — formatStationDistance 와 같은 이유
+  const rounded = Math.round(m);
+  if (rounded < 1000) return `${rounded}m`;
+  return `${(rounded / 1000).toFixed(1)}km`;
 }

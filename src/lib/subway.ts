@@ -157,8 +157,6 @@ export function escapeStations(
   for (let i = 1; i < path.length; i++) {
     cum.push(cum[i - 1] + haversineMeters(path[i - 1], path[i]));
   }
-  const totalM = cum[cum.length - 1];
-
   const startPt = path[0];
   const endPt = path[path.length - 1];
 
@@ -181,13 +179,18 @@ export function escapeStations(
     }
   }
 
-  return [...best.values()]
-    .filter((s) => s.alongM > 0 && s.alongM < totalM)
-    .sort((a, b) => a.alongM - b.alongM)
-    .slice(0, limit);
+  // 양 끝 제외는 위의 ENDPOINT_M 검사가 이미 한다. 여기서 alongM 이 0 이거나
+  // totalM 인 역까지 걸러내면, 끝점에서 400~700m 떨어진 멀쩡한 역이 '가장
+  // 가까운 표본 지점이 하필 0번(또는 마지막)' 이라는 이유만으로 사라진다.
+  // 실측: 서울 역 쌍을 훑어 157개가 그렇게 없어졌다 (동대문→방학의 동묘앞 등).
+  return [...best.values()].sort((a, b) => a.alongM - b.alongM).slice(0, limit);
 }
 
 export function formatStationDistance(m: number): string {
-  if (m < 1000) return `${Math.round(m / 10) * 10}m`;
-  return `${(m / 1000).toFixed(1)}km`;
+  // 10m 단위로 먼저 반올림하고 나서 단위를 고른다. 순서를 바꾸면 995~999m 가
+  // 'm' 갈래로 들어간 뒤 1000 으로 반올림돼 '1000m' 라고 적힌다 — 그 자리는
+  // '1.0km' 여야 한다.
+  const rounded = Math.round(m / 10) * 10;
+  if (rounded < 1000) return `${rounded}m`;
+  return `${(rounded / 1000).toFixed(1)}km`;
 }

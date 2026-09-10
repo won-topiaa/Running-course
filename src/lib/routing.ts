@@ -92,11 +92,6 @@ export function returnsToStart(route: RouteResult, tolM = 150): boolean {
   return haversineMeters(c[0], c[c.length - 1]) <= tolM;
 }
 
-/** 여러 바퀴를 돌 때 실제로 뛰는 거리 */
-export function lapsDistanceKm(route: RouteResult, laps: number): number {
-  return route.distanceKm * Math.max(1, Math.round(laps));
-}
-
 /**
  * 같은 코스를 여러 바퀴 이어 붙인다.
  *

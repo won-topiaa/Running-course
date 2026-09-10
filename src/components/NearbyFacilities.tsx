@@ -5,7 +5,7 @@ import {
   loadedFacilities,
   findNearRouteIn,
   findNearbyIn,
-  formatDistance,
+  formatFacilityDistance,
   type Facility,
   type NearbyFacility,
 } from '../lib/facilities';
@@ -58,7 +58,7 @@ export default function NearbyFacilities({
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12px] font-semibold text-espresso">{f.name}</div>
               <div className="mt-0.5 text-[11px] text-espresso-soft">
-                {[f.district, f.type, formatDistance(f.distanceM)].filter(Boolean).join(' · ')}
+                {[f.district, f.type, formatFacilityDistance(f.distanceM)].filter(Boolean).join(' · ')}
               </div>
             </div>
           </div>

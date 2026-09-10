@@ -41,7 +41,8 @@ export function formatPace(secPerKm: number): string {
 
 /** 초 → "1시간 12분" / "34분" / "5분 20초" */
 export function formatDuration(totalSec: number): string {
-  const sec = Math.round(totalSec);
+  if (!Number.isFinite(totalSec)) return '--';
+  const sec = Math.max(0, Math.round(totalSec));
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
@@ -56,6 +57,8 @@ export function formatDuration(totalSec: number): string {
  * 러닝 중 화면에서 숫자가 덜컹거린다. 실시간 타이머에는 이쪽을 쓴다.
  */
 export function formatClock(totalSec: number): string {
+  // formatPace 와 같은 이유의 방어 — NaN 이 들어오면 시계가 "NaN:NaN" 이 된다.
+  if (!Number.isFinite(totalSec)) return '--:--';
   const sec = Math.max(0, Math.round(totalSec));
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -77,6 +80,10 @@ export function estimateTimeLabel(distanceKm: number, paceSecPerKm: number): str
 
 /** 거리(km) → "3.5km" / "820m" */
 export function formatDistance(km: number): string {
+  // NaN·Infinity 가 그대로 "NaNkm" 으로 찍히던 자리. 음수 거리도 기록이
+  // 아니라 계산 오류이므로 0 으로 눕힌다.
+  if (!Number.isFinite(km)) return '--';
+  if (km < 0) km = 0;
   if (km < 1) return `${Math.round(km * 1000)}m`;
   return `${km.toFixed(km < 10 ? 2 : 1).replace(/\.?0+$/, '')}km`;
 }

@@ -13,17 +13,7 @@ export const VOLT = '#D8FF3E';
 export const MINT = '#7FD1A6';
 /** 바탕 */
 export const INK = '#0B0B0C';
-/** 경계선 */
-export const INK_LINE = '#2A2A2F';
 /** 어두운 지도 위에서도 읽히는 보조선 (예정 경로 점선) */
 export const MUTED = '#8A8A93';
 /** 경로 둘레 테두리 — 어떤 타일 위에서도 경로를 분리해준다 */
 export const HALO = '#FFFFFF';
-
-/** 러닝 컨디션 등급색 (경고는 의미색이라 볼트로 바꾸지 않는다) */
-export const GRADE = {
-  good: MINT,
-  moderate: '#E3B857',
-  bad: '#FF8A5B',
-  verybad: '#FF6B6B',
-} as const;

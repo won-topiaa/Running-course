@@ -46,11 +46,6 @@ function remember(p: LatLng, m: number): void {
   cache.set(cacheKey(p), m);
 }
 
-/** 검증용 — 지금 캐시에 몇 점이 들어 있는지 */
-export function elevationCacheSize(): number {
-  return cache.size;
-}
-
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** 좌표 묶음의 고도(m) 조회 — 캐시에 없는 것만 100개씩 나눠 요청 */

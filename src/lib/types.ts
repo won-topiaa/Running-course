@@ -130,18 +130,6 @@ export type FactorKey =
   | 'scenery'
   | 'distance';
 
-export const FACTOR_META: Record<
-  FactorKey,
-  { label: string; emoji: string; hint: string }
-> = {
-  gradient: { label: '경사도', emoji: '⛰️', hint: '원하는 경사 난이도와 얼마나 맞는지' },
-  preference: { label: '코스 취향', emoji: '💚', hint: '선택한 취향 태그와 얼마나 겹치는지' },
-  safety: { label: '안전·조명', emoji: '🛡️', hint: '가로등·CCTV·야간 적합·끊김 없음' },
-  amenities: { label: '편의시설', emoji: '🚰', hint: '식수대·화장실·편의점·주차·지하철' },
-  scenery: { label: '경관·환경', emoji: '🌆', hint: '녹지·야경·그늘 등 풍경 만족도' },
-  distance: { label: '거리', emoji: '📏', hint: '목표 거리와 얼마나 가까운지' },
-};
-
 /** 경사 선호 */
 export type GradientPreference = 'flat' | 'any' | 'hilly';
 
