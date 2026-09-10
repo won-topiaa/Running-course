@@ -595,6 +595,56 @@ await scenario('역에서 역으로 — 추천받기 버튼이 화면 안에', {
   expect(tapped, '추천받기 버튼이 다른 요소에 가려 눌리지 않는다');
 });
 
+// 19) 역으로 모드 — 탭을 나갔다 돌아와도 고른 역이 살아있는가
+//
+//     만들기 화면은 탭을 나가면 언마운트되고, 모듈 전역 session 캐시로 상태를
+//     복원한다. 그런데 originSt/destSt 가 이 캐시에 없으면, 결과·모드는 돌아와도
+//     역은 null 로 리셋된다. 그 상태에서 '다시 찾기'(canGenerate 로 안 잠긴다)를
+//     누르면 originSt!.lat 로 이어져 '경로를 만들 수 없어요' 로 죽어버렸다.
+//     외부를 막아 데모 폴백으로 빠르게 결과를 낸 뒤, 탭을 오가며 확인한다.
+await scenario('역으로 모드 — 탭 복귀 후 역이 유지된다', {
+  viewport: { width: 412, height: 915 },
+  geolocation: { latitude: 37.5027, longitude: 126.9478 }, // 상도역
+  blockExternal: true,
+}, async (page, _c, expect) => {
+  await page.goto(base, { waitUntil: 'load' }); await settle(page);
+  await page.getByRole('button', { name: /역으로/ }).click();
+  await page.waitForTimeout(500);
+  await page.getByRole('button', { name: '내 위치', exact: true }).first().click();
+  await page.waitForTimeout(1500);
+  await page.getByRole('button', { name: /^상도/ }).first().click();
+  await page.waitForTimeout(700);
+  await page.getByRole('button', { name: /^고속터미널/ }).first().click();
+  await page.waitForTimeout(700);
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')].find((x) => /코스 추천받기/.test(x.textContent || ''));
+    if (b && !b.disabled) b.click();
+  });
+  await page.waitForTimeout(6000);
+  expect(/이 경로로 뛰기|다시 찾기/.test(await page.locator('body').innerText()), '역→역 코스가 안 만들어졌다');
+
+  // 탭 나갔다 오기 → BuildScreen 언마운트/리마운트
+  await page.getByRole('button', { name: '마이', exact: true }).first().click();
+  await page.waitForTimeout(1000);
+  await page.getByRole('button', { name: '만들기', exact: true }).first().click();
+  await page.waitForTimeout(1500);
+  expect(/상도 → 고속터미널/.test(await page.locator('body').innerText()), '복귀 후 고른 역이 사라졌다');
+
+  // '다시 찾기' 가 에러 없이 새 코스를 낸다
+  const before = await page.locator('body').innerText();
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')].find(
+      (x) => x.getAttribute('aria-label') === '다시 찾기' || x.getAttribute('title') === '다시 찾기',
+    );
+    if (b) b.click();
+  });
+  await page.waitForTimeout(6000);
+  const after = await page.locator('body').innerText();
+  expect(!/경로를 만들 수 없|출발역과 도착역을 골라/.test(after), '복귀 후 다시 찾기가 에러로 끝났다');
+  expect(/이 경로로 뛰기/.test(after), '복귀 후 다시 찾기가 코스를 못 냈다');
+  void before;
+});
+
 await browser.close();
 server.close();
 

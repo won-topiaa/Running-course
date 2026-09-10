@@ -93,6 +93,8 @@ let session: {
   style: RunStyle;
   pathPrefs: PathPref[];
   returnToStart: boolean;
+  originSt: LineStation | null;
+  destSt: LineStation | null;
   results: BuiltRoute[] | null;
   selIdx: number;
   sheetOpen: boolean;
@@ -113,8 +115,8 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   // 둘 다 원하는 경우가 서울에서는 오히려 흔하다.
   const [pathPrefs, setPathPrefs] = useState<PathPref[]>(session?.pathPrefs ?? []);
   // 역에서 역으로 — 두 역만 정하면 그 사이 길은 기존 채점기가 고른다
-  const [originSt, setOriginSt] = useState<LineStation | null>(null);
-  const [destSt, setDestSt] = useState<LineStation | null>(null);
+  const [originSt, setOriginSt] = useState<LineStation | null>(session?.originSt ?? null);
+  const [destSt, setDestSt] = useState<LineStation | null>(session?.destSt ?? null);
 
   const [results, setResults] = useState<BuiltRoute[] | null>(session?.results ?? null);
   const [selIdx, setSelIdx] = useState(session?.selIdx ?? 0);
@@ -245,6 +247,8 @@ export default function BuildScreen({ api }: { api: AppApi }) {
       style,
       pathPrefs,
       returnToStart,
+      originSt,
+      destSt,
       results,
       selIdx,
       sheetOpen,
@@ -257,6 +261,8 @@ export default function BuildScreen({ api }: { api: AppApi }) {
     style,
     pathPrefs,
     returnToStart,
+    originSt,
+    destSt,
     results,
     selIdx,
     sheetOpen,
@@ -387,6 +393,13 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   };
 
   const generate = async () => {
+    // 역으로 모드인데 두 역이 안 정해졌으면 만들 게 없다. '다시 찾기' 버튼은
+    // canGenerate 로 잠기지 않아 여기까지 올 수 있다 — 아래에서 originSt!.lat 로
+    // 터지느니 여기서 부드럽게 막는다. (역은 세션에 남으니 정상 흐름에선 안 온다)
+    if (mode === 'stations' && (!originSt || !destSt)) {
+      setError('출발역과 도착역을 골라주세요.');
+      return;
+    }
     setLoading(true);
     setError(null);
     setNotice(null);

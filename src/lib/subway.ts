@@ -61,24 +61,10 @@ interface SubwayData {
 
 const data = subwayData as SubwayData;
 
-export const LINES: SubwayLine[] = data.lines;
-
-export function subwaySource(): string {
-  return data.source;
-}
-
 /** 노선 정보를 붙여 평평하게 편 전체 역 목록 */
 const ALL: LineStation[] = data.lines.flatMap((l) =>
   l.stations.map((s) => ({ ...s, line: l.line, lineName: l.name, color: l.color })),
 );
-
-export function allStations(): LineStation[] {
-  return ALL;
-}
-
-export function stationCount(): number {
-  return ALL.length;
-}
 
 export function lineOf(line: string): SubwayLine | null {
   return data.lines.find((l) => l.line === line) ?? null;
@@ -95,21 +81,6 @@ export interface NearStation extends LineStation {
 
 function withDistance(from: LatLng, s: LineStation): NearStation {
   return { ...s, distanceM: haversineMeters(from, [s.lat, s.lng]) };
-}
-
-/**
- * 가장 가까운 역. 출발역을 자동으로 제안할 때 쓴다.
- * 같은 자리에 환승역이 여러 노선으로 겹쳐 있으면 그중 하나가 나온다 —
- * 노선을 고르는 건 그다음 단계라 여기서는 아무거나로 충분하다.
- */
-export function nearestStation(from: LatLng, maxM = 3000): NearStation | null {
-  let best: NearStation | null = null;
-  for (const s of ALL) {
-    const d = haversineMeters(from, [s.lat, s.lng]);
-    if (d > maxM) continue;
-    if (!best || d < best.distanceM) best = { ...s, distanceM: d };
-  }
-  return best;
 }
 
 /** 가까운 역들 — 출발역을 직접 고를 때 쓴다 (역 이름 기준으로 중복 제거) */
@@ -214,11 +185,6 @@ export function escapeStations(
     .filter((s) => s.alongM > 0 && s.alongM < totalM)
     .sort((a, b) => a.alongM - b.alongM)
     .slice(0, limit);
-}
-
-/** 러닝 중에 쓰는 것 — 지금 위치에서 가장 가까운 역 하나 */
-export function nearestEscape(from: LatLng, maxM = 1500): NearStation | null {
-  return nearestStation(from, maxM);
 }
 
 export function formatStationDistance(m: number): string {
