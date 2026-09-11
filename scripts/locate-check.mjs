@@ -22,8 +22,16 @@ await build({
   logLevel: 'error',
   define: { 'import.meta.env': '{}' },
 });
-const { locateOnce, LocateError, locateErrorMessage, coarseNotice, GOOD_ENOUGH_M } =
-  await import(out);
+const {
+  locateOnce,
+  LocateError,
+  locateErrorMessage,
+  coarseNotice,
+  looksApproxLocked,
+  GOOD_ENOUGH_M,
+  MAX_WAIT_MS,
+  APPROX_MODE_M,
+} = await import(out);
 
 let pass = 0,
   fail = 0;
@@ -242,6 +250,44 @@ for (const kind of ['unsupported', 'denied', 'timeout', 'unavailable']) {
   ok(typeof m === 'string' && m.length > 5, `${kind} 안내 문구가 있다`);
   ok(!/undefined|NaN/.test(m), `${kind} 문구에 undefined·NaN 없음`);
 }
+
+console.log('\n[안내 문구 갈래] 원인이 다르면 해결법도 달라야 한다');
+{
+  // 오차 km 단위 = 기기가 '대략적인 위치' 로 잠긴 것. 기다려도 안 좋아지므로
+  // '잠시 뒤 다시' 가 아니라 '설정을 켜라' 고 해야 한다.
+  const locked = { coords: [37.5, 127.0], accuracyM: 3000, precise: false };
+  ok(looksApproxLocked(locked), '오차 3km 는 대략적 위치 모드로 판정');
+  const m1 = coarseNotice(locked);
+  ok(/단위로만 잡혀요/.test(m1), '잠긴 경우 전용 문구가 나온다');
+  ok(/정확한 위치/.test(m1), '문구가 켜야 할 설정 이름을 말한다');
+  ok(!/잠시 뒤 다시/.test(m1), "잠긴 경우엔 '잠시 뒤 다시' 라고 하지 않는다");
+  ok(/3.0km/.test(m1), `오차 크기를 사람 단위로 적는다 (${m1.slice(0, 24)}…)`);
+
+  // 오차 수백 m = 위성을 아직 못 잡은 것. 이건 기다리면 좋아진다.
+  const weak = { coords: [37.5, 127.0], accuracyM: 400, precise: false };
+  ok(!looksApproxLocked(weak), '오차 400m 는 잠긴 게 아니라 약한 신호');
+  const m2 = coarseNotice(weak);
+  ok(/잠시 뒤 다시/.test(m2), '약한 신호는 다시 시도하라고 안내한다');
+  ok(/400m/.test(m2), '오차를 함께 적는다');
+
+  // 충분히 정확하면 아무 말도 안 한다
+  ok(coarseNotice({ coords: [37.5, 127.0], accuracyM: 20, precise: true }) === null,
+     '정확하면 안내가 없다');
+
+  // 경계
+  ok(looksApproxLocked({ coords: [0, 0], accuracyM: APPROX_MODE_M, precise: false }),
+     `경계값 ${APPROX_MODE_M}m 는 잠김으로 본다`);
+  ok(!looksApproxLocked({ coords: [0, 0], accuracyM: APPROX_MODE_M - 1, precise: false }),
+     `${APPROX_MODE_M - 1}m 는 잠김이 아니다`);
+  ok(!looksApproxLocked({ coords: [0, 0], accuracyM: null, precise: false }),
+     '오차를 모르면 잠김으로 단정하지 않는다');
+  for (const m of [m1, m2]) ok(!/undefined|NaN|\[object/.test(m), '문구에 undefined·NaN 없음');
+}
+
+console.log('\n[대기 시간] GPS 콜드 스타트를 기다릴 만큼 긴가');
+// 휴대폰이 한동안 GPS 를 안 썼으면 첫 측위에 20~30초가 걸린다. 그 전에
+// 포기하면 실외에서도 늘 와이파이 추정만 쓰게 된다.
+ok(MAX_WAIT_MS >= 20_000, `최대 대기 ${MAX_WAIT_MS / 1000}초 (콜드 스타트 20초 이상)`);
 
 console.log(`\n측위 검증: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail > 0 ? 1 : 0);

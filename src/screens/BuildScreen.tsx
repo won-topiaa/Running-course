@@ -407,6 +407,11 @@ export default function BuildScreen({ api }: { api: AppApi }) {
         locateJobRef.current = null;
         setLocating(false);
         setStart(r.coords);
+        // reset() 을 '먼저' 부른다. 이게 setNotice(null) 을 하기 때문에,
+        // 순서가 반대면 방금 띄운 안내를 같은 핸들러 안에서 도로 지운다 —
+        // 실제로 그렇게 돼 있었고, 그래서 오차가 3km 여도 화면에는 아무 말도
+        // 없이 핀만 엉뚱한 곳에 꽂혔다.
+        reset();
         // 오차가 큰 채로 시간이 다 됐으면 그 사실을 말해 준다. 조용히 꽂아 두면
         // 사용자는 '앱이 내 위치를 못 잡는다' 고 여기지, 오차가 큰 줄은 모른다.
         setNotice(coarseNotice(r));
@@ -418,7 +423,6 @@ export default function BuildScreen({ api }: { api: AppApi }) {
         if (haversineMeters(api.settings.homeLocation, r.coords) > 500) {
           api.setSettings({ ...api.settings, homeLocation: r.coords });
         }
-        reset();
       })
       .catch((e) => {
         if (locateJobRef.current !== job) return;

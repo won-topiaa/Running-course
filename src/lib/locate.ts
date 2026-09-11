@@ -26,8 +26,22 @@ import type { LatLng } from './types';
 export const GOOD_ENOUGH_M = 50;
 /** 이보다 나쁘면 화면이 '대략 위치' 라고 일러 준다 */
 export const COARSE_M = 200;
-/** 이 시간 안에 GOOD_ENOUGH_M 에 못 닿으면 그때까지 중 최선을 쓴다 */
-export const MAX_WAIT_MS = 12_000;
+/**
+ * 이 시간 안에 GOOD_ENOUGH_M 에 못 닿으면 그때까지 중 최선을 쓴다.
+ *
+ * 12초였는데 너무 짧았다. 휴대폰이 한동안 GPS 를 안 썼으면 위성을 처음 잡는 데
+ * (cold start) 20~30초가 걸리는 게 정상이다. 그 전에 포기하면 늘 와이파이·기지국
+ * 추정만 쓰게 돼, 실외에서 하늘을 보고 서 있어도 오차가 안 줄어든다.
+ */
+export const MAX_WAIT_MS = 25_000;
+
+/**
+ * 이보다 나쁜 오차가 계속되면 위성을 못 잡은 게 아니라 기기 설정이
+ * '대략적인 위치' 로 잠겨 있는 것이다. 원인이 다르니 해결법도 다르다 —
+ * 기다려 봐야 영원히 안 좋아지고, 설정을 바꿔야 한다.
+ * iOS 는 정확한 위치를 끄면 보통 km 단위로 뭉갠 좌표를 준다.
+ */
+export const APPROX_MODE_M = 1500;
 
 export interface LocateResult {
   coords: LatLng;
@@ -60,12 +74,38 @@ export function locateErrorMessage(kind: LocateErrorKind): string {
   }
 }
 
-/** 잡은 위치가 얼마나 거친지 — 화면에 덧붙일 말 (충분히 정확하면 null) */
+/** 이 기기가 '대략적인 위치' 모드로 잠겨 있는 것으로 보이는가 */
+export function looksApproxLocked(r: LocateResult): boolean {
+  return !r.precise && r.accuracyM != null && r.accuracyM >= APPROX_MODE_M;
+}
+
+/** 아이폰인가 — 설정 경로를 기기에 맞게 말해 주려고 본다 */
+function isIOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  // 아이패드는 데스크톱 사파리인 척하므로 터치 지원까지 본다
+  return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+
+/**
+ * 잡은 위치가 얼마나 거친지 — 화면에 덧붙일 말 (충분히 정확하면 null).
+ *
+ * 오차가 km 단위로 벌어지면 '위성을 아직 못 잡았다' 가 아니라 기기 설정이
+ * 정확한 위치를 막고 있는 것이다. 그때 '잠시 뒤 다시 눌러 보세요' 라고 하면
+ * 영영 안 되는 일을 시키는 셈이라, 어디를 켜야 하는지를 말해 준다.
+ */
 export function coarseNotice(r: LocateResult): string | null {
   if (r.precise) return null;
   const acc = r.accuracyM;
-  if (acc == null) return '대략적인 위치예요. 정확하지 않으면 지도를 눌러 옮겨주세요.';
-  return `대략적인 위치예요 (오차 ±${formatAccuracy(acc)}). 정확하지 않으면 지도를 눌러 옮겨주세요.`;
+  const size = acc != null ? formatAccuracy(acc) : '수 km';
+
+  if (looksApproxLocked(r)) {
+    return isIOS()
+      ? `위치가 ${size} 단위로만 잡혀요. 아이폰 설정 → 개인정보 보호 및 보안 → 위치 서비스 → 쓰는 브라우저(Safari·Chrome)에서 '정확한 위치'를 켜주세요. 지금은 지도를 눌러 시작점을 직접 정할 수 있어요.`
+      : `위치가 ${size} 단위로만 잡혀요. 기기 설정에서 브라우저에 '정확한 위치' 권한을 허용해 주세요. 지금은 지도를 눌러 시작점을 직접 정할 수 있어요.`;
+  }
+  const where = acc != null ? ` (오차 ±${size})` : '';
+  return `대략적인 위치예요${where}. 실외에서 잠시 뒤 다시 누르면 정확해져요. 지도를 눌러 직접 옮겨도 됩니다.`;
 }
 
 function formatAccuracy(m: number): string {

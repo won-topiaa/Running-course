@@ -602,6 +602,50 @@ await scenario('역에서 역으로 — 추천받기 버튼이 화면 안에', {
 //     역은 null 로 리셋된다. 그 상태에서 '다시 찾기'(canGenerate 로 안 잠긴다)를
 //     누르면 originSt!.lat 로 이어져 '경로를 만들 수 없어요' 로 죽어버렸다.
 //     외부를 막아 데모 폴백으로 빠르게 결과를 낸 뒤, 탭을 오가며 확인한다.
+// 오차가 큰 측위를 받았을 때, 화면이 그 사실을 말하는가.
+//
+// 이걸 시나리오로 두는 이유가 있다. locate-check 는 coarseNotice() 가 옳은
+// 문구를 만드는지까지만 본다 — 실제로 그 문구가 화면에 닿는지는 못 본다.
+// 그리고 정확히 거기서 한 번 무너졌다: useMyLocation 이 안내를 띄운 직후
+// reset() 을 불렀는데, reset() 안에 setNotice(null) 이 있어서 같은 핸들러
+// 안에서 도로 지워졌다. 단위 검사는 전부 통과하는데 사용자는 아무 안내도
+// 못 보고 '핀만 엉뚱한 데 꽂힌다' 고 겪은 것이다.
+await scenario('오차 큰 측위 — 화면이 이유를 말한다', {
+  viewport: { width: 390, height: 844 },
+  blockExternal: true,
+  // 아이폰에서 '정확한 위치' 를 끈 상태를 흉내낸다 (오차 3km 만 계속 온다)
+  init: () => {
+    navigator.geolocation.watchPosition = (ok) => {
+      setTimeout(() => ok({ coords: { latitude: 37.5665, longitude: 126.978, accuracy: 3000 } }), 300);
+      return 1;
+    };
+    navigator.geolocation.clearWatch = () => {};
+  },
+}, async (page, _c, expect) => {
+  await page.goto(base, { waitUntil: 'load' }); await settle(page);
+  await page.getByRole('button', { name: '내 위치', exact: true }).first().click();
+  // locate 는 정확해질 때까지 기다렸다가 시간이 다 되면 최선을 쓴다
+  await page.waitForTimeout(27_000);
+
+  const body = await page.locator('body').innerText();
+  expect(/단위로만 잡혀요|대략적인 위치/.test(body), '오차 3km 인데 화면에 아무 안내가 없다');
+
+  // 문구가 보이기만 하는 게 아니라 '눈에' 보여야 한다 — 접힌 서랍(높이 0)
+  // 안에 렌더되면 DOM 엔 있어도 사용자는 못 본다.
+  const seen = await page.evaluate(() => {
+    const el = [...document.querySelectorAll('p')].find((x) => /단위로만 잡혀요|대략적인 위치/.test(x.textContent || ''));
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { h: Math.round(r.height), y: Math.round(r.top), vh: window.innerHeight };
+  });
+  expect(seen != null, '안내 문단을 못 찾았다');
+  expect(seen && seen.h > 0, `안내가 높이 0 이라 안 보인다 (${JSON.stringify(seen)})`);
+  expect(seen && seen.y >= 0 && seen.y < seen.vh, `안내가 화면 밖에 있다 (${JSON.stringify(seen)})`);
+
+  // 원인에 맞는 해결법을 말하는가 — 잠긴 상태에 '잠시 뒤 다시' 는 헛수고다
+  expect(/정확한 위치/.test(body), '켜야 할 설정 이름을 안 알려준다');
+});
+
 await scenario('역으로 모드 — 탭 복귀 후 역이 유지된다', {
   viewport: { width: 412, height: 915 },
   geolocation: { latitude: 37.5027, longitude: 126.9478 }, // 상도역
