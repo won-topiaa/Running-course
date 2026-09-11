@@ -47,12 +47,7 @@ import {
 } from '../lib/greenShare';
 import { flowInfo } from '../lib/wayMix';
 import { haversineMeters } from '../lib/geo';
-import {
-  locateOnce,
-  coarseNotice,
-  locateErrorMessage,
-  LocateError,
-} from '../lib/locate';
+import { locateOnce, locateNotice, locateErrorMessage, LocateError } from '../lib/locate';
 import { superlatives } from '../lib/compare';
 import type { LatLng } from '../lib/types';
 import type { AppApi } from '../ui/appApi';
@@ -380,8 +375,21 @@ export default function BuildScreen({ api }: { api: AppApi }) {
   };
 
   const onMapClick = (p: LatLng) => {
-    if (mode === 'pins') setWaypoints((w) => (w.length >= 6 ? w : [...w, p]));
-    else setStart(p);
+    if (mode === 'pins') {
+      setWaypoints((w) => (w.length >= 6 ? w : [...w, p]));
+    } else {
+      setStart(p);
+      // 손으로 찍은 자리를 홈 위치로도 삼는다.
+      //
+      // 기기가 엉뚱한 곳을 '내 위치'라고 우길 때(공유기를 들고 이사하면
+      // 와이파이 측위가 한동안 옛 주소를 가리킨다) 사용자가 바로잡을 수 있는
+      // 길은 지도를 누르는 것뿐이다. 그런데 예전엔 start 만 바뀌고 홈 위치는
+      // 그대로라, 코스는 여기서 만들어지는데 날씨·미세먼지는 계속 옛 동네
+      // 기준으로 떴다. 500m 넘게 옮겼을 때만 갱신한다(미세 조정은 무시).
+      if (haversineMeters(api.settings.homeLocation, p) > 500) {
+        api.setSettings({ ...api.settings, homeLocation: p });
+      }
+    }
     reset();
   };
 
@@ -414,7 +422,7 @@ export default function BuildScreen({ api }: { api: AppApi }) {
         reset();
         // 오차가 큰 채로 시간이 다 됐으면 그 사실을 말해 준다. 조용히 꽂아 두면
         // 사용자는 '앱이 내 위치를 못 잡는다' 고 여기지, 오차가 큰 줄은 모른다.
-        setNotice(coarseNotice(r));
+        setNotice(locateNotice(r));
         // 날씨·미세먼지도 이 위치로 맞춘다. 예전엔 홈 위치가 서울시청에 박혀
         // 있어서, 부산에서 열든 제주에서 열든 늘 '서울 날씨'가 떴다. 사용자가
         // 이미 허락한 위치라 새 권한 팝업 없이 정확해진다.

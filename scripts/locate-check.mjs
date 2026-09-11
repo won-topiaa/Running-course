@@ -27,6 +27,7 @@ const {
   LocateError,
   locateErrorMessage,
   coarseNotice,
+  locateNotice,
   looksApproxLocked,
   GOOD_ENOUGH_M,
   MAX_WAIT_MS,
@@ -288,6 +289,28 @@ console.log('\n[대기 시간] GPS 콜드 스타트를 기다릴 만큼 긴가')
 // 휴대폰이 한동안 GPS 를 안 썼으면 첫 측위에 20~30초가 걸린다. 그 전에
 // 포기하면 실외에서도 늘 와이파이 추정만 쓰게 된다.
 ok(MAX_WAIT_MS >= 20_000, `최대 대기 ${MAX_WAIT_MS / 1000}초 (콜드 스타트 20초 이상)`);
+
+console.log('\n[정확할 때도 결과를 말한다] 자신 있게 틀린 좌표를 알아챌 단서');
+{
+  // 공유기를 들고 이사하면 와이파이 측위가 옛 주소를 가리키는데, 그때 오차는
+  // 40m 처럼 작게 보고된다. 화면이 조용하면 사용자는 원인을 알 길이 없다.
+  const confidentButWrong = { coords: [37.5027, 126.9478], accuracyM: 40, precise: true };
+  ok(coarseNotice(confidentButWrong) === null, '정확하면 coarseNotice 는 여전히 null');
+  const n = locateNotice(confidentButWrong);
+  ok(typeof n === 'string' && n.length > 0, '정확해도 locateNotice 는 한 줄을 준다');
+  ok(/40m/.test(n), `오차 수치를 적는다 (${n})`);
+  ok(/지도를 눌러/.test(n), '틀렸을 때 고치는 길을 함께 말한다');
+
+  // 거친 경우에는 기존 안내를 그대로 쓴다 (두 벌로 갈라지지 않게)
+  const coarse = { coords: [37.5, 127.0], accuracyM: 3000, precise: false };
+  ok(locateNotice(coarse) === coarseNotice(coarse), '거친 경우는 coarseNotice 와 같은 문구');
+
+  // 오차를 모르는 기기
+  const noAcc = { coords: [37.5, 127.0], accuracyM: null, precise: false };
+  ok(typeof locateNotice(noAcc) === 'string', '오차를 몰라도 문구가 나온다');
+  for (const m of [n, locateNotice(coarse), locateNotice(noAcc)])
+    ok(!/undefined|NaN|\[object/.test(m), '문구에 undefined·NaN 없음');
+}
 
 console.log(`\n측위 검증: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail > 0 ? 1 : 0);

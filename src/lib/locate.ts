@@ -108,6 +108,23 @@ export function coarseNotice(r: LocateResult): string | null {
   return `대략적인 위치예요${where}. 실외에서 잠시 뒤 다시 누르면 정확해져요. 지도를 눌러 직접 옮겨도 됩니다.`;
 }
 
+/**
+ * 측위 결과를 알리는 한 줄 — 정확하든 아니든 늘 무언가 말한다.
+ *
+ * 정확할 때 아무 말도 안 하면, 기기가 '자신 있게 틀린' 좌표를 줬을 때
+ * 사용자가 알아챌 방법이 없다. 실제로 그런 일이 있다 — 공유기를 들고
+ * 이사하면 와이파이 측위 DB 가 한동안 옛 주소를 가리키는데, 그때 오차는
+ * 40m 처럼 작게 보고된다. 화면이 '오차 ±40m' 라고 말해 주면 적어도
+ * '앱이 위치를 못 잡는다' 가 아니라 '기기가 여길 저기라고 한다' 로 보인다.
+ */
+export function locateNotice(r: LocateResult): string {
+  const coarse = coarseNotice(r);
+  if (coarse) return coarse;
+  const acc = r.accuracyM;
+  const where = acc != null ? ` (오차 ±${formatAccuracy(acc)})` : '';
+  return `내 위치로 옮겼어요${where}. 여기가 아니면 지도를 눌러 옮겨주세요.`;
+}
+
 function formatAccuracy(m: number): string {
   if (m >= 1000) return `${(m / 1000).toFixed(1)}km`;
   return `${Math.round(m)}m`;
