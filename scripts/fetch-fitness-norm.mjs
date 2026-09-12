@@ -267,7 +267,18 @@ writeFileSync(
     {
       fetchedAt: new Date().toISOString().slice(0, 10),
       endpoint: BASE,
-      period: `${YEAR_SLICES[0][0]}~${YEAR_SLICES[YEAR_SLICES.length - 1][1]}`,
+      // '요청한 범위' 가 아니라 '실제로 받은 범위' 를 적는다.
+      //
+      // 예전엔 YEAR_SLICES 의 양 끝을 그대로 썼는데, 그건 우리가 달라고 한
+      // 기간이지 데이터가 있는 기간이 아니다. 2026년 8월에 받으면서
+      // '202301~202612' 라고 적혀, 아직 오지도 않은 12월까지 표본이 있는
+      // 것처럼 보였다(실제 데이터는 202607 까지). 출처를 밝히는 파일에
+      // 미래 날짜가 적혀 있으면 나머지 숫자까지 의심받는다.
+      period: (() => {
+        const froms = norms.map((c) => c.period?.from).filter(Boolean).sort();
+        const tos = norms.map((c) => c.period?.to).filter(Boolean).sort();
+        return froms.length ? `${froms[0]}~${tos[tos.length - 1]}` : null;
+      })(),
       // 왜 이 표본만 썼는지를 데이터 옆에 남긴다 — 화면이 근거를 말할 수 있게
       vo2maxBasis:
         '심폐지구력은 스텝 검사(item_f037)와 트레드밀(item_f035) 측정값만 사용했습니다. ' +

@@ -61,16 +61,37 @@ export function loadedFacilities(): Facility[] | null {
 
 const MAX_RADIUS_M = 2000;
 
+/**
+ * 같은 시설을 가리키는 행인가.
+ *
+ * 공공데이터 원본에 같은 시설이 여러 행으로 들어 있다 — 효창근린공원은 5행,
+ * 도림천·금성윗들소공원 등도 2행씩이다(전체 1,284행 중 12행). id 가 서로
+ * 달라서 id 로만 거르면 목록이 같은 이름으로 채워진다. 실제로 효창근린공원
+ * 근처에서 코스를 만들면 '주변 시설' 네 칸이 전부 효창근린공원이었고, 다른
+ * 시설은 전부 밀려났다.
+ *
+ * 원본 행은 그대로 두고(어떤 데이터를 받았는지가 증빙이다) 화면에 내보낼 때만
+ * 합친다. 좌표는 소수점 5자리(약 1m)까지 같아야 같은 자리로 본다.
+ */
+function sameFacilityKey(f: Facility): string {
+  return `${f.name.trim()}@${f.lat.toFixed(5)},${f.lng.toFixed(5)}`;
+}
+
 export function findNearbyIn(
   facilities: Facility[],
   center: LatLng,
   radiusM = MAX_RADIUS_M,
   limit = 5,
 ): NearbyFacility[] {
+  const seen = new Set<string>();
   const results: NearbyFacility[] = [];
   for (const f of facilities) {
     const d = haversineMeters(center, [f.lat, f.lng]);
-    if (d <= radiusM) results.push({ ...f, distanceM: d });
+    if (d > radiusM) continue;
+    const k = sameFacilityKey(f);
+    if (seen.has(k)) continue; // 같은 시설의 중복 행
+    seen.add(k);
+    results.push({ ...f, distanceM: d });
   }
   results.sort((a, b) => a.distanceM - b.distanceM);
   return results.slice(0, limit);
@@ -88,10 +109,11 @@ export function findNearRouteIn(
   const step = Math.max(1, Math.floor(path.length / 20));
   for (let i = 0; i < path.length; i += step) {
     for (const f of facilities) {
-      if (seen.has(f.id)) continue;
+      const k = sameFacilityKey(f);
+      if (seen.has(k)) continue; // 같은 시설의 중복 행
       const d = haversineMeters(path[i], [f.lat, f.lng]);
       if (d <= radiusM) {
-        seen.add(f.id);
+        seen.add(k);
         results.push({ ...f, distanceM: d });
       }
     }
@@ -101,12 +123,13 @@ export function findNearRouteIn(
   const startPt = path[0];
   const endPt = path[path.length - 1];
   for (const f of facilities) {
-    if (seen.has(f.id)) continue;
+    const k = sameFacilityKey(f);
+    if (seen.has(k)) continue; // 위 구간에서 이미 담았거나, 같은 시설의 중복 행
     const dStart = haversineMeters(startPt, [f.lat, f.lng]);
     const dEnd = haversineMeters(endPt, [f.lat, f.lng]);
     const d = Math.min(dStart, dEnd);
     if (d <= radiusM * 1.5) {
-      seen.add(f.id);
+      seen.add(k);
       results.push({ ...f, distanceM: d });
     }
   }

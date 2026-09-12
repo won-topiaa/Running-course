@@ -1,6 +1,26 @@
 // 공공체육시설 통합 검증
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+//
+// 데이터 무결성뿐 아니라 '앱이 실제로 쓰는 검색 함수' 도 같이 검사한다.
+// 예전엔 이 파일이 데이터만 봤는데, 그래서 원본의 중복 행이 화면 목록을
+// 잠식하는 걸 못 잡았다 — 효창근린공원 근처 코스의 '주변 시설' 네 칸이 전부
+// 같은 공원이었다.
+import { build } from 'esbuild';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+
+const tmp = mkdtempSync(join(tmpdir(), 'fac-'));
+const bundled = join(tmp, 'facilities.mjs');
+await build({
+  entryPoints: ['src/lib/facilities.ts'],
+  bundle: true,
+  format: 'esm',
+  outfile: bundled,
+  logLevel: 'error',
+  loader: { '.json': 'json' },
+  define: { 'import.meta.env': '{}' },
+});
+const { findNearbyIn, findNearRouteIn } = await import(bundled);
 
 const DATA_PATH = resolve('src/data/facilities.json');
 let pass = 0, fail = 0;
@@ -183,5 +203,41 @@ ok(formatDist(1500) === '1.5km', '1.5km 포맷');
 ok(formatDist(50) === '50m', '50m 포맷');
 
 // ---- 결과 ----
+// ── 같은 시설의 중복 행 ────────────────────────────────────────────────
+//
+// 공공데이터 원본에 같은 시설이 여러 행으로 들어 있다(효창근린공원 5행 등,
+// 1,284행 중 12행). id 가 서로 달라서 id 로만 거르면 화면 목록이 같은 이름으로
+// 채워진다 — 실제로 효창근린공원 근처 코스의 '주변 시설' 네 칸이 전부 같은
+// 공원이었고 다른 시설은 전부 밀려났다. 검색 결과에 같은 자리의 같은 이름이
+// 두 번 나오지 않아야 한다.
+{
+  const key = (f) => `${f.name.trim()}@${f.lat.toFixed(5)},${f.lng.toFixed(5)}`;
+  const dupGroups = new Map();
+  for (const f of raw.facilities) {
+    const k = key(f);
+    dupGroups.set(k, (dupGroups.get(k) ?? 0) + 1);
+  }
+  const worst = [...dupGroups.entries()].filter(([, n]) => n > 1).sort((a, b) => b[1] - a[1]);
+  ok(worst.length > 0, `원본에 중복 행이 있다 (${worst.length}묶음) — 아래 검사의 전제`);
+
+  // 가장 심한 묶음 근처에서 검색했을 때 중복이 안 나와야 한다
+  const [worstKey] = worst[0];
+  const name = worstKey.split('@')[0];
+  const sample = raw.facilities.find((f) => f.name.trim() === name);
+
+  const near = findNearbyIn(raw.facilities, [sample.lat, sample.lng], 800, 5);
+  const nearKeys = near.map(key);
+  ok(new Set(nearKeys).size === nearKeys.length, `주변 검색에 중복 없음 (${name})`);
+  ok(near.filter((f) => f.name.trim() === name).length === 1, `${name} 이 한 번만 나온다`);
+  ok(near.length > 1, `중복이 목록을 잠식하지 않는다 (서로 다른 시설 ${near.length}개)`);
+
+  const path = [];
+  for (let i = 0; i <= 40; i++) path.push([sample.lat + i * 0.0001, sample.lng + i * 0.0001]);
+  const route = findNearRouteIn(raw.facilities, path, 500, 4);
+  const routeKeys = route.map(key);
+  ok(new Set(routeKeys).size === routeKeys.length, '경로 검색에도 중복 없음');
+  ok(route.filter((f) => f.name.trim() === name).length === 1, `경로 검색에서도 ${name} 은 한 번만`);
+}
+
 console.log(`\n시설 검증: ${pass} passed, ${fail} failed (${pass + fail} total)`);
 process.exit(fail > 0 ? 1 : 0);

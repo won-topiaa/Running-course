@@ -1,7 +1,7 @@
 {
  "fetchedAt": "2026-08-15",
  "endpoint": "https://apis.data.go.kr/B551014/SRVC_NFA_TEST_RESULT/TODZ_NFA_TEST_RESULT_NEW",
- "period": "202301~202612",
+ "period": "202301~202607",
  "vo2maxBasis": "심폐지구력은 스텝 검사(item_f037)와 트레드밀(item_f035) 측정값만 사용했습니다. 왕복오래달리기(item_f030)는 같은 집단에서 중앙값이 2~3 낮게 나와 눈금이 달라 제외했습니다.",
  "gripBasis": "악력은 좌·우 중 큰 값을 사용했습니다. 명세의 상대악력(item_f028)을 역산하면 max(좌,우)÷체중×100 이 1,000행 전부 일치해, 공단이 악력으로 삼는 값이 최대값임을 확인했습니다.",
  "sampling": "연도별로 같은 양씩 나눠 받아 특정 시기에 쏠리지 않게 했습니다.",
